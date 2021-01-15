@@ -87,3 +87,7 @@ ENV/
 
 # Rope project settings
 .ropeproject
+
+# Saved pySCF output
+*.npz
+*.chkfile
