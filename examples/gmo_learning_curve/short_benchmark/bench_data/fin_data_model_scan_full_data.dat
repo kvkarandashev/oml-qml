@@ -1,0 +1,18 @@
+curve number 0
+GMO,sigma_rescale:0.25,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.01326974667608738
+GMO,sigma_rescale:0.25,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.014150941744446754
+GMO,sigma_rescale:0.5,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.012311642058193684
+GMO,sigma_rescale:0.5,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.014350664801895618
+GMO,sigma_rescale:0.25,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.01326974667608738
+GMO,sigma_rescale:0.25,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.014150941744446754
+GMO,sigma_rescale:0.5,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.012311642058193684
+GMO,sigma_rescale:0.5,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.014350664801895618
+curve number 1
+GMO,sigma_rescale:0.25,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.01150517724454403
+GMO,sigma_rescale:0.25,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.010242512449622154
+GMO,sigma_rescale:0.5,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.010262461379170418
+GMO,sigma_rescale:0.5,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.009386986494064331
+GMO,sigma_rescale:0.25,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.01150517724454403
+GMO,sigma_rescale:0.25,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.010242512449622154
+GMO,sigma_rescale:0.5,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.010262461379170418
+GMO,sigma_rescale:0.5,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.009386986494064331
