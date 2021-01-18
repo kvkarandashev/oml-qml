@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 
-from .oml_compound import OML_compound
+from .oml_compound import OML_compound, OML_Slater_pair
 from .python_parallelization import embarassingly_parallel
 from joblib import Parallel, delayed
 import os
@@ -49,10 +49,8 @@ def after_gen_orb_reps(oml_comp, rep_params):
     oml_comp.generate_orb_reps(rep_params)
     return oml_comp
 
-def after_bias_orb_reps(oml_comp, rep_params):
-    oml_comp.bias_orb_reps(rep_params)
-    return oml_comp
-
-
 def OML_compound_list_from_xyzs(xyz_files):
     return OML_compound_list([OML_compound(xyz = xyz_file, mats_savefile = xyz_file) for xyz_file in xyz_files])
+    
+def OML_Slater_pair_list_from_xyzs(xyz_files, second_orb_type="IBO_HOMO_removed"):
+    return OML_compound_list([OML_Slater_pair(xyz = xyz_file, mats_savefile = xyz_file, second_orb_type=second_orb_type) for xyz_file in xyz_files])

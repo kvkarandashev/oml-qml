@@ -91,3 +91,6 @@ ENV/
 # Saved pySCF output
 *.npz
 *.chkfile
+
+# Other tmp files.
+*.tmp

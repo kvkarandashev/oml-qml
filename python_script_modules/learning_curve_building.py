@@ -67,12 +67,10 @@ class CM_representation(representation):
 class OML_representation(representation):
     def __init__(self, ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
                     fock_based_coup_mat=False, num_fbcm_omegas=2):
-        import qml.oml_representations
         self.rep_params=qml.oml_representations.OML_rep_params(ibo_atom_rho_comp=ibo_atom_rho_comp, max_angular_momentum=max_angular_momentum,
                                                                         use_Fortran=use_Fortran, fock_based_coup_mat=fock_based_coup_mat,
                                                                         num_fbcm_omegas=num_fbcm_omegas)
     def xyz2compound(self, xyz=None):
-        import qml.oml_compound
         return qml.oml_compound.OML_compound(xyz = xyz, mats_savefile = xyz)
     def compound_list(self, xyz_list):
         return qml.OML_compound_list_from_xyzs(xyz_list)
@@ -105,6 +103,21 @@ class OML_representation(representation):
         return new_list
     def __str__(self):
         return "OML_rep,"+str(self.rep_params)
+        
+        
+class OML_Slater_pair_rep(OML_representation):
+    def __init__(self, ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
+                    fock_based_coup_mat=False, num_fbcm_omegas=2, second_orb_type="IBO_HOMO_removed"):
+        super().__init__(ibo_atom_rho_comp=ibo_atom_rho_comp, max_angular_momentum=max_angular_momentum,
+                use_Fortran=use_Fortran, fock_based_coup_mat=fock_based_coup_mat, num_fbcm_omegas=num_fbcm_omegas)
+        self.second_orb_type=second_orb_type
+    def xyz2compound(self, xyz=None):
+        return qml.oml_compound.OML_Slater_pair(xyz=xyz, second_orb_type=self.second_orb_type)
+    def compound_list(self, xyz_list):
+        return qml.OML_Slater_pair_list_from_xyzs(xyz_list, second_orb_type=self.second_orb_type)
+    def __str__(self):
+        return "OML_Slater_pair,"+self.second_orb_type+","+str(self.rep_params)
+
 ### END
 
 ### Auxiliary functions to use in kernel_function class.
@@ -148,18 +161,18 @@ class Gaussian_kernel_function(kernel_function):
         return "sigma:"+str(self.sigma)
 
 class OML_GMO_kernel_function(kernel_function):
-    def __init__(self, lambda_val=1e-9, final_sigma=1.0, sigma_rescale=1.0, use_Fortran=True):
-        from qml.oml_kernels import GMO_kernel_params
-        self.kernel_params=GMO_kernel_params(final_sigma=final_sigma, use_Fortran=use_Fortran)
+    def __init__(self, lambda_val=1e-9, final_sigma=1.0, sigma_rescale=1.0, use_Fortran=True, pair_reps=False,
+                    normalize_lb_kernel=False):
+        self.kernel_params=qml.oml_kernels.GMO_kernel_params(final_sigma=final_sigma, use_Fortran=use_Fortran,
+                        normalize_lb_kernel=normalize_lb_kernel)
         self.lambda_val=lambda_val
         self.sigma_rescale=sigma_rescale
+        self.pair_reps=pair_reps
     def adjust_hyperparameters(self, compound_array):
-        from qml.oml_kernels import oml_ensemble_widths_estimate
-        orb_sample=qml.oml_kernels.random_ibo_sample(compound_array)
-        self.kernel_params.update_width(oml_ensemble_widths_estimate(orb_sample)/self.sigma_rescale)
+        orb_sample=qml.oml_kernels.random_ibo_sample(compound_array, pair_reps=self.pair_reps)
+        self.kernel_params.update_width(qml.oml_kernels.oml_ensemble_widths_estimate(orb_sample)/self.sigma_rescale)
     def kernel_matrix(self, arr1, arr2):
-        from qml.oml_kernels import generate_GMO_kernel
-        return generate_GMO_kernel(arr1, arr2, self.kernel_params)
+        return qml.oml_kernels.generate_GMO_kernel(arr1, arr2, self.kernel_params, pair_reps=self.pair_reps)
     def __str__(self):
         return "GMO,sigma_rescale:"+str(self.sigma_rescale)+",fin_sigma:"+str(self.kernel_params.final_sigma)
 
@@ -418,7 +431,8 @@ def make_learning_curve_data(quantity, training_sizes, check_size, model, QM9_di
 
     calc_logfile=logfile(calc_log, '.log')
     quant_logfile=logfile(quant_log, '.log')
-    output_array=[ calculate_MAE(list_of_xyzs, training_size, check_size, quantity, model, delta_learning_params=delta_learning_params, calc_logfile=calc_logfile, quant_logfile=quant_logfile, compound_train_array=compound_train_array, compound_check_array=compound_check_array)
+    output_array=[ calculate_MAE(list_of_xyzs, training_size, check_size, quantity, model, delta_learning_params=delta_learning_params,
+            calc_logfile=calc_logfile, quant_logfile=quant_logfile, compound_train_array=compound_train_array, compound_check_array=compound_check_array)
             for training_size in training_sizes ]
 
     return output_array

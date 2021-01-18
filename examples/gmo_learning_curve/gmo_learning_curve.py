@@ -47,7 +47,7 @@ else:
     for sigma_rescale in geom_progression(0.125, 2.0, 8):
         for final_sigma in geom_progression(0.125, 2.0, 8):
             cur_model=KR_model()
-            cur_model.kernel_function=OML_GMO_kernel_function(use_Fortran=True, final_sigma=final_sigma, sigma_rescale=sigma_rescale, lambda_val=lambda_val)
+            cur_model.kernel_function=OML_GMO_kernel_function(use_Fortran=True, final_sigma=final_sigma, sigma_rescale=sigma_rescale, lambda_val=lambda_val, normalize_lb_kernel=True)
             cur_model.representation=OML_representation(ibo_atom_rho_comp=0.95, use_Fortran=True, max_angular_momentum=1, 
                 fock_based_coup_mat=fock_based_coup_mat) #, characteristic_energy=true_char_en*num_fbcm_omegas, num_fbcm_omegas=num_fbcm_omegas)
             print("Generating hyperparameters: ", cur_model)

@@ -27,7 +27,7 @@ width_params=qml.oml_kernels.oml_ensemble_widths_estimate(oml_samp_orbs)
 logfile.write("Width params")
 logfile.write(width_params)
 
-kernel_params=qml.oml_kernels.GMO_kernel_params(width_params=width_params, final_sigma=0.5, use_Fortran=False)
+kernel_params=qml.oml_kernels.GMO_kernel_params(width_params=width_params, final_sigma=0.5, use_Fortran=False, normalize_lb_kernel=True)
 
 logfile.write("xyz list 1")
 logfile.write(tested_xyzs_1)
@@ -38,6 +38,8 @@ logfile.write(tested_xyzs_2)
 logfile.write("kernel_11")
 kernel=qml.oml_kernels.generate_GMO_kernel(oml_compounds_1, oml_compounds_1, kernel_params)
 logfile.export_matrix(kernel)
+
+kernel_params.parallel=True
 
 logfile.write("kernel_12")
 kernel=qml.oml_kernels.generate_GMO_kernel(oml_compounds_1, oml_compounds_2, kernel_params)

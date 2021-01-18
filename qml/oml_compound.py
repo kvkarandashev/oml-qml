@@ -27,6 +27,7 @@ import numpy as np
 import math
 from os.path import isfile
 
+neglect_orb_occ=0.1
 
 class OML_compound(Compound):
     """ 'Orbital Machine Learning (OML) compound' class is used to store data normally
@@ -39,18 +40,21 @@ class OML_compound(Compound):
                           or saved to the file otherwise.
         calc_type       - type of the calculation (for now only HF with IBO localization and the default basis set are supported).
     """
-    def __init__(self, xyz = None, mats_savefile = None, calc_type="IBO_HF_min_bas", used_orb_type="standard_IBO"):
+    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="min_bas", used_orb_type="standard_IBO"):
         super().__init__(xyz=xyz)
 
         self.calc_type=calc_type
         self.mats_savefile=mats_savefile
         self.pyscf_chkfile=None
+        self.basis=basis
+        self.used_orb_type=used_orb_type
         if self.mats_savefile is None:
             self.mats_created=False
         else:
             if not self.mats_savefile.endswith(".npz"):
-                self.pyscf_chkfile=self.mats_savefile+"."+self.calc_type+".chkfile"
-                self.mats_savefile+="."+self.calc_type+"."+used_orb_type+".npz"
+                savefile_prename=self.mats_savefile+"."+self.calc_type+"."+self.basis
+                self.pyscf_chkfile=savefile_prename+".chkfile"
+                self.mats_savefile=savefile_prename+"."+self.used_orb_type+".npz"
             self.mats_created=isfile(self.mats_savefile)
         if self.mats_created:
             # Import ab initio results from the savefile.
@@ -94,11 +98,27 @@ class OML_compound(Compound):
             from pyscf import scf, lo
             from qml.oml_representations import generate_ao_arr, generate_atom_ao_ranges
             pyscf_mol=self.generate_pyscf_mol()
-            mf=scf.RHF(pyscf_mol)
+            if self.calc_type=="HF":
+                mf=scf.RHF(pyscf_mol)
+            else:
+                mf=scf.UHF(pyscf_mol)
             mf.chkfile=self.pyscf_chkfile
             if isfile(self.pyscf_chkfile):
                 mf.init_guess='chkfile'
             mf.run()
+            # TO-DO think of a nice way to include UHF here.
+            ### Special operations.
+            if self.used_orb_type=="IBO_HOMO_removed":
+                for i, orb_occ in enumerate(mf.mo_occ):
+                    if orb_occ < neglect_orb_occ:
+                        mf.mo_occ[i-1]=0.0
+                        break
+            if self.used_orb_type=="IBO_LUMO_added":
+                for i, orb_occ in enumerate(mf.mo_occ):
+                    if orb_occ < neglect_orb_occ:
+                        mf.mo_occ[i]=2.0
+                        break
+            ###
             self.mo_coeff=jnp.array(mf.mo_coeff)
             self.mo_occ=jnp.array(mf.mo_occ)
             self.mo_energy=jnp.array(mf.mo_energy)
@@ -111,6 +131,7 @@ class OML_compound(Compound):
             self.fock_mat=jnp.array(mf.get_fock())
             self.ovlp_mat=jnp.array(mf.get_ovlp())
             self.iao_mat=jnp.array(lo.iao.iao(pyscf_mol, occ_orb_array))
+            #TO-DO create ibo_mats - one for each spin occupation array. In case of RHF make list of single array.
             if pyscf_calc_params is None:
                 self.ibo_mat=lo.ibo.ibo(pyscf_mol, occ_orb_array)
             else:
@@ -143,14 +164,8 @@ class OML_compound(Compound):
         if rep_params.ibo_spectral_representation: # I would be very funny if this representation proves to be useful.
             self.orb_reps=generate_ibo_spectral_rep_array(self.ibo_mat, rep_params, self.orb_overlap, self.mo_coeff, self.mo_occ, self.mo_energy, self.HOMO_en())
         else:
+            # TO-DO via for-loop add orb_reps for ibos from both ibo_mats (or single IBO_mat)
             self.orb_reps=generate_ibo_rep_array(self.ibo_mat, rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)
-#        self.bias_orb_reps(rep_params)
-#        self.orb_reps.cutoff_minor_weights(remaining_rho=rep_params.ibo_rho_comp)
-    def bias_orb_reps(self, rep_params):
-        orb_coeffs=self.ibo_mat.T
-        for orb_rep in self.orb_reps:
-            orb_rep.rho=self.orb_bias_func(orb_rep, rep_params)
-        self.orb_reps.normalize_sort_rhos()
     #   Find maximal value of angular momentum for AOs of current molecule.
     def find_max_angular_momentum(self):
         if not self.mats_created:
@@ -159,20 +174,6 @@ class OML_compound(Compound):
         for ao in self.aos:
             max_angular_momentum=max(max_angular_momentum, ao.angular)
         return max_angular_momentum
-    def orb_bias_func(self, orb_rep, rep_params):
-        output=0.0
-        cutoff_orb_id=self.LUMO_orb_id()-1
-        for orb_id, (hf_orb_coeffs, hf_orb_en) in enumerate(zip(self.mo_coeff.T, self.mo_energy)):
-            if orb_id <= cutoff_orb_id:
-                if rep_params.en_bias_coeff is None:
-                    if abs(hf_orb_en-self.mo_energy[cutoff_orb_id])<rep_params.en_degen_tol:
-                        bias_coeff=1.0
-                    else:
-                        bias_coeff=0.0
-                else:
-                    bias_coeff=math.exp(hf_orb_en/self.HOMO_LUMO_gap()*rep_params.en_bias_coeff)
-                output+=self.orb_overlap(orb_rep.full_coeffs, hf_orb_coeffs)**2*bias_coeff
-        return output
     def orb_overlap(self, coeffs1, coeffs2):
         return jnp.dot(coeffs1, jnp.matmul(self.ovlp_mat, coeffs2))
     def generate_pyscf_mol(self):
@@ -189,7 +190,7 @@ class OML_compound(Compound):
         for basis_func in self.mo_coeff:
             cur_line=[]
             for occ, orb_coeff in zip(self.mo_occ, basis_func):
-                if occ > 0.5:
+                if occ > neglect_orb_occ:
                     cur_line.append(orb_coeff)
             output.append(cur_line)
         return np.array(output)
@@ -204,7 +205,7 @@ class OML_compound(Compound):
     def LUMO_orb_id(self):
         # index of the LUMO orbital.
         for orb_id, occ in enumerate(self.mo_occ):
-            if occ < 0.5:
+            if occ < neglect_orb_occ:
                 return orb_id
                 
                 
@@ -216,3 +217,15 @@ class OML_pyscf_calc_params:
         self.ibo_max_iter=ibo_max_iter
         self.ibo_grad_tol=ibo_grad_tol
 
+
+class OML_Slater_pair:
+    def __init__(self, xyz = None, mats_savefile = None, calc_type="IBO_HF_min_bas", second_orb_type="IBO_HOMO_removed"):
+        comp1=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type)
+        comp2=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type, used_orb_type=second_orb_type)
+        self.comps=[comp1, comp2]
+    def run_calcs(self, pyscf_calc_params):
+        self.comps[0].run_calcs(pyscf_calc_params=pyscf_calc_params)
+        self.comps[1].run_calcs(pyscf_calc_params=pyscf_calc_params)
+    def generate_orb_reps(self, rep_params):
+        self.comps[0].generate_orb_reps(rep_params)
+        self.comps[1].generate_orb_reps(rep_params)

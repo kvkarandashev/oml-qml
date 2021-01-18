@@ -51,7 +51,7 @@ else:
         for final_sigma in geom_progression(1.0, 2.0, 2):
             cur_model=KR_model()
             cur_model.representation=OML_representation(ibo_atom_rho_comp=0.9, use_Fortran=True, max_angular_momentum=1)
-            cur_model.kernel_function=OML_GMO_kernel_function(sigma_rescale=sigma_rescale, lambda_val=lambda_val, final_sigma=final_sigma)
+            cur_model.kernel_function=OML_GMO_kernel_function(sigma_rescale=sigma_rescale, lambda_val=lambda_val, final_sigma=final_sigma, normalize_lb_kernel=True)
             print("Generating hyperparameters: ", cur_model)
             cur_model.adjust_hyperparameters(xyz_hyperparam_opt)
             scanned_models.append(cur_model)

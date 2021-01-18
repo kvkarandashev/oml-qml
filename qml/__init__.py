@@ -36,7 +36,7 @@ from __future__ import absolute_import
 
 from .compound import Compound
 from .oml_compound import OML_compound
-from .oml_compound_list import OML_compound_list, OML_compound_list_from_xyzs
+from .oml_compound_list import OML_compound_list, OML_compound_list_from_xyzs, OML_Slater_pair_list_from_xyzs
 
 __author__ = "Anders S. Christensen"
 __copyright__ = "Copyright 2016"
