@@ -25,6 +25,7 @@ from .oml_representations import generate_ibo_rep_array, gen_fock_based_coup_mat
 import jax.numpy as jnp
 import numpy as np
 import math
+import pickle
 from os.path import isfile
 
 neglect_orb_occ=0.1
@@ -51,13 +52,16 @@ class OML_compound(Compound):
         if self.mats_savefile is None:
             self.mats_created=False
         else:
-            if not self.mats_savefile.endswith(".npz"):
+            if not self.mats_savefile.endswith(".pkl"):
                 savefile_prename=self.mats_savefile+"."+self.calc_type+"."+self.basis
                 self.pyscf_chkfile=savefile_prename+".chkfile"
-                self.mats_savefile=savefile_prename+"."+self.used_orb_type+".npz"
+                self.mats_savefile=savefile_prename+"."+self.used_orb_type+".pkl"
             self.mats_created=isfile(self.mats_savefile)
         if self.mats_created:
             # Import ab initio results from the savefile.
+            savefile = open(self.mats_savefile, "rb")
+            precalc_mats = pickle.load(savefile)
+            savefile.close()
             precalc_mats=np.load(self.mats_savefile, allow_pickle=True)
             self.mo_coeff=precalc_mats["mo_coeff"]
             self.mo_occ=precalc_mats["mo_occ"]
@@ -70,8 +74,8 @@ class OML_compound(Compound):
             self.k_mat=precalc_mats["k_mat"]
             self.fock_mat=precalc_mats["fock_mat"]
             self.ovlp_mat=precalc_mats["ovlp_mat"]
-            self.iao_mat=precalc_mats["iao_mat"]
-            self.ibo_mat=precalc_mats["ibo_mat"]
+            self.iao_mats=precalc_mats["iao_mats"]
+            self.ibo_mats=precalc_mats["ibo_mats"]
         else:
             self.mo_coeff=None
             self.mo_occ=None
@@ -83,8 +87,8 @@ class OML_compound(Compound):
             self.k_mat=None
             self.fock_mat=None
             self.ovlp_mat=None
-            self.iao_mat=None
-            self.ibo_mat=None
+            self.iao_mats=None
+            self.ibo_mats=None
         self.orb_reps=[]
     def run_calcs(self, pyscf_calc_params=None):
         """ Runs the ab initio calculations if they are necessary.
@@ -106,18 +110,9 @@ class OML_compound(Compound):
             if isfile(self.pyscf_chkfile):
                 mf.init_guess='chkfile'
             mf.run()
-            # TO-DO think of a nice way to include UHF here.
             ### Special operations.
-            if self.used_orb_type=="IBO_HOMO_removed":
-                for i, orb_occ in enumerate(mf.mo_occ):
-                    if orb_occ < neglect_orb_occ:
-                        mf.mo_occ[i-1]=0.0
-                        break
-            if self.used_orb_type=="IBO_LUMO_added":
-                for i, orb_occ in enumerate(mf.mo_occ):
-                    if orb_occ < neglect_orb_occ:
-                        mf.mo_occ[i]=2.0
-                        break
+            if self.used_orb_type != "standard_IBO":
+                mf.mo_occ=self.alter_mo_occ(mf.mo_occ)
             ###
             self.mo_coeff=jnp.array(mf.mo_coeff)
             self.mo_occ=jnp.array(mf.mo_occ)
@@ -125,25 +120,27 @@ class OML_compound(Compound):
             self.aos=generate_ao_arr(pyscf_mol)
             self.atom_ao_ranges=generate_atom_ao_ranges(pyscf_mol)
 
-            occ_orb_array=self.occ_orbs()
+            occ_orb_arrs=self.occ_orbs()
             self.j_mat=jnp.array(mf.get_j())
             self.k_mat=jnp.array(mf.get_k())
             self.fock_mat=jnp.array(mf.get_fock())
             self.ovlp_mat=jnp.array(mf.get_ovlp())
-            self.iao_mat=jnp.array(lo.iao.iao(pyscf_mol, occ_orb_array))
-            #TO-DO create ibo_mats - one for each spin occupation array. In case of RHF make list of single array.
-            if pyscf_calc_params is None:
-                self.ibo_mat=lo.ibo.ibo(pyscf_mol, occ_orb_array)
-            else:
-                self.ibo_mat=jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_array, max_iter=pyscf_calc_params.ibo_max_iter,grad_tol=pyscf_calc_params.ibo_grad_tol))
+            self.iao_mats=[]
+            self.ibo_mats=[]
+            for occ_orb_arr in occ_orb_arrs:
+                self.iao_mats.append(jnp.array(lo.iao.iao(pyscf_mol, occ_orb_arr)))
+                if pyscf_calc_params is None:
+                   self.ibo_mats.append(jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_arr)))
+                else:
+                   self.ibo_mats.append(jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_arr, max_iter=pyscf_calc_params.ibo_max_iter,grad_tol=pyscf_calc_params.ibo_grad_tol)))
             self.mats_created=True
             if self.mats_savefile is not None:
-                # Save ab initio results.
-                print("printing mats_savefile")
-                #TO-DO Once jax.numpy implements savez_compressed put it here instead.
-                jnp.savez(self.mats_savefile, mo_coeff=self.mo_coeff, mo_occ=self.mo_occ, mo_energy=self.mo_energy,
-                                    aos=self.aos, j_mat=self.j_mat, k_mat=self.k_mat, fock_mat=self.fock_mat,
-                                    ovlp_mat=self.ovlp_mat, iao_mat=self.iao_mat, ibo_mat=self.ibo_mat, atom_ao_ranges=self.atom_ao_ranges)
+                #TO-DO Check ways for doing it in a less ugly way.
+                savefile = open(self.mats_savefile, "wb")
+                pickle.dump({"mo_coeff" : self.mo_coeff, "mo_occ" : self.mo_occ, "mo_energy" : self.mo_energy, "aos" : self.aos,
+                                    "j_mat" : self.j_mat, "k_mat" : self.k_mat, "fock_mat" : self.fock_mat, "ovlp_mat" : self.ovlp_mat,
+                                    "iao_mats" : self.iao_mats, "ibo_mats" : self.ibo_mats, "atom_ao_ranges" : self.atom_ao_ranges}, savefile)
+                savefile.close()
     def generate_orb_reps(self, rep_params):
         """ Generates orbital representation.
 
@@ -161,11 +158,12 @@ class OML_compound(Compound):
             coupling_matrices=(*coupling_matrices, self.fock_mat)
         else:
             coupling_matrices=(self.fock_mat, self.j_mat, self.k_mat)
-        if rep_params.ibo_spectral_representation: # I would be very funny if this representation proves to be useful.
-            self.orb_reps=generate_ibo_spectral_rep_array(self.ibo_mat, rep_params, self.orb_overlap, self.mo_coeff, self.mo_occ, self.mo_energy, self.HOMO_en())
-        else:
-            # TO-DO via for-loop add orb_reps for ibos from both ibo_mats (or single IBO_mat)
-            self.orb_reps=generate_ibo_rep_array(self.ibo_mat, rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)
+        self.orb_reps=[]
+        for ibo_mat in self.ibo_mats:
+            if rep_params.ibo_spectral_representation: # I would be very funny if this representation proves to be useful.
+                self.orb_reps=generate_ibo_spectral_rep_array(ibo_mat, rep_params, self.orb_overlap, self.mo_coeff, self.mo_occ, self.mo_energy, self.HOMO_en())
+            else:
+                self.orb_reps=generate_ibo_rep_array(ibo_mat, rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)
     #   Find maximal value of angular momentum for AOs of current molecule.
     def find_max_angular_momentum(self):
         if not self.mats_created:
@@ -184,16 +182,45 @@ class OML_compound(Compound):
         mol.atom=[ [atom_type, atom_coords] for atom_type, atom_coords in zip(self.atomtypes, self.coordinates)]
         mol.build()
         return mol
+    def alter_mo_occ(self, mo_occ):
+        if self.calc_type == "HF":
+            true_mo_occ=mo_occ
+        else:
+            true_mo_occ=mo_occ[0]
+        for i, orb_occ in enumerate(true_mo_occ):
+            if orb_occ < neglect_orb_occ:
+                if self.calc_type == "HF":
+                    if self.used_orb_type=="IBO_LUMO_added":
+                        mo_occ[i]=2.0
+                    if self.used_orb_type=="IBO_HOMO_removed":
+                        mo_occ[i-1]=0.0
+                else:
+                    if self.used_orb_type=="IBO_LUMO_added":
+                        mo_occ[0][i]=1.0
+                    if self.used_orb_type=="IBO_HOMO_removed":
+                        mo_occ[0][i-1]=0.0
+                break
+        return mo_occ
+
     def occ_orbs(self):
         # Array of occupied orbitals.
+        if self.calc_type=="HF":
+            mo_occ_arrs=[self.mo_occ]
+            mo_coeff_arrs=[self.mo_coeff]
+        else:
+            mo_occ_arrs=self.mo_occ
+            mo_coeff_arrs=self.mo_coeff
         output=[]
-        for basis_func in self.mo_coeff:
-            cur_line=[]
-            for occ, orb_coeff in zip(self.mo_occ, basis_func):
-                if occ > neglect_orb_occ:
-                    cur_line.append(orb_coeff)
-            output.append(cur_line)
-        return np.array(output)
+        for mo_occ_arr, mo_coeff_arr in zip(mo_occ_arrs, mo_coeff_arrs):
+            cur_occ_orbs=[]
+            for basis_func in mo_coeff_arr:
+                cur_line=[]
+                for occ, orb_coeff in zip(mo_occ_arr, basis_func):
+                    if occ > neglect_orb_occ:
+                        cur_line.append(orb_coeff)
+                cur_occ_orbs.append(cur_line)
+            output.append(np.array(cur_occ_orbs))
+        return output
     def HOMO_en(self):
         # HOMO energy.
         return self.mo_energy[self.LUMO_orb_id()-1]

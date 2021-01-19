@@ -109,14 +109,15 @@ class OML_representation(representation):
         
 class OML_Slater_pair_rep(OML_representation):
     def __init__(self, ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
-                    fock_based_coup_mat=False, num_fbcm_omegas=2, second_orb_type="IBO_HOMO_removed"):
+                    fock_based_coup_mat=False, num_fbcm_omegas=2, second_orb_type="IBO_HOMO_removed", calc_type="HF"):
         super().__init__(ibo_atom_rho_comp=ibo_atom_rho_comp, max_angular_momentum=max_angular_momentum,
                 use_Fortran=use_Fortran, fock_based_coup_mat=fock_based_coup_mat, num_fbcm_omegas=num_fbcm_omegas)
         self.second_orb_type=second_orb_type
+        self.calc_type=calc_type
     def xyz2compound(self, xyz=None):
-        return qml.oml_compound.OML_Slater_pair(xyz=xyz, second_orb_type=self.second_orb_type)
+        return qml.oml_compound.OML_Slater_pair(xyz=xyz, calc_type=self.calc_type, second_orb_type=self.second_orb_type)
     def compound_list(self, xyz_list):
-        return qml.OML_Slater_pair_list_from_xyzs(xyz_list, second_orb_type=self.second_orb_type)
+        return qml.OML_Slater_pair_list_from_xyzs(xyz_list, calc_type=self.calc_type, second_orb_type=self.second_orb_type)
     def __str__(self):
         return "OML_Slater_pair,"+self.second_orb_type+","+str(self.rep_params)
 
