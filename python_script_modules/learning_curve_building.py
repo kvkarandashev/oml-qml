@@ -8,6 +8,8 @@ byprod_result_ending=".brf"
 
 intermediate_res_ending=".dat"
 
+def_float_format='{:.8E}'
+
 ### Auxiliary functions to use in the representation class.
 # Appears, for example, in CM representation.
 def find_max_size(compound_list):
@@ -185,7 +187,7 @@ def print_means_errs_to_log_file(x_args, means_errs, filename):
     if filename != None:
         output=open(filename+intermediate_res_ending, "w")
         for i in range(len(x_args)):
-            output.write('{} {} {}\n'.format(x_args[i], means_errs[0][i], means_errs[1][i]))
+            output.write(('{} '+def_float_format+' '+def_float_format+'\n').format(x_args[i], means_errs[0][i], means_errs[1][i]))
         output.close()
 
 def print_full_learning_curve_data(x_args, y_data, filename):
@@ -239,10 +241,6 @@ def import_quantity_array(xyz_list, quantity, delta_learning_params=None):
                 added_val-=quantity.OML_comp_extract_byprod(comp)
         output.append(added_val)
     return jnp.array(output)
-
-def import_byprod_results(xyz_list, quantity, calc_type="IBO_HF_min_bas"):
-    return jnp.array([quantity.extract_byprod_result(xyz_name2byprod_filename(f, calc_type)) for f in xyz_list])
-
 
 ### END
 
@@ -365,12 +363,12 @@ class logfile:
     def export_quantity_array(self, quantity_array):
         if self.not_empty:
             for quant_val in quantity_array:
-                self.output.write('{}\n'.format(quant_val))
+                self.output.write((def_float_format+'\n').format(quant_val))
     def export_matrix(self, matrix_in):
         if self.not_empty:
             for id1, row in enumerate(matrix_in):
                 for id2, val in enumerate(row):
-                    self.output.write('{} {} {}\n'.format(id1, id2, val))
+                    self.output.write(('{} {} '+def_float_format+'\n').format(id1, id2, val))
 
 
 #   Calculate MAE using first training_size entries of xyz_list and last check_size entries of xyz_list.

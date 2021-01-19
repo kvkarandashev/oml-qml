@@ -219,9 +219,9 @@ class OML_pyscf_calc_params:
 
 
 class OML_Slater_pair:
-    def __init__(self, xyz = None, mats_savefile = None, calc_type="IBO_HF_min_bas", second_orb_type="IBO_HOMO_removed"):
-        comp1=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type)
-        comp2=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type, used_orb_type=second_orb_type)
+    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="min_bas", second_orb_type="IBO_HOMO_removed"):
+        comp1=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type, basis="min_bas")
+        comp2=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type, basis="min_bas", used_orb_type=second_orb_type)
         self.comps=[comp1, comp2]
     def run_calcs(self, pyscf_calc_params):
         self.comps[0].run_calcs(pyscf_calc_params=pyscf_calc_params)
