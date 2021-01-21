@@ -80,4 +80,76 @@ integer:: i_A, i_B
 
 END FUNCTION
 
+SUBROUTINE flinear_base_kernel_mat_with_opt(num_scal_reps,&
+                    A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
+                    B_ibo_atom_sreps, B_rhos, B_max_tot_num_ibo_atom_reps, B_num_mols,&
+                    width_params, kernel_mat, AA_products, BB_products)
+implicit none
+integer, intent(in):: num_scal_reps
+integer, intent(in):: A_max_tot_num_ibo_atom_reps, A_num_mols
+integer, intent(in):: B_max_tot_num_ibo_atom_reps, B_num_mols
+double precision, dimension(num_scal_reps,&
+    A_max_tot_num_ibo_atom_reps, A_num_mols), intent(in):: A_ibo_atom_sreps
+double precision, dimension(num_scal_reps,&
+    B_max_tot_num_ibo_atom_reps, B_num_mols), intent(in):: B_ibo_atom_sreps
+double precision, dimension(A_max_tot_num_ibo_atom_reps, A_num_mols),&
+    intent(in):: A_rhos
+double precision, dimension(B_max_tot_num_ibo_atom_reps, B_num_mols),&
+    intent(in):: B_rhos
+double precision, dimension(num_scal_reps), intent(in):: width_params
+double precision, dimension(A_num_mols, B_num_mols), intent(inout):: kernel_mat
+double precision, dimension(A_num_mols), intent(inout), optional:: AA_products
+double precision, dimension(B_num_mols), intent(inout), optional:: BB_products
+double precision, dimension(num_scal_reps, A_max_tot_num_ibo_atom_reps,&
+                                                A_num_mols):: A_ibo_atom_sreps_scaled
+double precision, dimension(num_scal_reps, B_max_tot_num_ibo_atom_reps,&
+                                                B_num_mols):: B_ibo_atom_sreps_scaled
+integer:: B_mol_counter
+
+call scalar_rep_resc(A_ibo_atom_sreps_scaled, A_ibo_atom_sreps, width_params, num_scal_reps,&
+                                        A_max_tot_num_ibo_atom_reps, A_num_mols)
+call scalar_rep_resc(B_ibo_atom_sreps_scaled, B_ibo_atom_sreps, width_params, num_scal_reps,&
+                                        B_max_tot_num_ibo_atom_reps, B_num_mols)
+
+if (present(AA_products)) &
+    call flin_base_self_products(num_scal_reps, A_ibo_atom_sreps_scaled, A_rhos,&
+                            A_max_tot_num_ibo_atom_reps, A_num_mols, AA_products)
+if (present(BB_products)) &
+    call flin_base_self_products(num_scal_reps, B_ibo_atom_sreps_scaled, B_rhos,&
+                            B_max_tot_num_ibo_atom_reps, B_num_mols, BB_products)
+
+!$OMP PARALLEL DO
+do B_mol_counter = 1, B_num_mols
+    call flinear_base_kernel_row(num_scal_reps,&
+            A_ibo_atom_sreps_scaled, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
+            B_ibo_atom_sreps_scaled(:, :, B_mol_counter), B_rhos(:, B_mol_counter), B_max_tot_num_ibo_atom_reps,&
+            kernel_mat(:, B_mol_counter))
+enddo
+!$OMP END PARALLEL DO
+
+END SUBROUTINE flinear_base_kernel_mat_with_opt
+
+
+
+SUBROUTINE scalar_rep_resc(array_out, array_in, width_params, dim1, dim2, dim3)
+implicit none
+integer, intent(in):: dim1, dim2, dim3
+double precision, dimension(dim1, dim2, dim3), intent(in):: array_in
+double precision, dimension(dim1, dim2, dim3), intent(inout):: array_out
+double precision, dimension(dim1), intent(in):: width_params
+integer:: i2, i3
+
+!$OMP PARALLEL DO
+    do i3=1, dim3
+        do i2=1, dim2
+            array_out(:, i2, i3)=array_in(:, i2, i3)/width_params
+        enddo
+    enddo
+!$OMP END PARALLEL DO
+
+
+END SUBROUTINE
+
+
+
 END MODULE

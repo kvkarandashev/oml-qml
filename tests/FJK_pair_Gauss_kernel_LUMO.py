@@ -29,7 +29,7 @@ logfile.write(width_params)
 
 width_params*=4
 
-kernel_params=qml.oml_kernels.GMO_kernel_params(width_params=width_params, final_sigma=0.5, use_Fortran=True)
+kernel_params=qml.oml_kernels.GMO_kernel_params(width_params=width_params, final_sigma=0.5, use_Fortran=True, use_Gaussian_kernel=True)
 
 logfile.write("xyz list 1")
 logfile.write(tested_xyzs_1)
@@ -38,10 +38,10 @@ logfile.write("xyz list 2")
 logfile.write(tested_xyzs_2)
 
 logfile.write("kernel_11")
-kernel=qml.oml_kernels.generate_GMO_kernel(oml_compounds_1, oml_compounds_1, kernel_params, pair_reps=True)
+kernel=qml.oml_kernels.generate_GMO_kernel(oml_compounds_1, oml_compounds_1, kernel_params)
 logfile.export_matrix(kernel)
 
 logfile.write("kernel_12")
-kernel=qml.oml_kernels.generate_GMO_kernel(oml_compounds_1, oml_compounds_2, kernel_params, pair_reps=True)
+kernel=qml.oml_kernels.generate_GMO_kernel(oml_compounds_1, oml_compounds_2, kernel_params)
 logfile.export_matrix(kernel)
 logfile.close()

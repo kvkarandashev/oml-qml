@@ -26,6 +26,7 @@ SUBROUTINE fgmo_kernel(num_scal_reps,&
                     A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
                     B_ibo_atom_sreps, B_rhos, B_max_tot_num_ibo_atom_reps, B_num_mols,&
                     width_params, sigma, normalize_lb_kernel, kernel_mat)
+use foml_module, only : flinear_base_kernel_mat_with_opt
 implicit none
 integer, intent(in):: num_scal_reps
 integer, intent(in):: A_max_tot_num_ibo_atom_reps, A_num_mols
@@ -42,7 +43,7 @@ double precision, dimension(A_num_mols):: AA_products
 double precision, dimension(B_num_mols):: BB_products
 integer:: A_mol_counter, B_mol_counter
 
-call flinear_base_kernel_mat(num_scal_reps,&
+call flinear_base_kernel_mat_with_opt(num_scal_reps,&
                     A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
                     B_ibo_atom_sreps, B_rhos, B_max_tot_num_ibo_atom_reps, B_num_mols,&
                     width_params, lb_kernel_mat, AA_products, BB_products)
@@ -69,8 +70,8 @@ END SUBROUTINE
 SUBROUTINE flinear_base_kernel_mat(num_scal_reps,&
                     A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
                     B_ibo_atom_sreps, B_rhos, B_max_tot_num_ibo_atom_reps, B_num_mols,&
-                    width_params, kernel_mat, AA_products, BB_products)
-use foml_module, only : flinear_base_kernel_row, flin_base_self_products
+                    width_params, kernel_mat)
+use foml_module, only : flinear_base_kernel_mat_with_opt
 implicit none
 integer, intent(in):: num_scal_reps
 integer, intent(in):: A_max_tot_num_ibo_atom_reps, A_num_mols
@@ -85,55 +86,15 @@ double precision, dimension(B_max_tot_num_ibo_atom_reps, B_num_mols),&
     intent(in):: B_rhos
 double precision, dimension(num_scal_reps), intent(in):: width_params
 double precision, dimension(A_num_mols, B_num_mols), intent(inout):: kernel_mat
-double precision, dimension(A_num_mols), intent(inout):: AA_products
-double precision, dimension(B_num_mols), intent(inout):: BB_products
-double precision, dimension(num_scal_reps, A_max_tot_num_ibo_atom_reps,&
-                                                A_num_mols):: A_ibo_atom_sreps_scaled
-double precision, dimension(num_scal_reps, B_max_tot_num_ibo_atom_reps,&
-                                                B_num_mols):: B_ibo_atom_sreps_scaled
-integer:: B_mol_counter
 
-call scalar_rep_resc(A_ibo_atom_sreps_scaled, A_ibo_atom_sreps, width_params, num_scal_reps,&
-                                        A_max_tot_num_ibo_atom_reps, A_num_mols)
-call scalar_rep_resc(B_ibo_atom_sreps_scaled, B_ibo_atom_sreps, width_params, num_scal_reps,&
-                                        B_max_tot_num_ibo_atom_reps, B_num_mols)
 
-call flin_base_self_products(num_scal_reps, A_ibo_atom_sreps_scaled, A_rhos,&
-                            A_max_tot_num_ibo_atom_reps, A_num_mols, AA_products)
-call flin_base_self_products(num_scal_reps, B_ibo_atom_sreps_scaled, B_rhos,&
-                            B_max_tot_num_ibo_atom_reps, B_num_mols, BB_products)
-
-!$OMP PARALLEL DO
-do B_mol_counter = 1, B_num_mols
-    call flinear_base_kernel_row(num_scal_reps,&
-            A_ibo_atom_sreps_scaled, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
-            B_ibo_atom_sreps_scaled(:, :, B_mol_counter), B_rhos(:, B_mol_counter), B_max_tot_num_ibo_atom_reps,&
-            kernel_mat(:, B_mol_counter))
-enddo
-!$OMP END PARALLEL DO
+call flinear_base_kernel_mat_with_opt(num_scal_reps,&
+                    A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
+                    B_ibo_atom_sreps, B_rhos, B_max_tot_num_ibo_atom_reps, B_num_mols,&
+                    width_params, kernel_mat)
 
 END SUBROUTINE flinear_base_kernel_mat
 
 
-
-
-SUBROUTINE scalar_rep_resc(array_out, array_in, width_params, dim1, dim2, dim3)
-implicit none
-integer, intent(in):: dim1, dim2, dim3
-double precision, dimension(dim1, dim2, dim3), intent(in):: array_in
-double precision, dimension(dim1, dim2, dim3), intent(inout):: array_out
-double precision, dimension(dim1), intent(in):: width_params
-integer:: i2, i3
-
-!$OMP PARALLEL DO
-    do i3=1, dim3
-        do i2=1, dim2
-            array_out(:, i2, i3)=array_in(:, i2, i3)/width_params
-        enddo
-    enddo
-!$OMP END PARALLEL DO
-
-
-END SUBROUTINE
 
 

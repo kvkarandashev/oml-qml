@@ -35,7 +35,7 @@ from .foml_kernels import fgmo_kernel
 
 
 #   Randomly select some OML_compound objects and combine their orbital representations (type OML_ibo_rep) into a list.
-def random_ibo_sample(oml_comp_array, num_sampled_mols=None, pair_reps=False):
+def random_ibo_sample(oml_comp_array, num_sampled_mols=None, pair_reps=True):
     sample_mols=random_sample_length_checked(oml_comp_array, num_sampled_mols)
     sample_orbs=[]
     for mol in sample_mols:
@@ -81,7 +81,7 @@ def sqrt_sign_checked(val):
 
 #Related to the GMO kernel
 class GMO_kernel_params:
-    def __init__(self, width_params=None, final_sigma=1.0, normalize_lb_kernel=False, parallel=False, use_Fortran=True):
+    def __init__(self, width_params=None, final_sigma=1.0, normalize_lb_kernel=False, parallel=False, use_Fortran=True, use_Gaussian_kernel=False, pair_reps=True):
         self.width_params=width_params
         if self.width_params is not None:
             self.width_params=jnp.array(self.width_params)
@@ -92,6 +92,8 @@ class GMO_kernel_params:
         self.use_Fortran=use_Fortran
         self.normalize_lb_kernel=normalize_lb_kernel
         self.parallel=parallel
+        self.use_Gaussian_kernel=use_Gaussian_kernel
+        self.pair_reps=pair_reps
     def update_width(self, width_params):
         self.width_params=jnp.array(width_params)
         self.inv_sq_width_params=self.width_params**(-2)
@@ -131,8 +133,8 @@ def count_ibo_atom_reps(oml_comp):
     return output
 
 
-def generate_GMO_kernel(A, B, kernel_params, pair_reps=False):
-    if pair_reps:
+def generate_GMO_kernel(A, B, kernel_params):
+    if kernel_params.pair_reps:
         Ac=pair_GMO_kernel_input(A)
         Bc=pair_GMO_kernel_input(B)
     else:
@@ -140,39 +142,53 @@ def generate_GMO_kernel(A, B, kernel_params, pair_reps=False):
         Bc=GMO_kernel_input(B)
     if kernel_params.use_Fortran:
         kernel_mat = np.empty((Ac.num_mols, Bc.num_mols), order='F')
-        fgmo_kernel(Ac.max_num_scalar_reps,
+        if kernel_params.use_Gaussian_kernel:
+            fgmo_kernel(Ac.max_num_scalar_reps,
                     Ac.ibo_atom_sreps.T, Ac.rhos.T, Ac.max_tot_num_ibo_atom_reps, Ac.num_mols,
                     Bc.ibo_atom_sreps.T, Bc.rhos.T, Bc.max_tot_num_ibo_atom_reps, Bc.num_mols,
                     kernel_params.width_params, kernel_params.final_sigma, kernel_params.normalize_lb_kernel, kernel_mat)
+        else:
+            flinear_base_kernel_mat(Ac.max_num_scalar_reps,
+                    Ac.ibo_atom_sreps.T, Ac.rhos.T, Ac.max_tot_num_ibo_atom_reps, Ac.num_mols,
+                    Bc.ibo_atom_sreps.T, Bc.rhos.T, Bc.max_tot_num_ibo_atom_reps, Bc.num_mols,
+                    kernel_params.width_params, kernel_mat)
     else:
         jconfig.update("jax_enable_x64", True)
         if kernel_params.parallel:
             return jnp.array(embarassingly_parallel(GMO_kernel_row, zip(Ac.rhos, Ac.ibo_atom_sreps), Bc, kernel_params))
         else:
-            return jit(jax_gen_GMO_kernel, static_argnums=(6,))(Ac.rhos, Ac.ibo_atom_sreps, Bc.rhos,
-                        Bc.ibo_atom_sreps, kernel_params.inv_sq_width_params, kernel_params.final_sigma, kernel_params.normalize_lb_kernel)
+            return jit(jax_gen_GMO_kernel, static_argnums=(6,7))(Ac.rhos, Ac.ibo_atom_sreps, Bc.rhos,
+                        Bc.ibo_atom_sreps, kernel_params.inv_sq_width_params, kernel_params.final_sigma, kernel_params.normalize_lb_kernel,
+                        kernel_params.use_Gaussian_kernel)
     return kernel_mat
 
 def GMO_kernel_row(A_tuple, Bc, kernel_params):
-    return jit(jax_GMO_kernel_row, static_argnums=(6,))(A_tuple[0], A_tuple[1], Bc.rhos, Bc.ibo_atom_sreps, kernel_params.inv_sq_width_params, kernel_params.final_sigma, kernel_params.normalize_lb_kernel)
+    return jit(jax_GMO_kernel_row, static_argnums=(6,7))(A_tuple[0], A_tuple[1], Bc.rhos, Bc.ibo_atom_sreps, kernel_params.inv_sq_width_params,
+                kernel_params.final_sigma, kernel_params.normalize_lb_kernel, kernel_params.use_Gaussian_kernel)
 
-def jax_gen_GMO_kernel(A_rhos, A_sreps, B_rhos, B_sreps, inv_sq_width_params, final_sigma, normalize_lb_kernel):
-    return vmap(jax_GMO_kernel_row, in_axes=(0, 0, None, None, None, None, None))(A_rhos, A_sreps, B_rhos, B_sreps, inv_sq_width_params, final_sigma, normalize_lb_kernel)
+def jax_gen_GMO_kernel(A_rhos, A_sreps, B_rhos, B_sreps, inv_sq_width_params, final_sigma, normalize_lb_kernel, use_Gaussian_kernel):
+    return vmap(jax_GMO_kernel_row, in_axes=(0, 0, None, None, None, None, None, None))(A_rhos, A_sreps, B_rhos, B_sreps, inv_sq_width_params,
+                                                                                    final_sigma, normalize_lb_kernel, use_Gaussian_kernel)
 
 #   TO-DO Would vmap accelerate this?
-def jax_GMO_kernel_row(A_rho, A_srep, B_rhos, B_sreps, inv_sq_width_params, final_sigma, normalize_lb_kernel):
-    return vmap(jax_GMO_kernel_element, in_axes=(None, None, 0, 0, None, None, None)) (A_rho, A_srep, B_rhos, B_sreps, inv_sq_width_params, final_sigma, normalize_lb_kernel)
+def jax_GMO_kernel_row(A_rho, A_srep, B_rhos, B_sreps, inv_sq_width_params, final_sigma, normalize_lb_kernel, use_Gaussian_kernel):
+    return vmap(jax_GMO_kernel_element, in_axes=(None, None, 0, 0, None, None, None, None)) (A_rho, A_srep, B_rhos, B_sreps,
+                                                inv_sq_width_params, final_sigma, normalize_lb_kernel, use_Gaussian_kernel)
 
-def jax_GMO_kernel_element(A_rho, A_srep, B_rho, B_srep, inv_sq_width_params, final_sigma, normalize_lb_kernel):
+def jax_GMO_kernel_element(A_rho, A_srep, B_rho, B_srep, inv_sq_width_params, final_sigma, normalize_lb_kernel, use_Gaussian_kernel):
     AB=jax_GMO_lb_kernel_element(A_rho, A_srep, B_rho, B_srep, inv_sq_width_params)
-    AA=jax_GMO_lb_sq_norm(A_rho, A_srep, inv_sq_width_params)
-    BB=jax_GMO_lb_sq_norm(B_rho, B_srep, inv_sq_width_params)
-    if normalize_lb_kernel:
-        sq_dist=2*(1.0-AB/jnp.sqrt(AA*BB))
+    if use_Gaussian_kernel:
+        AA=jax_GMO_lb_sq_norm(A_rho, A_srep, inv_sq_width_params)
+        BB=jax_GMO_lb_sq_norm(B_rho, B_srep, inv_sq_width_params)
+        if normalize_lb_kernel:
+            sq_dist=2*(1.0-AB/jnp.sqrt(AA*BB))
+        else:
+            sq_dist=AA+BB-2*AB
+        return jnp.exp(-sq_dist/2/final_sigma**2)
     else:
-        sq_dist=AA+BB-2*AB
-    return jnp.exp(-sq_dist/2/final_sigma**2)
-        
+        return AB
+
+
 def jax_GMO_lb_kernel_element(A_rho, A_srep, B_rho, B_srep, inv_sq_width_params):
     lb_kernel=0.0
     #TO-DO A good way to replace this with jax.lax.scan?

@@ -86,22 +86,7 @@ class OML_representation(representation):
             new_list=comp_list
         else:
             new_list=self.compound_list(xyz_list)
-        if disable_openmp:
-            temp_dat_name="tmp_arr.tmp"
-            temp_rep_name="tmp_rep.tmp"
-            plf=open(temp_dat_name, 'wb')
-            pickle.dump(new_list, plf)
-            plf.close()
-
-            plf=open(temp_rep_name, 'wb')
-            pickle.dump(self.rep_params, plf)
-            plf.close()
-            subprocess.run(["oml_gen_orb_reps.sh", temp_dat_name, temp_rep_name])
-            plf=open(temp_dat_name, 'rb')
-            new_list=pickle.load(plf)
-            plf.close()
-        else:
-            new_list.generate_orb_reps(self.rep_params)
+        new_list.generate_orb_reps(self.rep_params, disable_openmp=disable_openmp)
         return new_list
     def __str__(self):
         return "OML_rep,"+str(self.rep_params)
@@ -109,15 +94,16 @@ class OML_representation(representation):
         
 class OML_Slater_pair_rep(OML_representation):
     def __init__(self, ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
-                    fock_based_coup_mat=False, num_fbcm_omegas=2, second_orb_type="IBO_HOMO_removed", calc_type="HF"):
+                    fock_based_coup_mat=False, num_fbcm_omegas=2, second_charge=0, second_orb_type="standard_IBO", calc_type="HF"):
         super().__init__(ibo_atom_rho_comp=ibo_atom_rho_comp, max_angular_momentum=max_angular_momentum,
                 use_Fortran=use_Fortran, fock_based_coup_mat=fock_based_coup_mat, num_fbcm_omegas=num_fbcm_omegas)
         self.second_orb_type=second_orb_type
         self.calc_type=calc_type
+        self.second_charge=second_charge
     def xyz2compound(self, xyz=None):
-        return qml.oml_compound.OML_Slater_pair(xyz=xyz, calc_type=self.calc_type, second_orb_type=self.second_orb_type)
+        return qml.oml_compound.OML_Slater_pair(xyz=xyz, calc_type=self.calc_type, second_charge=self.second_charge, second_orb_type=self.second_orb_type)
     def compound_list(self, xyz_list):
-        return qml.OML_Slater_pair_list_from_xyzs(xyz_list, calc_type=self.calc_type, second_orb_type=self.second_orb_type)
+        return qml.OML_Slater_pair_list_from_xyzs(xyz_list, calc_type=self.calc_type, second_charge=self.second_charge, second_orb_type=self.second_orb_type)
     def __str__(self):
         return "OML_Slater_pair,"+self.second_orb_type+","+str(self.rep_params)
 
@@ -165,17 +151,16 @@ class Gaussian_kernel_function(kernel_function):
 
 class OML_GMO_kernel_function(kernel_function):
     def __init__(self, lambda_val=1e-9, final_sigma=1.0, sigma_rescale=1.0, use_Fortran=True, pair_reps=False,
-                    normalize_lb_kernel=False):
+                    normalize_lb_kernel=False, use_Gaussian_kernel=False):
         self.kernel_params=qml.oml_kernels.GMO_kernel_params(final_sigma=final_sigma, use_Fortran=use_Fortran,
-                        normalize_lb_kernel=normalize_lb_kernel)
+                        normalize_lb_kernel=normalize_lb_kernel, use_Gaussian_kernel=use_Gaussian_kernel, pair_reps=pair_reps)
         self.lambda_val=lambda_val
         self.sigma_rescale=sigma_rescale
-        self.pair_reps=pair_reps
     def adjust_hyperparameters(self, compound_array):
-        orb_sample=qml.oml_kernels.random_ibo_sample(compound_array, pair_reps=self.pair_reps)
+        orb_sample=qml.oml_kernels.random_ibo_sample(compound_array, pair_reps=self.kernel_params.pair_reps)
         self.kernel_params.update_width(qml.oml_kernels.oml_ensemble_widths_estimate(orb_sample)/self.sigma_rescale)
     def kernel_matrix(self, arr1, arr2):
-        return qml.oml_kernels.generate_GMO_kernel(arr1, arr2, self.kernel_params, pair_reps=self.pair_reps)
+        return qml.oml_kernels.generate_GMO_kernel(arr1, arr2, self.kernel_params)
     def __str__(self):
         return "GMO,sigma_rescale:"+str(self.sigma_rescale)+",fin_sigma:"+str(self.kernel_params.final_sigma)
 
@@ -231,23 +216,21 @@ def ln_lr_slope(x_vals, y_vals):
 ### END
 
 ### Routines for handling training array data.
-def import_quantity_array(xyz_list, quantity, delta_learning_params=None):
-    output=[]
-    for f in xyz_list:
-        added_val=quantity.extract_xyz(f)
-        if delta_learning_params!=None:
-            if delta_learning_params.use_delta_learning:
-                comp=qml.oml_compound.OML_compound(xyz = f, mats_savefile = f, calc_type=delta_learning_params.calc_type)
-                comp.run_calcs()
-                added_val-=quantity.OML_comp_extract_byprod(comp)
-        output.append(added_val)
+def import_quantity_array(xyz_list, quantity, delta_learning_params=None, disable_openmp=True):
+    output=qml.python_parallelization.embarassingly_parallel(import_quantity_val, xyz_list, (quantity, delta_learning_params), disable_openmp=disable_openmp)
     return jnp.array(output)
 
+def import_quantity_val(xyz_file, quantity, delta_learning_params=None):
+    added_val=quantity.extract_xyz(xyz_file)
+    if delta_learning_params!=None:
+        if delta_learning_params.use_delta_learning:
+            added_val-=quantity.OML_calc_quant(xyz_file)
+    return added_val
 ### END
 
 ### An auxiliary class for storing parameters for how delta_learning is used.
 class Delta_learning_parameters:
-    def __init__(self, use_delta_learning=False, calc_type="IBO_HF_min_bas"):
+    def __init__(self, use_delta_learning=False, calc_type="HF"):
         self.use_delta_learning=use_delta_learning
         self.calc_type=calc_type
 

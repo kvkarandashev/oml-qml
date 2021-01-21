@@ -23,7 +23,6 @@
 
 from .oml_compound import OML_compound, OML_Slater_pair
 from .python_parallelization import embarassingly_parallel
-from joblib import Parallel, delayed
 import os
 
 class OML_compound_list(list):
@@ -31,12 +30,10 @@ class OML_compound_list(list):
     """
     def run_calcs(self, pyscf_calc_params=None):
         self.embarassingly_parallelize(self, after_run_calcs, pyscf_calc_params)
-    def bias_orb_reps(self, rep_params):
-        self.embarassingly_parallelize(after_bias_orb_reps, rep_params)
-    def generate_orb_reps(self, rep_params):
-        self.embarassingly_parallelize(after_gen_orb_reps, rep_params)
-    def embarassingly_parallelize(self, func_in, *args):
-        new_vals=embarassingly_parallel(func_in, self, *args)
+    def generate_orb_reps(self, rep_params, disable_openmp=True):
+        self.embarassingly_parallelize(after_gen_orb_reps, rep_params, disable_openmp=disable_openmp)
+    def embarassingly_parallelize(self, func_in, other_args, disable_openmp=True):
+        new_vals=embarassingly_parallel(func_in, self, other_args, disable_openmp=disable_openmp)
         for i in range(len(self)):
             self[i]=new_vals[i]
 
@@ -49,8 +46,8 @@ def after_gen_orb_reps(oml_comp, rep_params):
     oml_comp.generate_orb_reps(rep_params)
     return oml_comp
 
-def OML_compound_list_from_xyzs(xyz_files):
+def OML_compound_list_from_xyzs(xyz_files, disable_openmp=True):
     return OML_compound_list([OML_compound(xyz = xyz_file, mats_savefile = xyz_file) for xyz_file in xyz_files])
     
-def OML_Slater_pair_list_from_xyzs(xyz_files, calc_type="HF", second_orb_type="IBO_HOMO_removed"):
-    return OML_compound_list([OML_Slater_pair(xyz = xyz_file, mats_savefile = xyz_file, calc_type=calc_type, second_orb_type=second_orb_type) for xyz_file in xyz_files])
+def OML_Slater_pair_list_from_xyzs(xyz_files, calc_type="HF", second_orb_type="standard_IBO", second_charge=0, disable_openmp=True):
+    return OML_compound_list([OML_Slater_pair(xyz = xyz_file, mats_savefile = xyz_file, calc_type=calc_type, second_charge=second_charge, second_orb_type=second_orb_type) for xyz_file in xyz_files])

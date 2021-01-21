@@ -17,17 +17,17 @@ tested_xyzs_2=random.Random(seed+1).sample(all_xyzs, num_test_mols_2)
 logfile=logfile(logfile_name)
 
 my_representation=OML_representation(max_angular_momentum=1, use_Fortran=True, ibo_atom_rho_comp=0.95)
-oml_compounds_1=my_representation.init_compound_list(xyz_list=tested_xyzs_1, disable_openmp=True) # will run OMP_NUM_THREADS python processes each with OpenMP threading disabled.
-oml_compounds_2=my_representation.init_compound_list(xyz_list=tested_xyzs_2, disable_openmp=False) # will run OML_NUM_PROC python processes with OMP_NUM_THREADS OpenMP threads.
+oml_compounds_1=my_representation.init_compound_list(xyz_list=tested_xyzs_1, disable_openmp=True)
+oml_compounds_2=my_representation.init_compound_list(xyz_list=tested_xyzs_2, disable_openmp=False)
 
-oml_samp_orbs=qml.oml_kernels.random_ibo_sample(oml_compounds_1)
+oml_samp_orbs=qml.oml_kernels.random_ibo_sample(oml_compounds_1, pair_reps=False)
 
 width_params=qml.oml_kernels.oml_ensemble_widths_estimate(oml_samp_orbs)
 
 logfile.write("Width params")
 logfile.write(width_params)
 
-kernel_params=qml.oml_kernels.GMO_kernel_params(width_params=width_params, final_sigma=0.5, use_Fortran=True, normalize_lb_kernel=True)
+kernel_params=qml.oml_kernels.GMO_kernel_params(width_params=width_params, final_sigma=0.5, use_Fortran=True, normalize_lb_kernel=True, use_Gaussian_kernel=True, pair_reps=False)
 
 logfile.write("xyz list 1")
 logfile.write(tested_xyzs_1)

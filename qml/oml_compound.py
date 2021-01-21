@@ -41,10 +41,11 @@ class OML_compound(Compound):
                           or saved to the file otherwise.
         calc_type       - type of the calculation (for now only HF with IBO localization and the default basis set are supported).
     """
-    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="min_bas", used_orb_type="standard_IBO"):
+    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="min_bas", used_orb_type="standard_IBO", charge=0):
         super().__init__(xyz=xyz)
 
         self.calc_type=calc_type
+        self.charge=charge
         self.mats_savefile=mats_savefile
         self.pyscf_chkfile=None
         self.basis=basis
@@ -76,6 +77,8 @@ class OML_compound(Compound):
             self.ovlp_mat=precalc_mats["ovlp_mat"]
             self.iao_mats=precalc_mats["iao_mats"]
             self.ibo_mats=precalc_mats["ibo_mats"]
+            if self.calc_type=="UHF_geom_opt":
+                self.opt_geom=precalc_mats["opt_geom"]
         else:
             self.mo_coeff=None
             self.mo_occ=None
@@ -89,6 +92,8 @@ class OML_compound(Compound):
             self.ovlp_mat=None
             self.iao_mats=None
             self.ibo_mats=None
+            if self.calc_type=="UHF_geom_opt":
+                self.opt_geom=None
         self.orb_reps=[]
     def run_calcs(self, pyscf_calc_params=None):
         """ Runs the ab initio calculations if they are necessary.
@@ -104,8 +109,13 @@ class OML_compound(Compound):
             pyscf_mol=self.generate_pyscf_mol()
             if self.calc_type=="HF":
                 mf=scf.RHF(pyscf_mol)
-            else:
+            else: # "UHF" or "UHF_geom_opt"
                 mf=scf.UHF(pyscf_mol)
+                if self.calc_type=="UHF_geom_opt":
+                    from pyscf.geomopt.geometric_solver import optimize
+                    optimized_mol=optimize(mf)
+                    self.opt_geom=optimized_mol.atom_coords(unit='Ang')
+                    mf=scf.UHF(optimized_mol)
             mf.chkfile=self.pyscf_chkfile
             if isfile(self.pyscf_chkfile):
                 mf.init_guess='chkfile'
@@ -137,9 +147,12 @@ class OML_compound(Compound):
             if self.mats_savefile is not None:
                 #TO-DO Check ways for doing it in a less ugly way.
                 savefile = open(self.mats_savefile, "wb")
-                pickle.dump({"mo_coeff" : self.mo_coeff, "mo_occ" : self.mo_occ, "mo_energy" : self.mo_energy, "aos" : self.aos,
+                saved_data={"mo_coeff" : self.mo_coeff, "mo_occ" : self.mo_occ, "mo_energy" : self.mo_energy, "aos" : self.aos,
                                     "j_mat" : self.j_mat, "k_mat" : self.k_mat, "fock_mat" : self.fock_mat, "ovlp_mat" : self.ovlp_mat,
-                                    "iao_mats" : self.iao_mats, "ibo_mats" : self.ibo_mats, "atom_ao_ranges" : self.atom_ao_ranges}, savefile)
+                                    "iao_mats" : self.iao_mats, "ibo_mats" : self.ibo_mats, "atom_ao_ranges" : self.atom_ao_ranges}
+                if self.calc_type=="UHF_geom_opt":
+                    saved_data["opt_geom"]=self.opt_geom
+                pickle.dump(saved_data, savefile)
                 savefile.close()
     def generate_orb_reps(self, rep_params):
         """ Generates orbital representation.
@@ -180,6 +193,8 @@ class OML_compound(Compound):
         mol=gto.Mole()
         # atom_coords should be in Angstrom.
         mol.atom=[ [atom_type, atom_coords] for atom_type, atom_coords in zip(self.atomtypes, self.coordinates)]
+        mol.charge=self.charge
+        mol.spin=self.charge%2
         mol.build()
         return mol
     def alter_mo_occ(self, mo_occ):
@@ -246,9 +261,9 @@ class OML_pyscf_calc_params:
 
 
 class OML_Slater_pair:
-    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="min_bas", second_orb_type="IBO_HOMO_removed"):
+    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="min_bas", second_charge=0, second_orb_type="standard_IBO"):
         comp1=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type, basis="min_bas")
-        comp2=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type, basis="min_bas", used_orb_type=second_orb_type)
+        comp2=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type, basis="min_bas", charge=second_charge, used_orb_type=second_orb_type)
         self.comps=[comp1, comp2]
     def run_calcs(self, pyscf_calc_params):
         self.comps[0].run_calcs(pyscf_calc_params=pyscf_calc_params)
