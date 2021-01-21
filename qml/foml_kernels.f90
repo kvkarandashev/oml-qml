@@ -76,16 +76,12 @@ implicit none
 integer, intent(in):: num_scal_reps
 integer, intent(in):: A_max_tot_num_ibo_atom_reps, A_num_mols
 integer, intent(in):: B_max_tot_num_ibo_atom_reps, B_num_mols
-double precision, dimension(num_scal_reps,&
-    A_max_tot_num_ibo_atom_reps, A_num_mols), intent(in):: A_ibo_atom_sreps
-double precision, dimension(num_scal_reps,&
-    B_max_tot_num_ibo_atom_reps, B_num_mols), intent(in):: B_ibo_atom_sreps
-double precision, dimension(A_max_tot_num_ibo_atom_reps, A_num_mols),&
-    intent(in):: A_rhos
-double precision, dimension(B_max_tot_num_ibo_atom_reps, B_num_mols),&
-    intent(in):: B_rhos
-double precision, dimension(num_scal_reps), intent(in):: width_params
-double precision, dimension(A_num_mols, B_num_mols), intent(inout):: kernel_mat
+double precision, dimension(:, :, :), intent(in):: A_ibo_atom_sreps
+double precision, dimension(:, :, :), intent(in):: B_ibo_atom_sreps
+double precision, dimension(:, :), intent(in):: A_rhos
+double precision, dimension(:, :), intent(in):: B_rhos
+double precision, dimension(:), intent(in):: width_params
+double precision, dimension(:, :), intent(inout):: kernel_mat
 
 
 call flinear_base_kernel_mat_with_opt(num_scal_reps,&

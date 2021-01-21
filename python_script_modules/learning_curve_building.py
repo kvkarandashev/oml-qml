@@ -118,8 +118,9 @@ def combined_representation_arrays(compound_list):
 ### A family of classes corresponding to different kernel functions.
 
 class kernel_function:
-    def __init__(self, lambda_val):
+    def __init__(self, lambda_val=0.0, diag_el_unity=False):
         self.lambda_val=lambda_val
+        self.diag_el_unity=diag_el_unity
     def km_added_lambda(self, arr1, arr2):
         K=self.kernel_matrix(arr1,arr2)
         self.print_diag_deviation(K)
@@ -130,7 +131,9 @@ class kernel_function:
                 true_K=(K[i1,i2]+K[i2,i1])/2
                 K[i1,i2]=true_K
                 K[i2,i1]=true_K
-        K[jnp.diag_indices_from(K)] = 1.0+self.lambda_val
+        if self.diag_el_unity:
+            K[jnp.diag_indices_from(K)] = 1.0
+        K[jnp.diag_indices_from(K)]+=self.lambda_val
         return K
     def adjust_hyperparameters(self, compound_array):
         pass
@@ -138,9 +141,9 @@ class kernel_function:
         print("#TEST Total deviation of diagonal elements from 1: ", sum(abs(el-1.0) for el in matrix[jnp.diag_indices_from(matrix)]))
 
 class Gaussian_kernel_function(kernel_function):
-    def __init__(self, sigma, lambda_val=1e-9):
+    def __init__(self, sigma, lambda_val=0.0, diag_el_unity=False):
+        super().__init__(lambda_val=lambda_val, diag_el_unity=diag_el_unity)
         self.sigma=sigma
-        self.lambda_val=lambda_val
     def kernel_matrix(self, arr1, arr2):
         from qml.kernels import gaussian_kernel
         rep_arr1=combined_representation_arrays(arr1)
@@ -151,10 +154,10 @@ class Gaussian_kernel_function(kernel_function):
 
 class OML_GMO_kernel_function(kernel_function):
     def __init__(self, lambda_val=1e-9, final_sigma=1.0, sigma_rescale=1.0, use_Fortran=True, pair_reps=False,
-                    normalize_lb_kernel=False, use_Gaussian_kernel=False):
+                    normalize_lb_kernel=False, use_Gaussian_kernel=False, diag_el_unity=False):
+        super().__init__(lambda_val=lambda_val, diag_el_unity=diag_el_unity)
         self.kernel_params=qml.oml_kernels.GMO_kernel_params(final_sigma=final_sigma, use_Fortran=use_Fortran,
                         normalize_lb_kernel=normalize_lb_kernel, use_Gaussian_kernel=use_Gaussian_kernel, pair_reps=pair_reps)
-        self.lambda_val=lambda_val
         self.sigma_rescale=sigma_rescale
     def adjust_hyperparameters(self, compound_array):
         orb_sample=qml.oml_kernels.random_ibo_sample(compound_array, pair_reps=self.kernel_params.pair_reps)

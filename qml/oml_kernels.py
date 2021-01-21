@@ -28,7 +28,7 @@ from jax import jit, vmap
 from .python_parallelization import embarassingly_parallel
 import math
 
-from .foml_kernels import fgmo_kernel
+from .foml_kernels import fgmo_kernel, flinear_base_kernel_mat
 
 
 
