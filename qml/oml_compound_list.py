@@ -46,8 +46,9 @@ def after_gen_orb_reps(oml_comp, rep_params):
     oml_comp.generate_orb_reps(rep_params)
     return oml_comp
 
-def OML_compound_list_from_xyzs(xyz_files, disable_openmp=True):
-    return OML_compound_list([OML_compound(xyz = xyz_file, mats_savefile = xyz_file) for xyz_file in xyz_files])
+def OML_compound_list_from_xyzs(xyz_files, calc_type="HF", use_Huckel=False, optimize_geometry=False):
+    return OML_compound_list([OML_compound(xyz = xyz_file, mats_savefile = xyz_file, calc_type="HF", use_Huckel=False, optimize_geometry=False) for xyz_file in xyz_files])
     
-def OML_Slater_pair_list_from_xyzs(xyz_files, calc_type="HF", second_orb_type="standard_IBO", second_charge=0, disable_openmp=True):
-    return OML_compound_list([OML_Slater_pair(xyz = xyz_file, mats_savefile = xyz_file, calc_type=calc_type, second_charge=second_charge, second_orb_type=second_orb_type) for xyz_file in xyz_files])
+def OML_Slater_pair_list_from_xyzs(xyz_files, calc_type="HF", second_orb_type="standard_IBO", second_charge=0, basis="min_bas", use_Huckel=False, optimize_geometry=False):
+    return OML_compound_list([OML_Slater_pair(xyz = xyz_file, mats_savefile = xyz_file, calc_type=calc_type, second_charge=second_charge,
+                        second_orb_type=second_orb_type, basis="min_bas", use_Huckel=False, optimize_geometry=False) for xyz_file in xyz_files])

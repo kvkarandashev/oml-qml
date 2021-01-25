@@ -41,22 +41,26 @@ class OML_compound(Compound):
                           or saved to the file otherwise.
         calc_type       - type of the calculation (for now only HF with IBO localization and the default basis set are supported).
     """
-    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="min_bas", used_orb_type="standard_IBO", charge=0):
+    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="min_bas", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False, charge=0):
         super().__init__(xyz=xyz)
 
         self.calc_type=calc_type
         self.charge=charge
         self.mats_savefile=mats_savefile
-        self.pyscf_chkfile=None
         self.basis=basis
         self.used_orb_type=used_orb_type
+        self.use_Huckel=use_Huckel
+        self.optimize_geometry=optimize_geometry
         if self.mats_savefile is None:
             self.mats_created=False
         else:
             if not self.mats_savefile.endswith(".pkl"):
-                savefile_prename=self.mats_savefile+"."+self.calc_type+"."+self.basis
-                self.pyscf_chkfile=savefile_prename+".chkfile"
-                self.mats_savefile=savefile_prename+"."+self.used_orb_type+".pkl"
+                savefile_prename=self.mats_savefile+"."+self.calc_type+"."+self.basis+"."+self.used_orb_type
+                if self.use_Huckel:
+                    savefile_prename+="Huckel"+"."
+                if self.optimize_geometry:
+                    savefile_prename+="geom_opt"+"."
+                self.mats_savefile=savefile_prename+".pkl"
             self.mats_created=isfile(self.mats_savefile)
         if self.mats_created:
             # Import ab initio results from the savefile.
@@ -77,8 +81,8 @@ class OML_compound(Compound):
             self.ovlp_mat=precalc_mats["ovlp_mat"]
             self.iao_mats=precalc_mats["iao_mats"]
             self.ibo_mats=precalc_mats["ibo_mats"]
-            if self.calc_type=="UHF_geom_opt":
-                self.opt_geom=precalc_mats["opt_geom"]
+            if self.optimize_geometry:
+                self.opt_coords=precalc_mats["opt_coords"]
         else:
             self.mo_coeff=None
             self.mo_occ=None
@@ -92,8 +96,8 @@ class OML_compound(Compound):
             self.ovlp_mat=None
             self.iao_mats=None
             self.ibo_mats=None
-            if self.calc_type=="UHF_geom_opt":
-                self.opt_geom=None
+            if self.optimize_geometry:
+                self.opt_coords=None
         self.orb_reps=[]
     def run_calcs(self, pyscf_calc_params=None):
         """ Runs the ab initio calculations if they are necessary.
@@ -104,22 +108,15 @@ class OML_compound(Compound):
         """
         if not self.mats_created:
             # Run the pySCF calculations.
-            from pyscf import scf, lo
+            from pyscf import lo
             from qml.oml_representations import generate_ao_arr, generate_atom_ao_ranges
             pyscf_mol=self.generate_pyscf_mol()
-            if self.calc_type=="HF":
-                mf=scf.RHF(pyscf_mol)
-            else: # "UHF" or "UHF_geom_opt"
-                mf=scf.UHF(pyscf_mol)
-                if self.calc_type=="UHF_geom_opt":
-                    from pyscf.geomopt.geometric_solver import optimize
-                    optimized_mol=optimize(mf)
-                    self.opt_geom=optimized_mol.atom_coords(unit='Ang')
-                    mf=scf.UHF(optimized_mol)
-            mf.chkfile=self.pyscf_chkfile
-            if isfile(self.pyscf_chkfile):
-                mf.init_guess='chkfile'
-            mf.run()
+            mf=self.generate_pyscf_mf(pyscf_mol)
+            if self.optimize_geometry:
+                from pyscf.geomopt.geometric_solver import optimize
+                pyscf_mol=optimize(mf)
+                self.opt_coords=pyscf_mol.atom_coords(unit='Ang')
+                mf=generate_pyscf_mf(pyscf_mol)
             ### Special operations.
             if self.used_orb_type != "standard_IBO":
                 mf.mo_occ=self.alter_mo_occ(mf.mo_occ)
@@ -140,7 +137,7 @@ class OML_compound(Compound):
             for occ_orb_arr in occ_orb_arrs:
                 self.iao_mats.append(jnp.array(lo.iao.iao(pyscf_mol, occ_orb_arr)))
                 if pyscf_calc_params is None:
-                   self.ibo_mats.append(jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_arr)))
+                   self.ibo_mats.append(jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_arr, max_iter=5000)))
                 else:
                    self.ibo_mats.append(jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_arr, max_iter=pyscf_calc_params.ibo_max_iter,grad_tol=pyscf_calc_params.ibo_grad_tol)))
             self.mats_created=True
@@ -150,8 +147,8 @@ class OML_compound(Compound):
                 saved_data={"mo_coeff" : self.mo_coeff, "mo_occ" : self.mo_occ, "mo_energy" : self.mo_energy, "aos" : self.aos,
                                     "j_mat" : self.j_mat, "k_mat" : self.k_mat, "fock_mat" : self.fock_mat, "ovlp_mat" : self.ovlp_mat,
                                     "iao_mats" : self.iao_mats, "ibo_mats" : self.ibo_mats, "atom_ao_ranges" : self.atom_ao_ranges}
-                if self.calc_type=="UHF_geom_opt":
-                    saved_data["opt_geom"]=self.opt_geom
+                if self.optimize_geometry:
+                    saved_data["opt_coords"]=self.opt_coords
                 pickle.dump(saved_data, savefile)
                 savefile.close()
     def generate_orb_reps(self, rep_params):
@@ -197,6 +194,22 @@ class OML_compound(Compound):
         mol.spin=self.charge%2
         mol.build()
         return mol
+    def generate_pyscf_mf(self, pyscf_mol):
+        from pyscf import scf
+        if self.calc_type=="HF":
+            mf=scf.RHF(pyscf_mol)
+        else: # "UHF" or "UHF_geom_opt"
+            mf=scf.UHF(pyscf_mol)
+        if self.use_Huckel:
+            mf.max_cycle=-1
+            mf.init_guess='huckel'
+        else:
+            mf.max_cycle=5000
+        mf.run()
+        if not (mf.converged or self.use_Huckel):
+            quit("Error: an ab initio calculation failed to converge.")
+        return mf
+
     def alter_mo_occ(self, mo_occ):
         if self.calc_type == "HF":
             true_mo_occ=mo_occ
@@ -261,9 +274,12 @@ class OML_pyscf_calc_params:
 
 
 class OML_Slater_pair:
-    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="min_bas", second_charge=0, second_orb_type="standard_IBO"):
-        comp1=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type, basis="min_bas")
-        comp2=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type, basis="min_bas", charge=second_charge, used_orb_type=second_orb_type)
+    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="min_bas", second_charge=0,
+        second_orb_type="standard_IBO", optimize_geometry=False, use_Huckel=False):
+        comp1=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type,
+                        basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)
+        comp2=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type,
+                        basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry, charge=second_charge, used_orb_type=second_orb_type)
         self.comps=[comp1, comp2]
     def run_calcs(self, pyscf_calc_params):
         self.comps[0].run_calcs(pyscf_calc_params=pyscf_calc_params)

@@ -26,15 +26,16 @@ class KR_model:
         self.representation=representation
     def __str__(self):
         return str(self.kernel_function)+";"+str(self.representation)
-    def adjust_hyperparameters(self, xyz_array):
-        init_compound_array=self.representation.init_compound_list(xyz_list=xyz_array)
-        self.kernel_function.adjust_hyperparameters(init_compound_array)
+    def adjust_hyperparameters(self, xyz_list=None, init_compound_list=None):
+        if init_compound_list is None:
+            init_compound_list=self.representation.init_compound_list(xyz_list=xyz_list)
+        self.kernel_function.adjust_hyperparameters(init_compound_list)
     def adjust_representation(self, compound_array):
         return self.representation.adjust_representation(compound_array)
 
 ### A family of classes corresponding to different representations.
 class representation:
-    def check_param_validity(self, compound_array_in):
+    def check_param_validity(self, compound_list_in):
         pass
     def compound_list(self, xyz_list):
         return [self.xyz2compound(xyz=f) for f in xyz_list]
@@ -56,7 +57,7 @@ class CM_representation(representation):
     def __init__(self, max_size=0, sorting="row-norm"):
         self.max_size=max_size
         self.sorting=sorting
-    def check_param_validity(self, compound_array_in):
+    def check_param_validity(self, compound_list_in):
         self.max_size=max(self.max_size, find_max_size(compound_array_in))
     def initialized_compound(self, compound=None, xyz = None):
         comp=self.check_compound_defined(compound, xyz)
@@ -66,16 +67,62 @@ class CM_representation(representation):
         return "CM_rep,sorting:"+self.sorting
         
 
+class FCHL_representation(representation):
+    def __init__(self, max_size=0, neighbors=0, cut_distance=5.0):
+        self.max_size=max_size
+        self.neighbors=neighbors
+        self.cut_distance=cut_distance
+    def check_param_validity(self, compound_list_in):
+        self.max_size=max(self.max_size, find_max_size(compound_array_in))
+        self.neighbors=self.max_size
+    def initialized_compound(self, compound=None, xyz = None):
+        comp=self.check_compound_defined(compound, xyz)
+        comp.generate_fchl_representation(self, max_size = self.max_size, neighbors=self.neighbors,
+                            cut_distance=self.cut_distance)
+        return comp
+    def __str__(self):
+        return "FCHL"
+
+class SLATM_representation(representation):
+    def __init__(self, local=False, sigmas=[0.05,0.05], dgrids=[0.03,0.03], rcut=4.8, pbc='000',
+        alchemy=False, rpower=6):
+        self.local=local
+        self.sigmas=sigmas
+        self.dgrids=dgrids
+        self.rcut=rcut
+        self.pbc=pbc
+        self.alchemy=alchemy
+        self.rpower=rpower
+        self.mbtypes=None
+    def check_param_validity(self, compound_list_in):
+        from qml.representations import get_slatm_mbtypes
+        nuclear_charge_list=[]
+        for comp in compound_list_in:
+            nuclear_charge_list.append(comp.nuclear_charges)
+        self.mbtypes=get_slatm_mbtypes(nuclear_charge_list)
+    def initialized_compound(self, compound=None, xyz = None):
+        comp=self.check_compound_defined(compound, xyz)
+        comp.generate_slatm(self.mbtypes, local=self.local, sigmas=self.sigmas, dgrids=self.dgrids, rcut=self.rcut, pbc=self.pbc,
+        alchemy=self.alchemy, rpower=self.rpower)
+        return comp
+    def __str__(self):
+        return "SLATM"
+
+
+
 class OML_representation(representation):
     def __init__(self, ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
-                    fock_based_coup_mat=False, num_fbcm_omegas=2):
+                    fock_based_coup_mat=False, num_fbcm_omegas=2, use_Huckel=False, optimize_geometry=False, calc_type="HF"):
         self.rep_params=qml.oml_representations.OML_rep_params(ibo_atom_rho_comp=ibo_atom_rho_comp, max_angular_momentum=max_angular_momentum,
                                                                         use_Fortran=use_Fortran, fock_based_coup_mat=fock_based_coup_mat,
                                                                         num_fbcm_omegas=num_fbcm_omegas)
+        self.use_Huckel=use_Huckel
+        self.optimize_geometry=optimize_geometry
+        self.calc_type=calc_type
     def xyz2compound(self, xyz=None):
-        return qml.oml_compound.OML_compound(xyz = xyz, mats_savefile = xyz)
+        return qml.oml_compound.OML_compound(xyz = xyz, mats_savefile = xyz, use_Huckel=self.use_Huckel, optimize_geometry=self.optimize_geometry, calc_type=self.calc_type)
     def compound_list(self, xyz_list):
-        return qml.OML_compound_list_from_xyzs(xyz_list)
+        return qml.OML_compound_list_from_xyzs(xyz_list, use_Huckel=self.use_Huckel, optimize_geometry=self.optimize_geometry, calc_type=self.calc_type)
     def initialized_compound(self, compound=None, xyz = None):
         comp=self.check_compound_defined(compound, xyz)
         comp.generate_orb_reps(self.rep_params)
@@ -94,16 +141,19 @@ class OML_representation(representation):
         
 class OML_Slater_pair_rep(OML_representation):
     def __init__(self, ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
-                    fock_based_coup_mat=False, num_fbcm_omegas=2, second_charge=0, second_orb_type="standard_IBO", calc_type="HF"):
+                    fock_based_coup_mat=False, num_fbcm_omegas=2, second_charge=0, second_orb_type="standard_IBO",
+                    calc_type="HF", use_Huckel=False, optimize_geometry=False):
         super().__init__(ibo_atom_rho_comp=ibo_atom_rho_comp, max_angular_momentum=max_angular_momentum,
-                use_Fortran=use_Fortran, fock_based_coup_mat=fock_based_coup_mat, num_fbcm_omegas=num_fbcm_omegas)
+                use_Fortran=use_Fortran, fock_based_coup_mat=fock_based_coup_mat, num_fbcm_omegas=num_fbcm_omegas,
+                use_Huckel=use_Huckel, optimize_geometry=optimize_geometry, calc_type=calc_type)
         self.second_orb_type=second_orb_type
-        self.calc_type=calc_type
         self.second_charge=second_charge
     def xyz2compound(self, xyz=None):
-        return qml.oml_compound.OML_Slater_pair(xyz=xyz, calc_type=self.calc_type, second_charge=self.second_charge, second_orb_type=self.second_orb_type)
+        return qml.oml_compound.OML_Slater_pair(xyz=xyz, calc_type=self.calc_type, second_charge=self.second_charge,
+                                second_orb_type=self.second_orb_type, optimize_geometry=self.optimize_geometry, use_Huckel=self.use_Huckel)
     def compound_list(self, xyz_list):
-        return qml.OML_Slater_pair_list_from_xyzs(xyz_list, calc_type=self.calc_type, second_charge=self.second_charge, second_orb_type=self.second_orb_type)
+        return qml.OML_Slater_pair_list_from_xyzs(xyz_list, calc_type=self.calc_type, second_charge=self.second_charge, second_orb_type=self.second_orb_type,
+                                optimize_geometry=self.optimize_geometry, use_Huckel=self.use_Huckel)
     def __str__(self):
         return "OML_Slater_pair,"+self.second_orb_type+","+str(self.rep_params)
 
@@ -122,7 +172,7 @@ class kernel_function:
         self.lambda_val=lambda_val
         self.diag_el_unity=diag_el_unity
     def km_added_lambda(self, arr1, arr2):
-        K=self.kernel_matrix(arr1,arr2)
+        K=self.kernel_matrix(arr1, arr2)
         self.print_diag_deviation(K)
         # TO-DO: Check whether this is necessary:
         K_size=len(arr1)
@@ -140,20 +190,38 @@ class kernel_function:
     def print_diag_deviation(self, matrix):
         print("#TEST Total deviation of diagonal elements from 1: ", sum(abs(el-1.0) for el in matrix[jnp.diag_indices_from(matrix)]))
 
-class Gaussian_kernel_function(kernel_function):
+class standard_geometric_kernel_function(kernel_function):
+    def __init__(self, lambda_val=0.0, diag_el_unity=False):
+        super().__init__(lambda_val=lambda_val, diag_el_unity=diag_el_unity)
+    def make_kernel_input_arrs(self, arr1, arr2):
+        inp_arr1=combined_representation_arrays(arr1)
+        inp_arr2=combined_representation_arrays(arr2)
+        return inp_arr1, inp_arr2
+
+class Gaussian_kernel_function(standard_geometric_kernel_function):
     def __init__(self, sigma, lambda_val=0.0, diag_el_unity=False):
         super().__init__(lambda_val=lambda_val, diag_el_unity=diag_el_unity)
         self.sigma=sigma
     def kernel_matrix(self, arr1, arr2):
+        inp_arr1, inp_arr2=self.make_kernel_input_arrs(arr1, arr2)
         from qml.kernels import gaussian_kernel
-        rep_arr1=combined_representation_arrays(arr1)
-        rep_arr2=combined_representation_arrays(arr2)
-        return gaussian_kernel(rep_arr1, rep_arr2, self.sigma)
+        return gaussian_kernel(inp_arr1, inp_arr2, self.sigma)
     def __str__(self):
-        return "sigma:"+str(self.sigma)
+        return "Gaussian_KF,sigma:"+str(self.sigma)
+
+class Laplacian_kernel_function(standard_geometric_kernel_function):
+    def __init__(self, sigma, lambda_val=0.0, diag_el_unity=False):
+        super().__init__(lambda_val=lambda_val, diag_el_unity=diag_el_unity)
+        self.sigma=sigma
+    def kernel_matrix(self, arr1, arr2):
+        inp_arr1, inp_arr2=self.make_kernel_input_arrs(arr1, arr2)
+        from qml.kernels import laplacian_kernel
+        return laplacian_kernel(inp_arr1, inp_arr2, self.sigma)
+    def __str__(self):
+        return "Laplacian_KF,sigma:"+str(self.sigma)
 
 class OML_GMO_kernel_function(kernel_function):
-    def __init__(self, lambda_val=1e-9, final_sigma=1.0, sigma_rescale=1.0, use_Fortran=True, pair_reps=False,
+    def __init__(self, lambda_val=1e-9, final_sigma=1.0, sigma_rescale=1.0, use_Fortran=True, pair_reps=True,
                     normalize_lb_kernel=False, use_Gaussian_kernel=False, diag_el_unity=False):
         super().__init__(lambda_val=lambda_val, diag_el_unity=diag_el_unity)
         self.kernel_params=qml.oml_kernels.GMO_kernel_params(final_sigma=final_sigma, use_Fortran=use_Fortran,
@@ -165,9 +233,10 @@ class OML_GMO_kernel_function(kernel_function):
     def kernel_matrix(self, arr1, arr2):
         return qml.oml_kernels.generate_GMO_kernel(arr1, arr2, self.kernel_params)
     def __str__(self):
-        return "GMO,sigma_rescale:"+str(self.sigma_rescale)+",fin_sigma:"+str(self.kernel_params.final_sigma)
-
-
+        output="GMO,sigma_rescale:"+str(self.sigma_rescale)
+        if self.kernel_params.use_Gaussian_kernel:
+            output+=",fin_sigma:"+str(self.kernel_params.final_sigma)
+        return output
 ### END
 
 
@@ -311,8 +380,7 @@ def create_training_check_compounds(xyz_list, training_size, check_size, model, 
     check_xyzs=cutout_check_arr(xyz_list, check_size, hyperparameter_opt_set=hyperparameter_opt_set)
     training_comp_uninit=model.representation.compound_list(training_xyzs)
     check_comp_uninit=model.representation.compound_list(check_xyzs)
-    model.representation.check_param_validity(training_comp_uninit)
-    model.representation.check_param_validity(check_comp_uninit)
+    model.representation.check_param_validity(training_comp_uninit+check_comp_uninit)
     training_compounds=model.representation.init_compound_list(training_comp_uninit)
     check_compounds=model.representation.init_compound_list(check_comp_uninit)
     return training_compounds, check_compounds

@@ -7,54 +7,33 @@ from qm9_format_specs import Quantity
 import random
 from os.path import expanduser
 
-#training_sizes=[ 1 ]
-#model_scanning_size=1
-#check_size=1
-
-#QM9_dir="./test_mols"
-#num_iters=1
-
-training_sizes=[20, 40] #[ 7368, 14736, 29472, 58944, 117888 ]
-model_scanning_size=20 #100
+training_sizes=[20, 40]
+model_scanning_size=20
 check_size=10
-
-#training_sizes=[10, 20, 40]
-#model_scanning_size=5
-#check_size=10
-
 
 QM9_dir=expanduser("~")+"/QM9_formatted"
 num_iters=2
-
 
 seed=0
 lambda_val=1e-6
 
 seed_OML_hyperparams=1
 hyperparam_opt_number=40
-#hyperparam_opt_number=10
-
-rep_type="GMO_HOMO_opt"
 
 use_delta_learning=True
 
-#hyperparam_grid_separation=6 #6
+xyz_hyperparam_opt=random.Random(seed_OML_hyperparams).sample(dirs_xyz_list(QM9_dir), hyperparam_opt_number)
+scanned_models=[]
 
-# TO-DO ensure that different seeds are used for learning curves, hyperparameter optimization, and model parameter scanning.
-
-if rep_type=="CM":
-    scanned_models=[KR_model(kernel_type="Gaussian", rep_type="CM", Gaussian_sigma=sigma, lambda_val=lambda_val) for sigma in geom_progression(0.125, 2.0, 16)]
-else:
-    xyz_hyperparam_opt=random.Random(seed_OML_hyperparams).sample(dirs_xyz_list(QM9_dir), hyperparam_opt_number)
-    scanned_models=[]
-    for sigma_rescale in geom_progression(0.25, 2.0, 2):
-        for final_sigma in geom_progression(1.0, 2.0, 2):
-            cur_model=KR_model()
-            cur_model.representation=OML_representation(ibo_atom_rho_comp=0.9, use_Fortran=True, max_angular_momentum=1)
-            cur_model.kernel_function=OML_GMO_kernel_function(sigma_rescale=sigma_rescale, lambda_val=lambda_val, final_sigma=final_sigma, normalize_lb_kernel=True, use_Gaussian_kernel=True, pair_reps=False)
-            print("Generating hyperparameters: ", cur_model)
-            cur_model.adjust_hyperparameters(xyz_hyperparam_opt)
-            scanned_models.append(cur_model)
+for sigma_rescale in geom_progression(0.25, 2.0, 2):
+    for final_sigma in geom_progression(1.0, 2.0, 2):
+        cur_model=KR_model()
+        cur_model.representation=OML_representation(ibo_atom_rho_comp=0.9, use_Fortran=True, max_angular_momentum=1)
+        cur_model.kernel_function=OML_GMO_kernel_function(sigma_rescale=sigma_rescale, lambda_val=lambda_val,
+                        final_sigma=final_sigma, normalize_lb_kernel=True, use_Gaussian_kernel=True, pair_reps=False)
+        print("Generating hyperparameters: ", cur_model)
+        cur_model.adjust_hyperparameters(xyz_hyperparam_opt)
+        scanned_models.append(cur_model)
 
 dl_params=Delta_learning_parameters(use_delta_learning=use_delta_learning)
 
