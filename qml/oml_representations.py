@@ -40,15 +40,15 @@ class OML_rep_params:
 #                         ibo_atom_rho_comp of the electronic density.
 #   l_max               - maximal value of angular momentum.
     def __init__(self, tol_orb_cutoff=1.0e-6, en_bias_coeff=None, en_degen_tol=0.01, ibo_rho_comp=None, ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True, mult_coup_mat=False,
-                    mult_coup_mat_level=1, fock_based_coup_mat=False, num_fbcm_omegas=1, characteristic_energy=None, ibo_spectral_representation=False,
+                    mult_coup_mat_level=1, fock_based_coup_mat=False, num_fbcm_times=1, fbcm_delta_t=1.0, ibo_spectral_representation=False,
                     energy_rho_comp=1.0):
         self.tol_orb_cutoff=tol_orb_cutoff
         self.ibo_atom_rho_comp=ibo_atom_rho_comp
         self.max_angular_momentum=max_angular_momentum
         self.use_Fortran=use_Fortran
         self.fock_based_coup_mat=fock_based_coup_mat
-        self.num_fbcm_omegas=num_fbcm_omegas
-        self.characteristic_energy=characteristic_energy
+        self.num_fbcm_times=num_fbcm_times
+        self.fbcm_delta_t=fbcm_delta_t
         self.ibo_spectral_representation=ibo_spectral_representation
         self.energy_rho_comp=energy_rho_comp
     def __str__(self):
@@ -57,21 +57,21 @@ class OML_rep_params:
             str_out+=",char_energy:"+str(self.characteristic_energy)
         return str_out
 
-def gen_fock_based_coup_mats(rep_params, hf_orb_coeffs, hf_orb_energies, characteristic_energy):
+def gen_fock_based_coup_mats(rep_params, hf_orb_coeffs, hf_orb_energies):
     num_orbs=len(hf_orb_energies)
     inv_hf_orb_coeffs=np.linalg.inv(hf_orb_coeffs)
     if rep_params.use_Fortran:
-        output=np.zeros((num_orbs, num_orbs, rep_params.num_fbcm_omegas*2), order='F')
-        fgen_fock_ft_coup_mats(inv_hf_orb_coeffs, hf_orb_energies, characteristic_energy, num_orbs, rep_params.num_fbcm_omegas, output)
+        output=np.zeros((num_orbs, num_orbs, rep_params.num_fbcm_times*2), order='F')
+        fgen_fock_ft_coup_mats(inv_hf_orb_coeffs, hf_orb_energies, rep_params.fbcm_delta_t, num_orbs, rep_params.num_fbcm_times, output)
         return tuple(np.transpose(output))
     else:
         output=()
-        for freq_counter in range(rep_params.num_fbcm_omegas):
-            characteristic_time=(freq_counter+1)*math.pi/characteristic_energy
+        for freq_counter in range(rep_params.num_fbcm_times):
+            prop_time=(freq_counter+1)*rep_params.fbcm_delta_t
             for trigon_func in [math.cos, math.sin]:
                 new_mat=np.zeros((num_orbs, num_orbs))
                 for i, en in enumerate(hf_orb_energies):
-                    new_mat[i][i]=trigon_func(characteristic_time*en)
+                    new_mat[i][i]=trigon_func(prop_time*en)
                 new_mat=np.matmul(inv_hf_orb_coeffs.T, np.matmul(new_mat, inv_hf_orb_coeffs))
                 output=(*output, new_mat)
         return output

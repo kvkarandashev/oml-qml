@@ -6,7 +6,7 @@ num_procs_name="OML_NUM_PROCS"
 def oml_num_procs():
     try:
         return int(os.environ[num_procs_name])
-    except:
+    except LookupError:
         return 1
 
 def embarassingly_parallel(func, array, other_args, disable_openmp=True):

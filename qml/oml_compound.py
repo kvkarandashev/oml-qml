@@ -26,9 +26,13 @@ import jax.numpy as jnp
 import numpy as np
 import math
 import pickle
+#import subprocess, os
 from os.path import isfile
 
 neglect_orb_occ=0.1
+
+class pySCF_not_converged_error(Exception):
+    pass
 
 class OML_compound(Compound):
     """ 'Orbital Machine Learning (OML) compound' class is used to store data normally
@@ -57,9 +61,11 @@ class OML_compound(Compound):
             if not self.mats_savefile.endswith(".pkl"):
                 savefile_prename=self.mats_savefile+"."+self.calc_type+"."+self.basis+"."+self.used_orb_type
                 if self.use_Huckel:
-                    savefile_prename+="Huckel"+"."
+                    savefile_prename+="."+"Huckel"
                 if self.optimize_geometry:
-                    savefile_prename+="geom_opt"+"."
+                    savefile_prename+="."+"geom_opt"
+                if self.charge != 0:
+                    savefile_prename+="."+"charge_"+str(self.charge)
                 self.mats_savefile=savefile_prename+".pkl"
             self.mats_created=isfile(self.mats_savefile)
         if self.mats_created:
@@ -67,43 +73,42 @@ class OML_compound(Compound):
             savefile = open(self.mats_savefile, "rb")
             precalc_mats = pickle.load(savefile)
             savefile.close()
-            precalc_mats=np.load(self.mats_savefile, allow_pickle=True)
-            self.mo_coeff=precalc_mats["mo_coeff"]
-            self.mo_occ=precalc_mats["mo_occ"]
-            self.mo_energy=precalc_mats["mo_energy"]
-            self.aos=precalc_mats["aos"]
-            self.atom_ao_ranges=precalc_mats["atom_ao_ranges"]
+            precalc_vals=np.load(self.mats_savefile, allow_pickle=True)
+            self.mo_coeff=precalc_vals["mo_coeff"]
+            self.mo_occ=precalc_vals["mo_occ"]
+            self.mo_energy=precalc_vals["mo_energy"]
+            self.aos=precalc_vals["aos"]
+            self.atom_ao_ranges=precalc_vals["atom_ao_ranges"]
+            self.e_tot=precalc_vals["e_tot"]
 
-
-            self.j_mat=precalc_mats["j_mat"]
-            self.k_mat=precalc_mats["k_mat"]
-            self.fock_mat=precalc_mats["fock_mat"]
-            self.ovlp_mat=precalc_mats["ovlp_mat"]
-            self.iao_mats=precalc_mats["iao_mats"]
-            self.ibo_mats=precalc_mats["ibo_mats"]
+            self.j_mat=precalc_vals["j_mat"]
+            self.k_mat=precalc_vals["k_mat"]
+            self.fock_mat=precalc_vals["fock_mat"]
+            self.ovlp_mat=precalc_vals["ovlp_mat"]
+            self.iao_mat=precalc_vals["iao_mat"]
+            self.ibo_mat=precalc_vals["ibo_mat"]
             if self.optimize_geometry:
-                self.opt_coords=precalc_mats["opt_coords"]
+                self.opt_coords=precalc_vals["opt_coords"]
         else:
             self.mo_coeff=None
             self.mo_occ=None
             self.mo_energy=None
             self.aos=None
             self.atom_ao_ranges=None
+            self.e_tot=None
 
             self.j_mat=None
             self.k_mat=None
             self.fock_mat=None
             self.ovlp_mat=None
-            self.iao_mats=None
-            self.ibo_mats=None
+            self.iao_mat=None
+            self.ibo_mat=None
             if self.optimize_geometry:
                 self.opt_coords=None
         self.orb_reps=[]
     def run_calcs(self, pyscf_calc_params=None):
         """ Runs the ab initio calculations if they are necessary.
 
-            mf_chkfile          - name of pySCF checkfile.
-            mf_import_chkfile   - if True the pySCF checkfile will be used to restart pySCF calculation.
             pyscf_calc_params   - object of OML_pyscf_calc_params class containing parameters of the pySCF calculation. (To be made more useful.)
         """
         if not self.mats_created:
@@ -114,39 +119,42 @@ class OML_compound(Compound):
             mf=self.generate_pyscf_mf(pyscf_mol)
             if self.optimize_geometry:
                 from pyscf.geomopt.geometric_solver import optimize
+                #from pyscf.geomopt.berny_solver import optimize # I'm not sure that berny_solver works correctly.
                 pyscf_mol=optimize(mf)
                 self.opt_coords=pyscf_mol.atom_coords(unit='Ang')
-                mf=generate_pyscf_mf(pyscf_mol)
+                mf=self.generate_pyscf_mf(pyscf_mol)
             ### Special operations.
             if self.used_orb_type != "standard_IBO":
                 mf.mo_occ=self.alter_mo_occ(mf.mo_occ)
             ###
-            self.mo_coeff=jnp.array(mf.mo_coeff)
-            self.mo_occ=jnp.array(mf.mo_occ)
-            self.mo_energy=jnp.array(mf.mo_energy)
+            self.mo_coeff=self.adjust_spin_mat_dimen(mf.mo_coeff)
+            self.mo_occ=self.adjust_spin_mat_dimen(mf.mo_occ)
+            self.mo_energy=self.adjust_spin_mat_dimen(mf.mo_energy)
             self.aos=generate_ao_arr(pyscf_mol)
             self.atom_ao_ranges=generate_atom_ao_ranges(pyscf_mol)
+            self.e_tot=mf.e_tot
 
             occ_orb_arrs=self.occ_orbs()
-            self.j_mat=jnp.array(mf.get_j())
-            self.k_mat=jnp.array(mf.get_k())
-            self.fock_mat=jnp.array(mf.get_fock())
+            self.j_mat=self.adjust_spin_mat_dimen(mf.get_j())
+            self.k_mat=self.adjust_spin_mat_dimen(mf.get_k())
+            self.fock_mat=self.adjust_spin_mat_dimen(mf.get_fock())
             self.ovlp_mat=jnp.array(mf.get_ovlp())
-            self.iao_mats=[]
-            self.ibo_mats=[]
+            self.iao_mat=[]
+            self.ibo_mat=[]
             for occ_orb_arr in occ_orb_arrs:
-                self.iao_mats.append(jnp.array(lo.iao.iao(pyscf_mol, occ_orb_arr)))
+                self.iao_mat.append(jnp.array(lo.iao.iao(pyscf_mol, occ_orb_arr)))
                 if pyscf_calc_params is None:
-                   self.ibo_mats.append(jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_arr, max_iter=5000)))
+                   self.ibo_mat.append(jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_arr, max_iter=5000)))
                 else:
-                   self.ibo_mats.append(jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_arr, max_iter=pyscf_calc_params.ibo_max_iter,grad_tol=pyscf_calc_params.ibo_grad_tol)))
+                   self.ibo_mat.append(jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_arr, max_iter=pyscf_calc_params.ibo_max_iter,grad_tol=pyscf_calc_params.ibo_grad_tol)))
             self.mats_created=True
             if self.mats_savefile is not None:
                 #TO-DO Check ways for doing it in a less ugly way.
                 savefile = open(self.mats_savefile, "wb")
                 saved_data={"mo_coeff" : self.mo_coeff, "mo_occ" : self.mo_occ, "mo_energy" : self.mo_energy, "aos" : self.aos,
                                     "j_mat" : self.j_mat, "k_mat" : self.k_mat, "fock_mat" : self.fock_mat, "ovlp_mat" : self.ovlp_mat,
-                                    "iao_mats" : self.iao_mats, "ibo_mats" : self.ibo_mats, "atom_ao_ranges" : self.atom_ao_ranges}
+                                    "iao_mat" : self.iao_mat, "ibo_mat" : self.ibo_mat, "atom_ao_ranges" : self.atom_ao_ranges,
+                                    "e_tot" : self.e_tot}
                 if self.optimize_geometry:
                     saved_data["opt_coords"]=self.opt_coords
                 pickle.dump(saved_data, savefile)
@@ -158,22 +166,20 @@ class OML_compound(Compound):
         """
         if not self.mats_created:
             self.run_calcs()
-        #   Generate the array of orbital representations.
-        if rep_params.fock_based_coup_mat:
-            if rep_params.characteristic_energy is None:
-                characteristic_energy=self.HOMO_LUMO_gap()
+        for sj_mat, sk_mat, sfock_mat, siao_mat, sibo_mat, smo_coeff, smo_energy in zip(self.j_mat, self.k_mat, self.fock_mat,
+                                                                    self.iao_mat, self.ibo_mat, self.mo_coeff, self.mo_energy):
+            #   Generate the array of orbital representations.
+            if rep_params.fock_based_coup_mat:
+                coupling_matrices=gen_fock_based_coup_mats(rep_params, smo_coeff, smo_energy)
+                coupling_matrices=(*coupling_matrices, sfock_mat)
             else:
-                characteristic_energy=rep_params.characteristic_energy
-            coupling_matrices=gen_fock_based_coup_mats(rep_params, self.mo_coeff, self.mo_energy, characteristic_energy)
-            coupling_matrices=(*coupling_matrices, self.fock_mat)
-        else:
-            coupling_matrices=(self.fock_mat, self.j_mat, self.k_mat)
-        self.orb_reps=[]
-        for ibo_mat in self.ibo_mats:
-            if rep_params.ibo_spectral_representation: # I would be very funny if this representation proves to be useful.
-                self.orb_reps=generate_ibo_spectral_rep_array(ibo_mat, rep_params, self.orb_overlap, self.mo_coeff, self.mo_occ, self.mo_energy, self.HOMO_en())
-            else:
-                self.orb_reps=generate_ibo_rep_array(ibo_mat, rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)
+                coupling_matrices=(sfock_mat, sj_mat, sk_mat)
+            self.orb_reps=[]
+            for sibo_mat in self.ibo_mat:
+                self.orb_reps=generate_ibo_rep_array(sibo_mat, rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)
+#                if rep_params.ibo_spectral_representation: # It would be very funny if this representation proves to be useful.
+#                    self.orb_reps=generate_ibo_spectral_rep_array(sibo_mat, rep_params, self.orb_overlap, self.mo_coeff, self.mo_occ, self.mo_energy, self.HOMO_en())
+#                else:
     #   Find maximal value of angular momentum for AOs of current molecule.
     def find_max_angular_momentum(self):
         if not self.mats_created:
@@ -192,22 +198,28 @@ class OML_compound(Compound):
         mol.atom=[ [atom_type, atom_coords] for atom_type, atom_coords in zip(self.atomtypes, self.coordinates)]
         mol.charge=self.charge
         mol.spin=self.charge%2
+        if self.basis != "min_bas":
+            mol.basis=self.basis
         mol.build()
         return mol
     def generate_pyscf_mf(self, pyscf_mol):
         from pyscf import scf
         if self.calc_type=="HF":
             mf=scf.RHF(pyscf_mol)
-        else: # "UHF" or "UHF_geom_opt"
+        else: # "UHF"
             mf=scf.UHF(pyscf_mol)
+#        chkfile=subprocess.check_output(["mktemp", "-p", os.getcwd()])[:-1]
+#        mf.chkfile=chkfile
         if self.use_Huckel:
-            mf.max_cycle=-1
             mf.init_guess='huckel'
+            mf.max_cycle=-1
         else:
             mf.max_cycle=5000
         mf.run()
         if not (mf.converged or self.use_Huckel):
-            quit("Error: an ab initio calculation failed to converge.")
+            print("WARNING: A SCF calculation failed to converge at ", mf.max_cycle, " cycles.")
+            raise pySCF_not_converged_error
+#        subprocess.run(["rm", '-f', chkfile])
         return mf
 
     def alter_mo_occ(self, mo_occ):
@@ -231,15 +243,8 @@ class OML_compound(Compound):
         return mo_occ
 
     def occ_orbs(self):
-        # Array of occupied orbitals.
-        if self.calc_type=="HF":
-            mo_occ_arrs=[self.mo_occ]
-            mo_coeff_arrs=[self.mo_coeff]
-        else:
-            mo_occ_arrs=self.mo_occ
-            mo_coeff_arrs=self.mo_coeff
         output=[]
-        for mo_occ_arr, mo_coeff_arr in zip(mo_occ_arrs, mo_coeff_arrs):
+        for mo_occ_arr, mo_coeff_arr in zip(self.mo_occ, self.mo_coeff):
             cur_occ_orbs=[]
             for basis_func in mo_coeff_arr:
                 cur_line=[]
@@ -251,20 +256,24 @@ class OML_compound(Compound):
         return output
     def HOMO_en(self):
         # HOMO energy.
-        return self.mo_energy[self.LUMO_orb_id()-1]
+        return self.mo_energy[0][self.LUMO_orb_id()-1]
     def LUMO_en(self):
         # LUMO energy.
-        return self.mo_energy[self.LUMO_orb_id()]
+        return self.mo_energy[0][self.LUMO_orb_id()]
     def HOMO_LUMO_gap(self):
         return self.LUMO_en()-self.HOMO_en()
     def LUMO_orb_id(self):
         # index of the LUMO orbital.
-        for orb_id, occ in enumerate(self.mo_occ):
+        for orb_id, occ in enumerate(self.mo_occ[0]):
             if occ < neglect_orb_occ:
                 return orb_id
-                
-                
-                
+    def adjust_spin_mat_dimen(self, matrices):
+        if self.calc_type == "HF":
+            return jnp.array([matrices])
+        else:
+            return jnp.array(matrices)
+
+
 class OML_pyscf_calc_params:
 #   Parameters of how Fock orbitals and IBOs are calculated.
 #   For now just includes IBOs.
@@ -281,7 +290,7 @@ class OML_Slater_pair:
         comp2=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type,
                         basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry, charge=second_charge, used_orb_type=second_orb_type)
         self.comps=[comp1, comp2]
-    def run_calcs(self, pyscf_calc_params):
+    def run_calcs(self, pyscf_calc_params=None):
         self.comps[0].run_calcs(pyscf_calc_params=pyscf_calc_params)
         self.comps[1].run_calcs(pyscf_calc_params=pyscf_calc_params)
     def generate_orb_reps(self, rep_params):

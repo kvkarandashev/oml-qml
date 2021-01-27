@@ -108,25 +108,25 @@ integer:: ao1, ao2
 END SUBROUTINE
 
 !   hf_orb_coeffs - first index - basis function, second - molecular orbital.
-SUBROUTINE fgen_fock_ft_coup_mats(inv_hf_orb_coeffs, hf_orb_energies, characteristic_energy,&
-                                    num_orbs, num_fbcm_omegas, ft_fock_mats)
+SUBROUTINE fgen_fock_ft_coup_mats(inv_hf_orb_coeffs, hf_orb_energies, fbcm_delta_t,&
+                                    num_orbs, num_fbcm_times, ft_fock_mats)
 !   TO-DO why doesn't it work?
 !use fconstants, only : pi
 implicit none
 double precision, parameter:: pi=3.14159265358979323846
-integer, intent(in):: num_orbs, num_fbcm_omegas
+integer, intent(in):: num_orbs, num_fbcm_times
 double precision, intent(in), dimension(:, :):: inv_hf_orb_coeffs
 double precision, intent(in), dimension(:):: hf_orb_energies
-double precision, intent(in):: characteristic_energy
+double precision, intent(in):: fbcm_delta_t
 double precision, intent(inout), dimension(:, :, :):: ft_fock_mats
-double precision:: characteristic_time
+double precision:: propagation_time
 integer:: freq_counter, cos_or_sin, mat_counter
 
     mat_counter=1
-    do freq_counter=1, num_fbcm_omegas
-        characteristic_time=freq_counter*pi/characteristic_energy
+    do freq_counter=1, num_fbcm_times
+        propagation_time=freq_counter*pi*fbcm_delta_t
         do cos_or_sin=0, 1
-            call fgen_fock_ft_coup_mat(inv_hf_orb_coeffs, hf_orb_energies, characteristic_time,&
+            call fgen_fock_ft_coup_mat(inv_hf_orb_coeffs, hf_orb_energies, propagation_time,&
                                             (cos_or_sin==0), num_orbs, ft_fock_mats(:, :, mat_counter))
             mat_counter=mat_counter+1
         enddo
@@ -135,12 +135,12 @@ integer:: freq_counter, cos_or_sin, mat_counter
 END SUBROUTINE
 
 SUBROUTINE fgen_fock_ft_coup_mat(hf_orb_coeffs_transposed, hf_orb_energies,&
-                                    characteristic_time, use_cos, num_orbs, ft_fock_mat)
+                                    propagation_time, use_cos, num_orbs, ft_fock_mat)
 implicit none
 integer, intent(in):: num_orbs
 double precision, dimension(num_orbs, num_orbs), intent(in):: hf_orb_coeffs_transposed
 double precision, dimension(num_orbs), intent(in):: hf_orb_energies
-double precision, intent(in):: characteristic_time
+double precision, intent(in):: propagation_time
 logical, intent(in):: use_cos
 double precision, dimension(num_orbs, num_orbs), intent(inout):: ft_fock_mat
 integer:: i1, i2
@@ -155,9 +155,9 @@ double precision, dimension(num_orbs):: propagator_coeffs
 !            propagator_coeffs(i1)=hf_orb_energies(i1)*sin(hf_orb_energies(i1)*characteristic_time)
 !        endif
         if (use_cos) then
-            propagator_coeffs(i1)=cos(hf_orb_energies(i1)*characteristic_time)
+            propagator_coeffs(i1)=cos(hf_orb_energies(i1)*propagation_time)
         else
-            propagator_coeffs(i1)=sin(hf_orb_energies(i1)*characteristic_time)
+            propagator_coeffs(i1)=sin(hf_orb_energies(i1)*propagation_time)
         endif
     enddo
 !$OMP END PARALLEL DO

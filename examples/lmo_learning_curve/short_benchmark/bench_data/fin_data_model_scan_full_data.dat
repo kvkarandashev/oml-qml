@@ -1,6 +1,6 @@
 curve number 0
-GMO,sigma_rescale:0.25;OML_Slater_pair,IBO_HOMO_removed,ibo_atom_rho_comp:0.95,max_ang_mom:1 0.007786666043102741
-GMO,sigma_rescale:0.5;OML_Slater_pair,IBO_HOMO_removed,ibo_atom_rho_comp:0.95,max_ang_mom:1 0.008491268381476402
+GMO,sigma_rescale:0.25;OML_Slater_pair,IBO_HOMO_removed,ibo_atom_rho_comp:0.95,max_ang_mom:1 0.010280738584697247
+GMO,sigma_rescale:0.5;OML_Slater_pair,IBO_HOMO_removed,ibo_atom_rho_comp:0.95,max_ang_mom:1 0.009750604629516602
 curve number 1
-GMO,sigma_rescale:0.25;OML_Slater_pair,IBO_HOMO_removed,ibo_atom_rho_comp:0.95,max_ang_mom:1 0.006892893463373184
-GMO,sigma_rescale:0.5;OML_Slater_pair,IBO_HOMO_removed,ibo_atom_rho_comp:0.95,max_ang_mom:1 0.007716664113104343
+GMO,sigma_rescale:0.25;OML_Slater_pair,IBO_HOMO_removed,ibo_atom_rho_comp:0.95,max_ang_mom:1 0.006987307220697403
+GMO,sigma_rescale:0.5;OML_Slater_pair,IBO_HOMO_removed,ibo_atom_rho_comp:0.95,max_ang_mom:1 0.0062210531905293465
