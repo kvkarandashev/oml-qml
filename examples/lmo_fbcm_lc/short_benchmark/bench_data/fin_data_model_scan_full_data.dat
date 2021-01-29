@@ -1,0 +1,6 @@
+curve number 0
+GMO,sigma_rescale:0.25;OML_Slater_pair,IBO_HOMO_removed,ibo_atom_rho_comp:0.95,max_ang_mom:1,fbcm_delta_t:1.0,num_fbcm_times:2 0.007465188857167959
+GMO,sigma_rescale:0.5;OML_Slater_pair,IBO_HOMO_removed,ibo_atom_rho_comp:0.95,max_ang_mom:1,fbcm_delta_t:1.0,num_fbcm_times:2 0.007053853012621403
+curve number 1
+GMO,sigma_rescale:0.25;OML_Slater_pair,IBO_HOMO_removed,ibo_atom_rho_comp:0.95,max_ang_mom:1,fbcm_delta_t:1.0,num_fbcm_times:2 0.00925697572529316
+GMO,sigma_rescale:0.5;OML_Slater_pair,IBO_HOMO_removed,ibo_atom_rho_comp:0.95,max_ang_mom:1,fbcm_delta_t:1.0,num_fbcm_times:2 0.008927751332521439

@@ -1,0 +1,22 @@
+curve number 0
+Gaussian_KF,sigma:1.0;CM_rep,sorting:row-norm 0.04300661385059357
+Gaussian_KF,sigma:2.0;CM_rep,sorting:row-norm 0.04300661385059357
+Gaussian_KF,sigma:4.0;CM_rep,sorting:row-norm 0.04300661385059357
+Gaussian_KF,sigma:8.0;CM_rep,sorting:row-norm 0.04300660640001297
+Gaussian_KF,sigma:16.0;CM_rep,sorting:row-norm 0.042411819100379944
+Gaussian_KF,sigma:32.0;CM_rep,sorting:row-norm 0.020579062402248383
+Gaussian_KF,sigma:64.0;CM_rep,sorting:row-norm 0.01600097492337227
+Gaussian_KF,sigma:128.0;CM_rep,sorting:row-norm 0.01670932024717331
+Gaussian_KF,sigma:256.0;CM_rep,sorting:row-norm 0.01743902452290058
+Gaussian_KF,sigma:512.0;CM_rep,sorting:row-norm 0.017518727108836174
+curve number 1
+Gaussian_KF,sigma:1.0;CM_rep,sorting:row-norm 0.05295675992965698
+Gaussian_KF,sigma:2.0;CM_rep,sorting:row-norm 0.05295675992965698
+Gaussian_KF,sigma:4.0;CM_rep,sorting:row-norm 0.05295675992965698
+Gaussian_KF,sigma:8.0;CM_rep,sorting:row-norm 0.05295675992965698
+Gaussian_KF,sigma:16.0;CM_rep,sorting:row-norm 0.05215666443109512
+Gaussian_KF,sigma:32.0;CM_rep,sorting:row-norm 0.02254488691687584
+Gaussian_KF,sigma:64.0;CM_rep,sorting:row-norm 0.009694527834653854
+Gaussian_KF,sigma:128.0;CM_rep,sorting:row-norm 0.01107629295438528
+Gaussian_KF,sigma:256.0;CM_rep,sorting:row-norm 0.012695588171482086
+Gaussian_KF,sigma:512.0;CM_rep,sorting:row-norm 0.013251425698399544

@@ -1,0 +1,10 @@
+Gaussian_KF,sigma:1.0;CM_rep,sorting:row-norm 4.79816869E-02 3.51790804E-03
+Gaussian_KF,sigma:2.0;CM_rep,sorting:row-norm 4.79816869E-02 3.51790804E-03
+Gaussian_KF,sigma:4.0;CM_rep,sorting:row-norm 4.79816869E-02 3.51790804E-03
+Gaussian_KF,sigma:8.0;CM_rep,sorting:row-norm 4.79816832E-02 3.51791061E-03
+Gaussian_KF,sigma:16.0;CM_rep,sorting:row-norm 4.72842418E-02 3.44532309E-03
+Gaussian_KF,sigma:32.0;CM_rep,sorting:row-norm 2.15619747E-02 6.95023919E-04
+Gaussian_KF,sigma:64.0;CM_rep,sorting:row-norm 1.28477514E-02 2.22966587E-03
+Gaussian_KF,sigma:128.0;CM_rep,sorting:row-norm 1.38928071E-02 1.99157582E-03
+Gaussian_KF,sigma:256.0;CM_rep,sorting:row-norm 1.50673063E-02 1.67705806E-03
+Gaussian_KF,sigma:512.0;CM_rep,sorting:row-norm 1.53850764E-02 1.50871894E-03

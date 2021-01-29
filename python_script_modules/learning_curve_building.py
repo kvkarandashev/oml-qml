@@ -2,7 +2,6 @@
 import qml
 import jax.numpy as jnp
 import math
-from qm9_format_specs import Quantity
 
 byprod_result_ending=".brf"
 
@@ -58,7 +57,7 @@ class CM_representation(representation):
         self.max_size=max_size
         self.sorting=sorting
     def check_param_validity(self, compound_list_in):
-        self.max_size=max(self.max_size, find_max_size(compound_array_in))
+        self.max_size=max(self.max_size, find_max_size(compound_list_in))
     def initialized_compound(self, compound=None, xyz = None):
         comp=self.check_compound_defined(compound, xyz)
         comp.generate_coulomb_matrix(size=self.max_size, sorting=self.sorting)
@@ -343,29 +342,6 @@ def regroup_curves_into_means_and_errors(data_in):
     return [jnp.array(means), jnp.array(errs)]
 ### END
 
-### For writing byproduct results of ab initio calculations.
-
-def xyz_name2byprod_filename(filename, calc_type):
-    if filename.endswith(".npz"):
-        return filename[:-4]+byprod_result_ending
-    else:
-        return filename+'.'+calc_type+byprod_result_ending
-
-def write_byprod_line(output_file, val, quant_name):
-    Quantity(quant_name).write_byprod_result(val, output_file)
-
-def create_byproduct_file(oml_compound_in, filename):
-    output=open(filename, "w")
-    write_byprod_line(output, oml_compound_in.HOMO_en(), 'HOMO eigenvalue')
-    write_byprod_line(output, oml_compound_in.LUMO_en(), 'LUMO eigenvalue')
-    output.close()
-
-def create_byproduct_files(oml_compound_list):
-    for comp in oml_compound_list:
-        filename=comp.mats_savefile[:-4]+byprod_result_ending # remove "npz" suffix and replace with byproduct file suffix.
-        comp.run_calcs()
-        create_byproduct_file(comp, filename)
-### END
 
 def cutout_train_arr(arr_in, training_size):
     return arr_in[:training_size]

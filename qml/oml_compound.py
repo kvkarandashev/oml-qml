@@ -119,7 +119,7 @@ class OML_compound(Compound):
             mf=self.generate_pyscf_mf(pyscf_mol)
             if self.optimize_geometry:
                 from pyscf.geomopt.geometric_solver import optimize
-                #from pyscf.geomopt.berny_solver import optimize # I'm not sure that berny_solver works correctly.
+                #from pyscf.geomopt.berny_solver import optimize 
                 pyscf_mol=optimize(mf)
                 self.opt_coords=pyscf_mol.atom_coords(unit='Ang')
                 mf=self.generate_pyscf_mf(pyscf_mol)

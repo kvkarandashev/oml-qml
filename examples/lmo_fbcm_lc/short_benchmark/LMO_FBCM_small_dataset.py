@@ -25,7 +25,7 @@ hyperparam_opt_number=40
 use_delta_learning=True
 
 current_representation=OML_Slater_pair_rep(max_angular_momentum=1, use_Fortran=True, ibo_atom_rho_comp=0.95, calc_type="UHF",
-                                fock_based_coup_mat=True, second_charge=1, num_fbcm_times=2, fbcm_delta_t=1.0)
+                                fock_based_coup_mat=True, second_orb_type="IBO_HOMO_removed", num_fbcm_times=2, fbcm_delta_t=1.0)
 
 xyz_hyperparam_opt=random.Random(seed_OML_hyperparams).sample(dirs_xyz_list(QM9_dir), hyperparam_opt_number)
 
@@ -44,9 +44,11 @@ dl_params=Delta_learning_parameters(use_delta_learning=use_delta_learning)
 
 quantity=Quantity('HOMO eigenvalue')
 print("Searching best model parameters.")
-cur_model=best_model_params(quantity, model_scanning_size, check_size, scanned_models, QM9_dir, num_iters=num_iters, seed=seed, delta_learning_params=dl_params, calc_logs="model_scan_"+quantity.name, quant_logs="temp_vals_model_scan"+quantity.name, output_file="fin_data_model_scan")
+cur_model=best_model_params(quantity, model_scanning_size, check_size, scanned_models, QM9_dir, num_iters=num_iters,
+            seed=seed, delta_learning_params=dl_params, calc_logs="model_scan_"+quantity.name, quant_logs="temp_vals_model_scan"+quantity.name, output_file="fin_data_model_scan")
 print("Making learning curves.")
-lc_data=make_learning_curves_with_stdev(quantity, training_sizes, check_size, cur_model, QM9_dir, num_iters=num_iters, seed=seed, delta_learning_params=dl_params, calc_logs="learning_curve_"+quantity.name, quant_logs="temp_vals_learning_curve"+quantity.name, output_file="fin_data_learning_curve")
+lc_data=make_learning_curves_with_stdev(quantity, training_sizes, check_size, cur_model, QM9_dir, num_iters=num_iters,
+            seed=seed, delta_learning_params=dl_params, calc_logs="learning_curve_"+quantity.name, quant_logs="temp_vals_learning_curve"+quantity.name, output_file="fin_data_learning_curve")
 print_means_errs_to_log_file(training_sizes, lc_data, 'final_learning_curve'+quantity.name)
 print(cur_model)
 

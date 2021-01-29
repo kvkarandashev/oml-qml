@@ -54,7 +54,7 @@ class OML_rep_params:
     def __str__(self):
         str_out="ibo_atom_rho_comp:"+str(self.ibo_atom_rho_comp)+",max_ang_mom:"+str(self.max_angular_momentum)
         if self.fock_based_coup_mat:
-            str_out+=",char_energy:"+str(self.characteristic_energy)
+            str_out+=",fbcm_delta_t:"+str(self.fbcm_delta_t)+",num_fbcm_times:"+str(self.num_fbcm_times)
         return str_out
 
 def gen_fock_based_coup_mats(rep_params, hf_orb_coeffs, hf_orb_energies):
