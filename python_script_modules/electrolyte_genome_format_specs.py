@@ -15,7 +15,7 @@ vacuum_to_lithium=1.4
 au_to_eV_mult=27.2113961
 
 def reduction_lithium(xyz_name, calc_type="UHF", basis="min_bas", use_Huckel=False, optimize_geometry=True):
-    return Electron_Affinity(xyz_name, calc_type=calc_type, basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)+vacuum_to_lithium
+    return Electron_Affinity(xyz_name, calc_type=calc_type, basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)-vacuum_to_lithium
 
 def oxidation_lithium(xyz_name, calc_type="UHF", basis="min_bas", use_Huckel=False, optimize_geometry=True):
     return Ionization_Energy(xyz_name, calc_type=calc_type, basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)-vacuum_to_lithium
@@ -47,9 +47,10 @@ class Quantity:
         output=None
         for l in lines:
             lsplit=l.split()
-            if lsplit[0] == self.name:
-                output=float(lsplit[2])
-                break
+            if len(lsplit)>1:
+                if lsplit[0] == self.name:
+                    output=float(lsplit[2])
+                    break
         file.close()
         return output
     def OML_calc_quant(self, xyz_name, calc_type="UHF", basis="min_bas", use_Huckel=False, optimize_geometry=True):

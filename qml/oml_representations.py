@@ -40,7 +40,7 @@ class OML_rep_params:
 #                         ibo_atom_rho_comp of the electronic density.
 #   l_max               - maximal value of angular momentum.
     def __init__(self, tol_orb_cutoff=1.0e-6, en_bias_coeff=None, en_degen_tol=0.01, ibo_rho_comp=None, ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True, mult_coup_mat=False,
-                    mult_coup_mat_level=1, fock_based_coup_mat=False, num_fbcm_times=1, fbcm_delta_t=1.0, ibo_spectral_representation=False,
+                    mult_coup_mat_level=1, fock_based_coup_mat=False, num_fbcm_times=1, fbcm_delta_t=1.0, fbcm_pseudo_orbs=False, ibo_spectral_representation=False,
                     energy_rho_comp=1.0):
         self.tol_orb_cutoff=tol_orb_cutoff
         self.ibo_atom_rho_comp=ibo_atom_rho_comp
@@ -49,6 +49,7 @@ class OML_rep_params:
         self.fock_based_coup_mat=fock_based_coup_mat
         self.num_fbcm_times=num_fbcm_times
         self.fbcm_delta_t=fbcm_delta_t
+        self.fbcm_pseudo_orbs=fbcm_pseudo_orbs
         self.ibo_spectral_representation=ibo_spectral_representation
         self.energy_rho_comp=energy_rho_comp
     def __str__(self):
@@ -162,6 +163,7 @@ def generate_ao_arr(mol):
     ao_labels=mol.ao_labels()
     for bas_id in range(len(mol._bas)):
         for func_id in range(mol.bas_len_cart(bas_id)):
+            print(cur_ao_id, ao_labels[cur_ao_id])
             output.append(AO(ao_labels[cur_ao_id], mol, bas_id))
             cur_ao_id+=1
     return np.array(output)

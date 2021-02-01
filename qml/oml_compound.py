@@ -170,7 +170,11 @@ class OML_compound(Compound):
                                                                     self.iao_mat, self.ibo_mat, self.mo_coeff, self.mo_energy):
             #   Generate the array of orbital representations.
             if rep_params.fock_based_coup_mat:
-                coupling_matrices=gen_fock_based_coup_mats(rep_params, smo_coeff, smo_energy)
+                if rep_params.fbcm_pseudo_orbs:
+                    pseudo_ens, pseudo_orbs=jnp.linalg.eigh(sfock_mat)
+                    coupling_matrices=gen_fock_based_coup_mats(rep_params, pseudo_orbs, pseudo_ens)
+                else:
+                    coupling_matrices=gen_fock_based_coup_mats(rep_params, smo_coeff, smo_energy)
                 coupling_matrices=(*coupling_matrices, sfock_mat)
             else:
                 coupling_matrices=(sfock_mat, sj_mat, sk_mat)
