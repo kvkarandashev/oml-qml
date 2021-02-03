@@ -2,12 +2,12 @@ from qml.oml_compound import OML_compound
 
 #from qml.
 
-def HOMO_en(xyz_name, calc_type="HF", basis="min_bas"):
+def HOMO_en(xyz_name, calc_type="HF", basis="sto-3g"):
     oml_comp=OML_compound(xyz = xyz_name, mats_savefile = xyz_name, calc_type=calc_type, basis=basis, used_orb_type="standard_IBO", charge=0)
     oml_comp.run_calcs()
     return oml_comp.HOMO_en()
     
-def LUMO_en(xyz_name, calc_type="HF", basis="min_bas"):
+def LUMO_en(xyz_name, calc_type="HF", basis="sto-3g"):
     oml_comp=OML_compound(xyz = xyz_name, mats_savefile = xyz_name, calc_type=calc_type, basis=basis, used_orb_type="standard_IBO", charge=0)
     oml_comp.run_calcs()
     return oml_comp.LUMO_en()
@@ -65,7 +65,7 @@ class Quantity:
                 break
         file.close()
         return output
-    def OML_calc_quant(self, xyz_name, calc_type="HF", basis="min_bas"):
+    def OML_calc_quant(self, xyz_name, calc_type="HF", basis="sto-3g"):
         return quant_properties[self.name][2](xyz_name, calc_type=calc_type, basis=basis)
     def write_byprod_result(self, val, io_out):
         io_out.write(str(self.qm9_id)+" "+str(val)+"\n")

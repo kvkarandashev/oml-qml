@@ -2,6 +2,10 @@ from qml.oml_compound import OML_Slater_pair
 import json
 import os
 import sys
+
+class QuantitiesNotAvailableError(Exception):
+    pass
+
 if sys.version_info[0] == 2:
     from urllib import quote_plus
 else:
@@ -14,19 +18,19 @@ def_float_format='{:.8E}'
 vacuum_to_lithium=1.4
 au_to_eV_mult=27.2113961
 
-def reduction_lithium(xyz_name, calc_type="UHF", basis="min_bas", use_Huckel=False, optimize_geometry=True):
+def reduction_lithium(xyz_name, calc_type="UHF", basis="sto-3g", use_Huckel=False, optimize_geometry=True):
     return Electron_Affinity(xyz_name, calc_type=calc_type, basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)-vacuum_to_lithium
 
-def oxidation_lithium(xyz_name, calc_type="UHF", basis="min_bas", use_Huckel=False, optimize_geometry=True):
+def oxidation_lithium(xyz_name, calc_type="UHF", basis="sto-3g", use_Huckel=False, optimize_geometry=True):
     return Ionization_Energy(xyz_name, calc_type=calc_type, basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)-vacuum_to_lithium
 
-def Ionization_Energy(xyz_name, calc_type="HF", basis="min_bas", use_Huckel=False, optimize_geometry=True):
+def Ionization_Energy(xyz_name, calc_type="HF", basis="sto-3g", use_Huckel=False, optimize_geometry=True):
     return electron_energy_change(xyz_name, 1, calc_type=calc_type, basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)
 
-def Electron_Affinity(xyz_name, calc_type="HF", basis="min_bas", use_Huckel=False, optimize_geometry=True):
+def Electron_Affinity(xyz_name, calc_type="HF", basis="sto-3g", use_Huckel=False, optimize_geometry=True):
     return -electron_energy_change(xyz_name, -1, calc_type=calc_type, basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)
 
-def electron_energy_change(xyz_name, charge_change, calc_type="HF", basis="min_bas", use_Huckel=False, optimize_geometry=True):
+def electron_energy_change(xyz_name, charge_change, calc_type="HF", basis="sto-3g", use_Huckel=False, optimize_geometry=True):
     Slater_pair=OML_Slater_pair(xyz = xyz_name, mats_savefile = xyz_name, calc_type=calc_type,
         basis=basis, second_charge=charge_change, optimize_geometry=optimize_geometry, use_Huckel=use_Huckel)
     Slater_pair.run_calcs()
@@ -53,7 +57,7 @@ class Quantity:
                     break
         file.close()
         return output
-    def OML_calc_quant(self, xyz_name, calc_type="UHF", basis="min_bas", use_Huckel=False, optimize_geometry=True):
+    def OML_calc_quant(self, xyz_name, calc_type="UHF", basis="sto-3g", use_Huckel=False, optimize_geometry=True):
         return quant_properties[self.name][1](xyz_name, calc_type=calc_type, basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)
     def write_byprod_result(self, val, io_out):
         io_out.write(str(self.qm9_id)+" "+str(val)+"\n")
@@ -72,8 +76,7 @@ def create_entry_xyz(xyz_name, mol_id, output_quants=None):
         try:
             val=molecule[quant_name]
         except KeyError:
-            print("Attempting to write a quantity not present in entry.")
-            quit()
+            raise QuantitiesNotAvailableError
         try:
             val_string=def_float_format.format(val)
         except (TypeError, ValueError):

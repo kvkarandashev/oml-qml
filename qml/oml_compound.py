@@ -31,7 +31,7 @@ from os.path import isfile
 
 neglect_orb_occ=0.1
 
-class pySCF_not_converged_error(Exception):
+class pySCFNotConvergedError(Exception):
     pass
 
 class OML_compound(Compound):
@@ -45,7 +45,7 @@ class OML_compound(Compound):
                           or saved to the file otherwise.
         calc_type       - type of the calculation (for now only HF with IBO localization and the default basis set are supported).
     """
-    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="min_bas", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False, charge=0):
+    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="sto-3g", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False, charge=0):
         super().__init__(xyz=xyz)
 
         self.calc_type=calc_type
@@ -202,8 +202,7 @@ class OML_compound(Compound):
         mol.atom=[ [atom_type, atom_coords] for atom_type, atom_coords in zip(self.atomtypes, self.coordinates)]
         mol.charge=self.charge
         mol.spin=self.charge%2
-        if self.basis != "min_bas":
-            mol.basis=self.basis
+        mol.basis=self.basis
         mol.build()
         return mol
     def generate_pyscf_mf(self, pyscf_mol):
@@ -222,7 +221,7 @@ class OML_compound(Compound):
         mf.run()
         if not (mf.converged or self.use_Huckel):
             print("WARNING: A SCF calculation failed to converge at ", mf.max_cycle, " cycles.")
-            raise pySCF_not_converged_error
+            raise pySCFNotConvergedError
 #        subprocess.run(["rm", '-f', chkfile])
         return mf
 
@@ -234,14 +233,14 @@ class OML_compound(Compound):
         for i, orb_occ in enumerate(true_mo_occ):
             if orb_occ < neglect_orb_occ:
                 if self.calc_type == "HF":
-                    if self.used_orb_type=="IBO_LUMO_added":
+                    if add_LUMO(self):
                         mo_occ[i]=2.0
-                    if self.used_orb_type=="IBO_HOMO_removed":
+                    if remove_HOMO(self):
                         mo_occ[i-1]=0.0
                 else:
-                    if self.used_orb_type=="IBO_LUMO_added":
+                    if add_LUMO(self):
                         mo_occ[0][i]=1.0
-                    if self.used_orb_type=="IBO_HOMO_removed":
+                    if remove_HOMO(self):
                         mo_occ[0][i-1]=0.0
                 break
         return mo_occ
@@ -277,6 +276,12 @@ class OML_compound(Compound):
         else:
             return jnp.array(matrices)
 
+def remove_HOMO(oml_comp):
+    return ((oml_comp=="IBO_HOMO_removed") or (oml_comp=="IBO_first_excitation"))
+
+def add_LUMO(oml_comp):
+    return ((oml_comp=="IBO_LUMO_added") or (oml_comp=="IBO_first_excitation"))
+
 
 class OML_pyscf_calc_params:
 #   Parameters of how Fock orbitals and IBOs are calculated.
@@ -287,7 +292,7 @@ class OML_pyscf_calc_params:
 
 
 class OML_Slater_pair:
-    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="min_bas", second_charge=0,
+    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="sto-3g", second_charge=0,
         second_orb_type="standard_IBO", optimize_geometry=False, use_Huckel=False):
         comp1=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type,
                         basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)

@@ -144,29 +144,26 @@ def ibo_atom_atom_coupling(atom_id1, atom_id2, ang_mom1, ang_mom2, atom_ao_range
 
 
 # Internal format for processing AOs created by pySCF.
+orb_ang_mom={"s" : 0, "p" : 1, "d" : 2, "f" : 3, "g" : 4, "h" : 5, "i" : 6}
+
 class AO:
-    def __init__(self, ao_label, mol, bas_id):
+    def __init__(self, ao_label):
         info=ao_label.split()
         self.ao_type=info[2]
-        self.atom_id=mol.bas_atom(bas_id)
-        self.angular=mol.bas_angular(bas_id)
-        self.ctr_coeff=mol.bas_ctr_coeff(bas_id)
-        self.exp=mol.bas_exp(bas_id)
+        self.atom_id=int(info[0])
+        for char in self.ao_type:
+            try:
+                int(char)
+            except ValueError:
+                self.angular=orb_ang_mom[char]
+                break
     def __str__(self):
         return self.__repr__()
     def __repr__(self):
         return ":atom_id:"+str(self.atom_id)+":ao_type:"+self.ao_type+":ang_momentum:"+str(self.angular)
 
 def generate_ao_arr(mol):
-    output=[]
-    cur_ao_id=0
-    ao_labels=mol.ao_labels()
-    for bas_id in range(len(mol._bas)):
-        for func_id in range(mol.bas_len_cart(bas_id)):
-            print(cur_ao_id, ao_labels[cur_ao_id])
-            output.append(AO(ao_labels[cur_ao_id], mol, bas_id))
-            cur_ao_id+=1
-    return np.array(output)
+    return [AO(ao_label) for ao_label in mol.ao_labels()]
 
 def generate_atom_ao_ranges(mol):
     ao_sliced_with_shells=mol.aoslice_by_atom()
