@@ -39,9 +39,10 @@ class OML_rep_params:
 #   ibo_atom_rho_comp   - compose IBO representation out of AO's centered on minimal ammount of atoms that would (approximately) account for at least
 #                         ibo_atom_rho_comp of the electronic density.
 #   l_max               - maximal value of angular momentum.
-    def __init__(self, tol_orb_cutoff=1.0e-6, en_bias_coeff=None, en_degen_tol=0.01, ibo_rho_comp=None, ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True, mult_coup_mat=False,
-                    mult_coup_mat_level=1, fock_based_coup_mat=False, num_fbcm_times=1, fbcm_delta_t=1.0, fbcm_pseudo_orbs=False, ibo_spectral_representation=False,
-                    energy_rho_comp=1.0):
+    def __init__(self, tol_orb_cutoff=1.0e-6, en_bias_coeff=None, en_degen_tol=0.01, ibo_rho_comp=None,
+                    ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True, mult_coup_mat=False,
+                    mult_coup_mat_level=1, fock_based_coup_mat=False, num_fbcm_times=1, fbcm_delta_t=1.0,
+                    fbcm_pseudo_orbs=False, ibo_spectral_representation=False, energy_rho_comp=1.0):
         self.tol_orb_cutoff=tol_orb_cutoff
         self.ibo_atom_rho_comp=ibo_atom_rho_comp
         self.max_angular_momentum=max_angular_momentum

@@ -112,17 +112,18 @@ class SLATM_representation(representation):
 class OML_representation(representation):
     def __init__(self, ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
                     fock_based_coup_mat=False, num_fbcm_times=1, fbcm_delta_t=1.0, use_Huckel=False, optimize_geometry=False, calc_type="HF",
-                    fbcm_pseudo_orbs=False):
+                    basis="sto-3g", fbcm_pseudo_orbs=False):
         self.rep_params=qml.oml_representations.OML_rep_params(ibo_atom_rho_comp=ibo_atom_rho_comp, max_angular_momentum=max_angular_momentum,
                                                                         use_Fortran=use_Fortran, fock_based_coup_mat=fock_based_coup_mat,
                                                                         num_fbcm_times=num_fbcm_times, fbcm_delta_t=fbcm_delta_t, fbcm_pseudo_orbs=fbcm_pseudo_orbs)
         self.use_Huckel=use_Huckel
         self.optimize_geometry=optimize_geometry
         self.calc_type=calc_type
+        self.basis=basis
     def xyz2compound(self, xyz=None):
-        return qml.oml_compound.OML_compound(xyz = xyz, mats_savefile = xyz, use_Huckel=self.use_Huckel, optimize_geometry=self.optimize_geometry, calc_type=self.calc_type)
+        return qml.oml_compound.OML_compound(xyz = xyz, mats_savefile = xyz, use_Huckel=self.use_Huckel, optimize_geometry=self.optimize_geometry, calc_type=self.calc_type, basis=self.basis)
     def compound_list(self, xyz_list):
-        return qml.OML_compound_list_from_xyzs(xyz_list, use_Huckel=self.use_Huckel, optimize_geometry=self.optimize_geometry, calc_type=self.calc_type)
+        return qml.OML_compound_list_from_xyzs(xyz_list, use_Huckel=self.use_Huckel, optimize_geometry=self.optimize_geometry, calc_type=self.calc_type, basis=self.basis)
     def initialized_compound(self, compound=None, xyz = None):
         comp=self.check_compound_defined(compound, xyz)
         comp.generate_orb_reps(self.rep_params)
@@ -143,19 +144,20 @@ class OML_Slater_pair_rep(OML_representation):
     def __init__(self, ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
                     fock_based_coup_mat=False, second_charge=0, second_orb_type="standard_IBO",
                     calc_type="HF", use_Huckel=False, optimize_geometry=False, num_fbcm_times=2,
-                    fbcm_delta_t=1.0, fbcm_pseudo_orbs=False):
+                    fbcm_delta_t=1.0, fbcm_pseudo_orbs=False, basis="sto-3g"):
         super().__init__(ibo_atom_rho_comp=ibo_atom_rho_comp, max_angular_momentum=max_angular_momentum,
                 use_Fortran=use_Fortran, fock_based_coup_mat=fock_based_coup_mat, use_Huckel=use_Huckel,
                 optimize_geometry=optimize_geometry, calc_type=calc_type, num_fbcm_times=num_fbcm_times,
-                fbcm_delta_t=fbcm_delta_t, fbcm_pseudo_orbs=fbcm_pseudo_orbs)
+                fbcm_delta_t=fbcm_delta_t, fbcm_pseudo_orbs=fbcm_pseudo_orbs, basis=basis)
         self.second_orb_type=second_orb_type
         self.second_charge=second_charge
     def xyz2compound(self, xyz=None):
         return qml.oml_compound.OML_Slater_pair(xyz=xyz, calc_type=self.calc_type, second_charge=self.second_charge,
-                                second_orb_type=self.second_orb_type, optimize_geometry=self.optimize_geometry, use_Huckel=self.use_Huckel)
+                                second_orb_type=self.second_orb_type, optimize_geometry=self.optimize_geometry, use_Huckel=self.use_Huckel,
+                                basis=self.basis)
     def compound_list(self, xyz_list):
         return qml.OML_Slater_pair_list_from_xyzs(xyz_list, calc_type=self.calc_type, second_charge=self.second_charge, second_orb_type=self.second_orb_type,
-                                optimize_geometry=self.optimize_geometry, use_Huckel=self.use_Huckel)
+                                optimize_geometry=self.optimize_geometry, use_Huckel=self.use_Huckel, basis=self.basis)
     def __str__(self):
         return "OML_Slater_pair,"+self.second_orb_type+","+str(self.rep_params)
 

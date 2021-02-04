@@ -57,17 +57,22 @@ class OML_compound(Compound):
         self.optimize_geometry=optimize_geometry
         if self.mats_savefile is None:
             self.mats_created=False
+            self.pyscf_chkfile_avail=False
         else:
-            if not self.mats_savefile.endswith(".pkl"):
-                savefile_prename=self.mats_savefile+"."+self.calc_type+"."+self.basis+"."+self.used_orb_type
+            if self.mats_savefile.endswith(".pkl"):
+                self.pyscf_chkfile=self.mats_savefile[:-3]+"chkfile"
+            else:
+                savefile_prename=self.mats_savefile+"."+self.calc_type+"."+self.basis
                 if self.use_Huckel:
                     savefile_prename+="."+"Huckel"
                 if self.optimize_geometry:
                     savefile_prename+="."+"geom_opt"
                 if self.charge != 0:
                     savefile_prename+="."+"charge_"+str(self.charge)
-                self.mats_savefile=savefile_prename+".pkl"
+                self.pyscf_chkfile=savefile_prename+".chkfile"
+                self.mats_savefile=savefile_prename+"."+self.used_orb_type+".pkl"
             self.mats_created=isfile(self.mats_savefile)
+            self.pyscf_chkfile_avail=isfile(self.pyscf_chkfile)
         if self.mats_created:
             # Import ab initio results from the savefile.
             savefile = open(self.mats_savefile, "rb")
@@ -211,13 +216,14 @@ class OML_compound(Compound):
             mf=scf.RHF(pyscf_mol)
         else: # "UHF"
             mf=scf.UHF(pyscf_mol)
-#        chkfile=subprocess.check_output(["mktemp", "-p", os.getcwd()])[:-1]
-#        mf.chkfile=chkfile
+        mf.chkfile=self.pyscf_chkfile
         if self.use_Huckel:
             mf.init_guess='huckel'
             mf.max_cycle=-1
         else:
             mf.max_cycle=5000
+            if self.pyscf_chkfile_avail:
+                mf.init_guess='chkfile'
         mf.run()
         if not (mf.converged or self.use_Huckel):
             print("WARNING: A SCF calculation failed to converge at ", mf.max_cycle, " cycles.")
@@ -277,10 +283,12 @@ class OML_compound(Compound):
             return jnp.array(matrices)
 
 def remove_HOMO(oml_comp):
-    return ((oml_comp=="IBO_HOMO_removed") or (oml_comp=="IBO_first_excitation"))
+    used_orb_type=oml_comp.used_orb_type
+    return ((used_orb_type=="IBO_HOMO_removed") or (used_orb_type=="IBO_first_excitation"))
 
 def add_LUMO(oml_comp):
-    return ((oml_comp=="IBO_LUMO_added") or (oml_comp=="IBO_first_excitation"))
+    used_orb_type=oml_comp.used_orb_type
+    return ((used_orb_type=="IBO_LUMO_added") or (used_orb_type=="IBO_first_excitation"))
 
 
 class OML_pyscf_calc_params:
