@@ -300,15 +300,15 @@ def import_quantity_val(xyz_file, quantity, delta_learning_params=None):
     added_val=quantity.extract_xyz(xyz_file)
     if delta_learning_params!=None:
         if delta_learning_params.use_delta_learning:
-            added_val-=quantity.OML_calc_quant(xyz_file)
+            added_val-=quantity.OML_calc_quant(xyz_file, **delta_learning_params.other_kwargs)
     return added_val
 ### END
 
 ### An auxiliary class for storing parameters for how delta_learning is used.
 class Delta_learning_parameters:
-    def __init__(self, use_delta_learning=False, calc_type="HF"):
+    def __init__(self, use_delta_learning=False, **kwargs):
         self.use_delta_learning=use_delta_learning
-        self.calc_type=calc_type
+        self.other_kwargs=kwargs
 
 ### Auxiliary procedures for running and analyzing the calculations.
 #   Create and shuffle list of xyz files in the directory.
