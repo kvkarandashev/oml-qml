@@ -1,15 +1,14 @@
 from qml.oml_compound import OML_Slater_pair
-import json
-import os
-import sys
+import json, os, sys
 
 class QuantitiesNotAvailableError(Exception):
     pass
 
-if sys.version_info[0] == 2:
-    from urllib import quote_plus
-else:
-    from urllib.parse import quote_plus
+class TaskIDRepeated(Exception):
+    pass
+
+
+from urllib.parse import quote_plus
 
 from qml.oml_compound import OML_compound
 
@@ -63,13 +62,13 @@ class Quantity:
         io_out.write(str(self.qm9_id)+" "+str(val)+"\n")
         
 def create_entry_xyz(xyz_name, mol_id, output_quants=None):
+    molecule=get_mol_result(mol_id)
     xyz_coords=get_mol_xyz(mol_id)
     output=open(xyz_name, 'wb')
     output.write(xyz_coords)
     output.close()
     output=open(xyz_name, 'a')
     output.write('\n')
-    molecule=get_mol_result(mol_id)
     if output_quants is None:
         output_quants=list(molecule.keys())
     for quant_name in output_quants:
@@ -116,7 +115,11 @@ def get_results(spec, fields=None):
     return (requests.get(url, headers={'X-API-KEY': MAPI_KEY()})).json()
 
 def get_mol_result(mol_id):
-    return get_results({"task_id": mol_id})[0]
+    results=get_results({"task_id": mol_id})
+    if len(results) > 1:
+        raise TaskIDRepeated
+    else:
+        return results[0]
 
 def get_mol_xyz(mol_id):
     url = urlpattern["mol_xyz"].format(mol_id=mol_id)
