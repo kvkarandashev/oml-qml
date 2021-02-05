@@ -26,7 +26,8 @@ export OML_NUM_PROCS=2 # The variable says how many processes to use during jobl
 
 ./recompile_qml.sh
 for script in FJK_Gauss_kernel FJK_pair_Gauss_kernel_HOMO FJK_pair_linear_kernel_LUMO FJK_pair_linear_kernel_UHF_HOMO\
-             FJK_pair_Gauss_kernel_UHF_LUMO FBCM_pair_linear_kernel_UHF_HOMO FBCM_pair_gauss_kernel_UHF_gap
+             FJK_pair_Gauss_kernel_UHF_LUMO FBCM_pair_linear_kernel_UHF_HOMO FBCM_pair_gauss_kernel_UHF_gap\
+            FBCM_pair_gauss_kernel_RKS_HOMO FBCM_pair_linear_kernel_UKS_gap
 do
 	python $script.py $script.log
 	bench=benchmark_data/$script.dat

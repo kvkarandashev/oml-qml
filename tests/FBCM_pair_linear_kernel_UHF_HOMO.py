@@ -3,8 +3,8 @@ from learning_curve_building import dirs_xyz_list, logfile, OML_Slater_pair_rep
 import qml, random, sys
 
 seed=1
-num_test_mols_1=200
-num_test_mols_2=100
+num_test_mols_1=50
+num_test_mols_2=40
 
 logfile_name=sys.argv[1]
 
