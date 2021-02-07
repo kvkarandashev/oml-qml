@@ -12,11 +12,15 @@ def LUMO_en(xyz_name, calc_type="HF", basis="sto-3g"):
     oml_comp.run_calcs()
     return oml_comp.LUMO_en()
 
+def HOMO_LUMO_gap(xyz_name, calc_type="HF", basis="sto-3g"):
+    return LUMO_en(xyz_name, calc_type=calc_type, basis=basis)-HOMO_en(xyz_name, calc_type=calc_type, basis=basis)
+
+
 quant_properties = {'Dipole moment' : (6, 'Debye'),
                 'Isotropic polarizability' : (7, 'Bohr^3'),
                 'HOMO eigenvalue': (8, 'Hartree', HOMO_en),
                 'LUMO eigenvalue': (9, 'Hartree', LUMO_en),
-                'HOMO-LUMO gap': (10, 'Hartree'),
+                'HOMO-LUMO gap': (10, 'Hartree', HOMO_LUMO_gap),
                 'Electronic spacial extent': (11, 'Bohr^2'),
                 'Zero point vibrational energy': (12, 'Hartree'),
                 'Internal energy at 0 K': (13, 'Hartree'),
