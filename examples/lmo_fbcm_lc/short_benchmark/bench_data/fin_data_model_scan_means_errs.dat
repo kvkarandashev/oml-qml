@@ -1,2 +1,2 @@
-GMO,sigma_rescale:0.25;OML_Slater_pair,IBO_HOMO_removed,ibo_atom_rho_comp:0.95,max_ang_mom:1,fbcm_delta_t:1.0,num_fbcm_times:2 8.36108252E-03 6.33492309E-04
-GMO,sigma_rescale:0.5;OML_Slater_pair,IBO_HOMO_removed,ibo_atom_rho_comp:0.95,max_ang_mom:1,fbcm_delta_t:1.0,num_fbcm_times:2 7.99080171E-03 6.62523089E-04
+GMO,sigma_rescale:0.25;OML_Slater_pair,IBO_HOMO_removed,ibo_atom_rho_comp:0.95,max_ang_mom:1,fbcm_delta_t:1.0,num_fbcm_times:2 7.54359365E-03 4.90819337E-04
+GMO,sigma_rescale:0.5;OML_Slater_pair,IBO_HOMO_removed,ibo_atom_rho_comp:0.95,max_ang_mom:1,fbcm_delta_t:1.0,num_fbcm_times:2 9.18307155E-03 8.49973876E-04

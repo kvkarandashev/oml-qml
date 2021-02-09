@@ -28,8 +28,8 @@ import os
 class OML_compound_list(list):
     """ The class was created to allow easy embarassing parallelization of operations with lists of OML_compound objects.
     """
-    def run_calcs(self, pyscf_calc_params=None):
-        self.embarassingly_parallelize(self, after_run_calcs, pyscf_calc_params)
+    def run_calcs(self, pyscf_calc_params=None, disable_openmp=True):
+        self.embarassingly_parallelize(after_run_calcs, pyscf_calc_params, disable_openmp=disable_openmp)
     def generate_orb_reps(self, rep_params, disable_openmp=True):
         self.embarassingly_parallelize(after_gen_orb_reps, rep_params, disable_openmp=disable_openmp)
     def embarassingly_parallelize(self, func_in, other_args, disable_openmp=True):

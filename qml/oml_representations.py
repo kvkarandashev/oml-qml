@@ -179,7 +179,7 @@ def generate_ibo_rep_array(ibo_mat, rep_params, aos, atom_ao_ranges, ovlp_mat, *
     atom_ids=[ao.atom_id for ao in aos]
     angular_momenta=[ao.angular for ao in aos]
     ibo_tmat=ibo_mat.T
-    return weighted_array([OML_ibo_rep(ibo_coeffs, rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coupling_mats) for ibo_coeffs in ibo_tmat])
+    return [OML_ibo_rep(ibo_coeffs, rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coupling_mats) for ibo_coeffs in ibo_tmat]
     
 def generate_ibo_spectral_rep_array(ibo_mat, rep_params, overlap_func, mo_coeff, mo_occ, mo_energy, reference_energy):
     return weighted_array([OML_ibo_spectral_rep(ibo_coeffs, rep_params, overlap_func, mo_coeff, mo_occ, mo_energy, reference_energy) for ibo_coeffs in ibo_mat.T])

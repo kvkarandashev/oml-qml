@@ -35,6 +35,8 @@ is_restricted={"HF" : True, "UHF" : False, "DFT" : True, "UKS" : False}
 
 is_HF={"HF" : True, "UHF" : True, "DFT" : False, "UKS" : False}
 
+is_KS={"HF" : False, "UHF" : False, "DFT" : True, "UKS" : True}
+
 neglect_orb_occ=0.1
 
 class pySCFNotConvergedError(Exception):
@@ -51,7 +53,8 @@ class OML_compound(Compound):
                           or saved to the file otherwise.
         calc_type       - type of the calculation (for now only HF with IBO localization and the default basis set are supported).
     """
-    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="sto-3g", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False, charge=0):
+    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="sto-3g", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False, charge=0,
+            dft_xc='lda,vwn', dft_nlc=''):
         super().__init__(xyz=xyz)
 
         self.calc_type=calc_type
@@ -61,6 +64,9 @@ class OML_compound(Compound):
         self.used_orb_type=used_orb_type
         self.use_Huckel=use_Huckel
         self.optimize_geometry=optimize_geometry
+        if is_KS[self.calc_type]:
+            self.dft_xc=dft_xc
+            self.dft_nlc=dft_nlc
         if self.mats_savefile is None:
             self.mats_created=False
             self.pyscf_chkfile_avail=False
@@ -75,6 +81,8 @@ class OML_compound(Compound):
                     savefile_prename+="."+"geom_opt"
                 if self.charge != 0:
                     savefile_prename+="."+"charge_"+str(self.charge)
+                if is_KS[self.calc_type]:
+                    savefile_prename+=".xc_"+self.dft_xc+".nlc_"+str(self.dft_nlc)
                 self.pyscf_chkfile=savefile_prename+".chkfile"
                 self.mats_savefile=savefile_prename+"."+self.used_orb_type+".pkl"
             self.mats_created=isfile(self.mats_savefile)
@@ -186,6 +194,7 @@ class OML_compound(Compound):
             num_spins=1
         else:
             num_spins=2
+        self.orb_reps=[]
         for spin in range(num_spins):
             #   Generate the array of orbital representations.
             if rep_params.fock_based_coup_mat:
@@ -201,9 +210,7 @@ class OML_compound(Compound):
                 coupling_matrices=(*coupling_matrices, cur_fock_mat)
             else:
                 coupling_matrices=(self.fock_mat[spin], self.j_mat[spin], self.k_mat[spin])
-            self.orb_reps=[]
-            for sibo_mat in self.ibo_mat:
-                self.orb_reps=generate_ibo_rep_array(self.ibo_mat[spin], rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)
+            self.orb_reps+=generate_ibo_rep_array(self.ibo_mat[spin], rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)
 #                if rep_params.ibo_spectral_representation: # It would be very funny if this representation proves to be useful.
 #                    self.orb_reps=generate_ibo_spectral_rep_array(sibo_mat, rep_params, self.orb_overlap, self.mo_coeff, self.mo_occ, self.mo_energy, self.HOMO_en())
 #                else:
@@ -229,6 +236,9 @@ class OML_compound(Compound):
         return mol
     def generate_pyscf_mf(self, pyscf_mol):
         mf=mf_creator[self.calc_type](pyscf_mol)
+        if is_KS[self.calc_type]:
+            mf.xc=self.dft_xc
+            mf.nlc=self.dft_nlc
         mf.chkfile=self.pyscf_chkfile
         if self.use_Huckel:
             mf.init_guess='huckel'

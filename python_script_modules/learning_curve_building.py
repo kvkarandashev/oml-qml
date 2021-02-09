@@ -484,8 +484,10 @@ def make_model_param_scan_curve(quantity, training_size, check_size, scanned_mod
 #        cur_check_array=model.adjust_representation(compound_check_array)
 #        output_array.append(calculate_MAE(list_of_xyzs, training_size, check_size, quantity, model, delta_learning_params=delta_learning_params, calc_logfile=calc_logfile,
 #                            quant_logfile=quant_logfile, compound_train_array=cur_train_array, compound_check_array=cur_check_array, hyperparameter_opt_set=hyperparameter_opt_set))
+#        output_array.append(calculate_MAE(list_of_xyzs, training_size, check_size, quantity, model, delta_learning_params=delta_learning_params, calc_logfile=calc_logfile,
+#                            quant_logfile=quant_logfile, hyperparameter_opt_set=hyperparameter_opt_set))
         output_array.append(calculate_MAE(list_of_xyzs, training_size, check_size, quantity, model, delta_learning_params=delta_learning_params, calc_logfile=calc_logfile,
-                            quant_logfile=quant_logfile, hyperparameter_opt_set=hyperparameter_opt_set))
+                            quant_logfile=quant_logfile, compound_train_array=compound_train_array, compound_check_array=compound_check_array, hyperparameter_opt_set=hyperparameter_opt_set))
     return output_array
 
 def make_learning_curves_with_stdev(quantity, training_sizes, check_size,  model, QM9_dir, num_iters=1, seed=None, output_file=None, delta_learning_params=None, calc_logs=None, quant_logs=None):
