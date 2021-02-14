@@ -4,7 +4,7 @@ GMO,sigma_rescale:0.25,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1
 GMO,sigma_rescale:0.5,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.012311163358390331
 GMO,sigma_rescale:0.5,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.014349712058901787
 curve number 1
-GMO,sigma_rescale:0.25,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.01150556094944477
+GMO,sigma_rescale:0.25,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.011508612893521786
 GMO,sigma_rescale:0.25,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.010234885849058628
 GMO,sigma_rescale:0.5,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.010262856259942055
 GMO,sigma_rescale:0.5,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.009387800469994545

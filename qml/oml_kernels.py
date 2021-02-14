@@ -57,7 +57,7 @@ def random_sample_length_checked(list_in, num_rand_samp):
 
 #   Estimate the average square deviation of scalar representations of atomic contributions to IBOs
 #   in the orb_rep_array. Used to estimate reasonable hyperparameter values. 
-def oml_ensemble_widths_estimate(orb_rep_array):
+def oml_ensemble_widths_estimate(orb_rep_array, var_cutoff_val=0.0):
     vec_length=len(orb_rep_array[0].ibo_atom_reps[0].scalar_reps)
     av_vals=jnp.zeros(vec_length)
     av2_vals=jnp.zeros(vec_length)
@@ -70,14 +70,18 @@ def oml_ensemble_widths_estimate(orb_rep_array):
             norm_prefac+=weight_factor
     av_vals/=norm_prefac
     av2_vals/=norm_prefac
-    return jnp.array([sqrt_sign_checked(av2_val-av_val**2) for av_val, av2_val in zip(av_vals, av2_vals)])
+    return jnp.array([sqrt_sign_checked(av2_val-av_val**2, var_cutoff_val=var_cutoff_val) for av_val, av2_val in zip(av_vals, av2_vals)])
 
-def sqrt_sign_checked(val):
+def sqrt_sign_checked(val, var_cutoff_val=0.0):
     try:
-        return math.sqrt(val)
-    except:
+        if (val<var_cutoff_val):
+            print("WARNING: oml_ensemble_widths_estimate found a variation to be negligible.")
+            return 1.0
+        else:
+            return math.sqrt(val)
+    except ValueError:
         print("WARNING: oml_ensemble_widths_estimate returned a zero variance value.")
-        return 0.0
+        return 1.0
 
 #Related to the GMO kernel
 class GMO_kernel_params:
@@ -133,7 +137,7 @@ def count_ibo_atom_reps(oml_comp):
     return output
 
 
-def generate_GMO_kernel(A, B, kernel_params):
+def generate_GMO_kernel(A, B, kernel_params, sym_kernel_mat=False):
     if kernel_params.pair_reps:
         Ac=pair_GMO_kernel_input(A)
         Bc=pair_GMO_kernel_input(B)
@@ -146,12 +150,13 @@ def generate_GMO_kernel(A, B, kernel_params):
             fgmo_kernel(Ac.max_num_scalar_reps,
                     Ac.ibo_atom_sreps.T, Ac.rhos.T, Ac.max_tot_num_ibo_atom_reps, Ac.num_mols,
                     Bc.ibo_atom_sreps.T, Bc.rhos.T, Bc.max_tot_num_ibo_atom_reps, Bc.num_mols,
-                    kernel_params.width_params, kernel_params.final_sigma, kernel_params.normalize_lb_kernel, kernel_mat)
+                    kernel_params.width_params, kernel_params.final_sigma, kernel_params.normalize_lb_kernel,
+                    sym_kernel_mat, kernel_mat)
         else:
             flinear_base_kernel_mat(Ac.max_num_scalar_reps,
                     Ac.ibo_atom_sreps.T, Ac.rhos.T, Ac.max_tot_num_ibo_atom_reps, Ac.num_mols,
                     Bc.ibo_atom_sreps.T, Bc.rhos.T, Bc.max_tot_num_ibo_atom_reps, Bc.num_mols,
-                    kernel_params.width_params, kernel_mat)
+                    kernel_params.width_params, sym_kernel_mat, kernel_mat)
     else:
         jconfig.update("jax_enable_x64", True)
         if kernel_params.parallel:

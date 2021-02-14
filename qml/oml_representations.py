@@ -213,7 +213,7 @@ class OML_ibo_spectral_rep:
 class OML_ibo_rep:
     def __init__(self, ibo_coeffs, rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coup_mats):
         from .oml_representations import weighted_array
-        self.rho=1.0
+        self.rho=0.0
         self.full_coeffs=ibo_coeffs
         atom_list=[]
         prev_atom=-1

@@ -38,7 +38,7 @@ logfile.write("xyz list 2")
 logfile.write(tested_xyzs_2)
 
 logfile.write("kernel_11")
-kernel=qml.oml_kernels.generate_GMO_kernel(oml_compounds_1, oml_compounds_1, kernel_params)
+kernel=qml.oml_kernels.generate_GMO_kernel(oml_compounds_1, oml_compounds_1, kernel_params, sym_kernel_mat=True)
 logfile.export_matrix(kernel)
 
 logfile.write("kernel_12")

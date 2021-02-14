@@ -29,15 +29,16 @@ import pickle
 from pyscf import lo, gto, scf, dft
 from os.path import isfile
 
-mf_creator={"HF" : scf.RHF, "UHF" : scf.UHF, "DFT" : dft.RKS, "UKS" : dft.UKS}
+mf_creator={"HF" : scf.RHF, "UHF" : scf.UHF, "KS" : dft.RKS, "UKS" : dft.UKS}
 
-is_restricted={"HF" : True, "UHF" : False, "DFT" : True, "UKS" : False}
+is_restricted={"HF" : True, "UHF" : False, "KS" : True, "UKS" : False}
 
-is_HF={"HF" : True, "UHF" : True, "DFT" : False, "UKS" : False}
+is_HF={"HF" : True, "UHF" : True, "KS" : False, "UKS" : False}
 
-is_KS={"HF" : False, "UHF" : False, "DFT" : True, "UKS" : True}
+is_KS={"HF" : False, "UHF" : False, "KS" : True, "UKS" : True}
 
 neglect_orb_occ=0.1
+
 
 class pySCFNotConvergedError(Exception):
     pass
@@ -209,8 +210,11 @@ class OML_compound(Compound):
                     cur_fock_mat=reconstruct_effective_Hamiltonian(self.mo_coeff[spin], self.mo_energy[spin])
                 coupling_matrices=(*coupling_matrices, cur_fock_mat)
             else:
-                coupling_matrices=(self.fock_mat[spin], self.j_mat[spin], self.k_mat[spin])
+                coupling_matrices=(self.fock_mat[spin], self.j_mat[spin]/orb_occ_prop_coeff(self), self.k_mat[spin]/orb_occ_prop_coeff(self))
             self.orb_reps+=generate_ibo_rep_array(self.ibo_mat[spin], rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)
+        ibo_occ=orb_occ_prop_coeff(self)
+        for orb_rep_counter in range(len(self.orb_reps)):
+            self.orb_reps[orb_rep_counter].rho=ibo_occ
 #                if rep_params.ibo_spectral_representation: # It would be very funny if this representation proves to be useful.
 #                    self.orb_reps=generate_ibo_spectral_rep_array(sibo_mat, rep_params, self.orb_overlap, self.mo_coeff, self.mo_occ, self.mo_energy, self.HOMO_en())
 #                else:
@@ -327,6 +331,12 @@ def reconstruct_effective_Hamiltonian(mo_coeff, mo_energy):
     diag_mat=jnp.array(diag_mat)
     return jnp.matmul(inv_mat.T, jnp.matmul(diag_mat, inv_mat))
 
+def orb_occ_prop_coeff(comp):
+    if (is_restricted[comp.calc_type]):
+        return 2.0
+    else:
+        return 1.0
+
 
 class OML_pyscf_calc_params:
 #   Parameters of how Fock orbitals and IBOs are calculated.
@@ -337,11 +347,11 @@ class OML_pyscf_calc_params:
 
 
 class OML_Slater_pair:
-    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="sto-3g", second_charge=0,
+    def __init__(self, xyz = None, mats_savefile = None, first_calc_type="HF", second_calc_type="HF", basis="sto-3g", second_charge=0,
         second_orb_type="standard_IBO", optimize_geometry=False, use_Huckel=False):
-        comp1=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type,
+        comp1=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=first_calc_type,
                         basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)
-        comp2=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=calc_type,
+        comp2=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=second_calc_type,
                         basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry, charge=second_charge, used_orb_type=second_orb_type)
         self.comps=[comp1, comp2]
     def run_calcs(self, pyscf_calc_params=None):

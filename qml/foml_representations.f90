@@ -73,7 +73,6 @@ integer:: ang_mom1, ang_mom2, mat_counter, cur_array_position,&
                                     other_atom_id+1, ang_mom1, ang_mom2, atom_ao_ranges,&
                                     coeffs, angular_momenta, coup_mats(:, :, mat_counter),&
                                     tot_num_atoms, num_aos)
-                            
                         enddo
                     endif
                     cur_array_position=cur_array_position+1
