@@ -152,11 +152,13 @@ integer, intent(in):: d
 double precision, dimension(d, d), intent(inout):: matrix
 integer:: i1, i2
 
+!$OMP PARALLEL DO
 do i1=1, d
     do i2=1, i1
         matrix(i1, i2)=matrix(i2, i1)
     enddo
 enddo
+!$OMP END PARALLEL DO
 
 END SUBROUTINE
 
