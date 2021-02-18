@@ -128,7 +128,7 @@ if (present(BB_products)) then
                             B_max_tot_num_ibo_atom_reps, B_num_mols, BB_products)
     endif
 endif
-!$OMP PARALLEL DO
+!$OMP PARALLEL DO SCHEDULE(DYNAMIC)
 do B_mol_counter = 1, B_num_mols
     if (sym_kernel_mat) then
         upper_A_mol_counter=B_num_mols
