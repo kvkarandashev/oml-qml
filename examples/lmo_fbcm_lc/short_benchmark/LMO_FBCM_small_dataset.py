@@ -6,14 +6,13 @@ from learning_curve_building import KR_model, best_model_params, make_learning_c
                     Delta_learning_parameters, geom_progression, linear_interpolation_points, create_shuffled_xyz_list, dirs_xyz_list,\
                     OML_Slater_pair_rep, OML_GMO_kernel_function
 from qm9_format_specs import Quantity
-import random
-from os.path import expanduser
+import random, os
 
 training_sizes=[20, 40]
 model_scanning_size=20
 check_size=10
 
-QM9_dir=expanduser("~")+"/QM9_formatted"
+QM9_dir="/data/"+os.environ["USER"]+"/QM9_formatted"
 num_iters=2
 
 seed=0

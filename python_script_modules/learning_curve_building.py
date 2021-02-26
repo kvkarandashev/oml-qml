@@ -2,6 +2,7 @@
 import qml
 import jax.numpy as jnp
 import math
+import numpy as np
 
 byprod_result_ending=".brf"
 
@@ -19,6 +20,41 @@ def find_max_size(compound_list):
 
 ### END
 
+### Some useful np-based routines. Analogous to some from qml.math,
+### introduced for cases when parallelization of qml.math does not work
+### properly.
+def np_svd_solve(a,b,rcond=0.0):
+    u,s,v = np.linalg.svd(a)
+    c = np.dot(u.T,b)
+#    w = np.linalg.solve(np.diag(s),c[:len(s)])
+    w=np.zeros(len(s))
+    for i, (cur_c, cur_s) in enumerate(zip(c[:len(s)], s)):
+        if (abs(cur_s>rcond)):
+            w[i]=cur_c/cur_s
+    x = np.dot(v.T,w)
+    return x
+
+def np_eigh_posd_solve(mat, vec, rcond=1e-9):
+    eigenvals, eigenvecs=np.linalg.eigh(mat)
+    vec_transformed=np.dot(vec, eigenvecs)
+    for eigenval_id, eigenval in enumerate(eigenvals):
+        if eigenval > rcond:
+            vec_transformed[eigenval_id]/=eigenval
+        else:
+            vec_transformed[eigenval_id]=0
+    return np.dot(eigenvecs, vec_transformed)
+
+def np_cho_solve(mat, vec, eigh_rcond=1e-9):
+    from scipy.linalg import cho_factor, cho_solve
+    try:
+        c, low=cho_factor(mat)
+        return cho_solve((c, low), vec)
+    except np.linalg.LinAlgError:
+        print("WARNING: Cholesky failed.")
+        return np_eigh_posd_solve(mat, vec, rcond=eigh_rcond)
+
+
+# Model class.
 class KR_model:
     def __init__(self, kernel_function=None, representation=None):
         self.kernel_function=kernel_function
@@ -177,11 +213,11 @@ class kernel_function:
     def __init__(self, lambda_val=0.0, diag_el_unity=False):
         self.lambda_val=lambda_val
         self.diag_el_unity=diag_el_unity
-    def km_added_lambda(self, arr1, arr2):
-        K=self.kernel_matrix(arr1, arr2, sym_kernel_mat=True)
+    def km_added_lambda(self, array):
+        K=self.sym_kernel_matrix(array)
         self.print_diag_deviation(K)
         # TO-DO: Check whether this is necessary:
-        K_size=len(arr1)
+        K_size=len(array)
         for i1 in range(K_size):
             for i2 in range(i1):
                 true_K=(K[i1,i2]+K[i2,i1])/2
@@ -195,6 +231,8 @@ class kernel_function:
         pass
     def print_diag_deviation(self, matrix):
         print("#TEST Total deviation of diagonal elements from 1: ", sum(abs(el-1.0) for el in matrix[jnp.diag_indices_from(matrix)]))
+    def sym_kernel_matrix(self, array):
+        return self.kernel_matrix(array, array)
 
 class standard_geometric_kernel_function(kernel_function):
     def __init__(self, lambda_val=0.0, diag_el_unity=False):
@@ -208,7 +246,7 @@ class Gaussian_kernel_function(standard_geometric_kernel_function):
     def __init__(self, sigma, lambda_val=0.0, diag_el_unity=False):
         super().__init__(lambda_val=lambda_val, diag_el_unity=diag_el_unity)
         self.sigma=sigma
-    def kernel_matrix(self, arr1, arr2, sym_kernel_mat=False):
+    def kernel_matrix(self, arr1, arr2):
         inp_arr1, inp_arr2=self.make_kernel_input_arrs(arr1, arr2)
         from qml.kernels import gaussian_kernel
         return gaussian_kernel(inp_arr1, inp_arr2, self.sigma)
@@ -219,7 +257,7 @@ class Laplacian_kernel_function(standard_geometric_kernel_function):
     def __init__(self, sigma, lambda_val=0.0, diag_el_unity=False):
         super().__init__(lambda_val=lambda_val, diag_el_unity=diag_el_unity)
         self.sigma=sigma
-    def kernel_matrix(self, arr1, arr2, sym_kernel_mat=False):
+    def kernel_matrix(self, arr1, arr2):
         inp_arr1, inp_arr2=self.make_kernel_input_arrs(arr1, arr2)
         from qml.kernels import laplacian_kernel
         return laplacian_kernel(inp_arr1, inp_arr2, self.sigma)
@@ -228,16 +266,20 @@ class Laplacian_kernel_function(standard_geometric_kernel_function):
 
 class OML_GMO_kernel_function(kernel_function):
     def __init__(self, lambda_val=1e-9, final_sigma=1.0, sigma_rescale=1.0, use_Fortran=True, pair_reps=True,
-                    normalize_lb_kernel=False, use_Gaussian_kernel=False, diag_el_unity=False):
+                    normalize_lb_kernel=False, use_Gaussian_kernel=False, diag_el_unity=False, width_params=None):
         super().__init__(lambda_val=lambda_val, diag_el_unity=diag_el_unity)
         self.kernel_params=qml.oml_kernels.GMO_kernel_params(final_sigma=final_sigma, use_Fortran=use_Fortran,
                         normalize_lb_kernel=normalize_lb_kernel, use_Gaussian_kernel=use_Gaussian_kernel, pair_reps=pair_reps)
         self.sigma_rescale=sigma_rescale
+        if width_params is not None:
+            self.kernel_params.update_width(width_params/self.sigma_rescale)
     def adjust_hyperparameters(self, compound_array, var_cutoff_val=0.0):
         orb_sample=qml.oml_kernels.random_ibo_sample(compound_array, pair_reps=self.kernel_params.pair_reps)
         self.kernel_params.update_width(qml.oml_kernels.oml_ensemble_widths_estimate(orb_sample, var_cutoff_val=var_cutoff_val)/self.sigma_rescale)
-    def kernel_matrix(self, arr1, arr2, sym_kernel_mat=False):
-        return qml.oml_kernels.generate_GMO_kernel(arr1, arr2, self.kernel_params, sym_kernel_mat=sym_kernel_mat)
+    def kernel_matrix(self, arr1, arr2):
+        return qml.oml_kernels.generate_GMO_kernel(arr1, arr2, self.kernel_params)
+    def sym_kernel_matrix(self, array):
+        return qml.oml_kernels.generate_GMO_kernel(array, array, self.kernel_params, sym_kernel_mat=True)
     def __str__(self):
         output="GMO,sigma_rescale:"+str(self.sigma_rescale)
         if self.kernel_params.use_Gaussian_kernel:
@@ -412,7 +454,7 @@ class logfile:
 #   Calculate MAE using first training_size entries of xyz_list and last check_size entries of xyz_list.
 def calculate_MAE(xyz_list, training_size, check_size, quantity, model, delta_learning_params=None, calc_logfile=logfile(None, None), quant_logfile=logfile(None, None),
                     quantity_train_array=None, quantity_check_array=None, compound_train_array=None, compound_check_array=None,
-                    hyperparameter_opt_set=False):
+                    hyperparameter_opt_set=False, eigh_rcond=1e-9):
     from qml.math import cho_solve
 
     if (compound_train_array is None) or (compound_check_array is None):
@@ -430,10 +472,11 @@ def calculate_MAE(xyz_list, training_size, check_size, quantity, model, delta_le
 
     for log in [calc_logfile, quant_logfile]:
         log.write("Training size: ", training_size, "Model: ", model)
-    K=model.kernel_function.km_added_lambda(training_compounds, training_compounds)
+    K=model.kernel_function.km_added_lambda(training_compounds)
     calc_logfile.write("Determinant of K: ", jnp.linalg.det(K))
     calc_logfile.write("Asymmetry measure of K: ", asymmetry_measure(K))
-    alpha = cho_solve(K, training_quants)
+    alpha=np_cho_solve(K, training_quants, eigh_rcond=eigh_rcond)
+#    alpha = cho_solve(K, training_quants)
 #    alpha = jnp.linalg.solve(K, training_quants)
     quant_logfile.write("Training K:")
     quant_logfile.export_matrix(K)
