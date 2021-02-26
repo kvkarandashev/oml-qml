@@ -27,9 +27,6 @@ from jax import jit
 import math
 
 from .foml_representations import fgen_ibo_atom_scalar_rep, fgen_fock_ft_coup_mats
-#   TO-DO get rid of next line
-from .oml_kernels import generate_GMO_kernel
-from qml.math import cho_invert
 
 
 class OML_rep_params:

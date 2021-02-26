@@ -26,7 +26,8 @@ import jax.numpy as jnp
 import jax.config as jconfig
 from jax import jit, vmap
 from .python_parallelization import embarassingly_parallel
-import math
+import math, itertools
+
 
 from .foml_kernels import fgmo_kernel, flinear_base_kernel_mat
 
@@ -85,7 +86,8 @@ def sqrt_sign_checked(val, var_cutoff_val=0.0):
 
 #Related to the GMO kernel
 class GMO_kernel_params:
-    def __init__(self, width_params=None, final_sigma=1.0, normalize_lb_kernel=False, parallel=False, use_Fortran=True, use_Gaussian_kernel=False, pair_reps=True):
+    def __init__(self, width_params=None, final_sigma=1.0, normalize_lb_kernel=False, parallel=False, use_Fortran=True, use_Gaussian_kernel=False,
+                    pair_reps=True, density_neglect=1e-9):
         self.width_params=width_params
         if self.width_params is not None:
             self.width_params=jnp.array(self.width_params)
@@ -98,6 +100,7 @@ class GMO_kernel_params:
         self.parallel=parallel
         self.use_Gaussian_kernel=use_Gaussian_kernel
         self.pair_reps=pair_reps
+        self.density_neglect=density_neglect
     def update_width(self, width_params):
         self.width_params=jnp.array(width_params)
         self.inv_sq_width_params=self.width_params**(-2)
@@ -105,7 +108,7 @@ class GMO_kernel_params:
 #   TO-DO rename scalar reps!!!
 
 class GMO_kernel_input:
-    def __init__(self, oml_compound_array=None):
+    def __init__(self, oml_compound_array=None, pair_reps=False):
         if oml_compound_array is None:
             self.num_mols=None
             self.max_tot_num_ibo_atom_reps=None
@@ -115,49 +118,65 @@ class GMO_kernel_input:
             self.num_mols=len(oml_compound_array)
             self.max_tot_num_ibo_atom_reps=0
             for oml_comp in oml_compound_array:
-                self.max_tot_num_ibo_atom_reps=max(self.max_tot_num_ibo_atom_reps, count_ibo_atom_reps(oml_comp))
-            self.max_num_scalar_reps=len(oml_compound_array[0].orb_reps[0].ibo_atom_reps[0].scalar_reps)
+                self.max_tot_num_ibo_atom_reps=max(self.max_tot_num_ibo_atom_reps, count_ibo_atom_reps(oml_comp, pair_reps))
+            if pair_reps:
+                self.max_num_scalar_reps=len(oml_compound_array[0].comps[0].orb_reps[0].ibo_atom_reps[0].scalar_reps)
+            else:
+                self.max_num_scalar_reps=len(oml_compound_array[0].orb_reps[0].ibo_atom_reps[0].scalar_reps)
             self.rhos=np.zeros((self.num_mols, self.max_tot_num_ibo_atom_reps))
             self.ibo_atom_sreps=np.zeros((self.num_mols, self.max_tot_num_ibo_atom_reps, self.max_num_scalar_reps))
             for ind_comp, oml_comp in enumerate(oml_compound_array):
+                cur_rho_sreps = sorted_rhos_ibo_atom_sreps(oml_comp, pair_reps)
                 aibo_counter=0
-                for ibo in oml_comp.orb_reps:
-                    for ibo_atom_rep in ibo.ibo_atom_reps:
-                        self.rhos[ind_comp, aibo_counter]=ibo.rho*ibo_atom_rep.rho
-                        self.ibo_atom_sreps[ind_comp, aibo_counter, :]=ibo_atom_rep.scalar_reps
-                        aibo_counter+=1
+                for rho_srep in cur_rho_sreps:
+                    self.rhos[ind_comp, aibo_counter]=rho_srep[0]
+                    self.ibo_atom_sreps[ind_comp, aibo_counter, :]=rho_srep[1][:]
+                    aibo_counter+=1
             self.ibo_atom_sreps=jnp.array(self.ibo_atom_sreps)
             self.rhos=jnp.array(self.rhos)
 
-def count_ibo_atom_reps(oml_comp):
+def sorted_rhos_ibo_atom_sreps(oml_comp, pair_reps):
+    output=[]
+    for ibo in iterated_orb_reps(oml_comp, pair_reps):
+        for ibo_atom_rep in ibo.ibo_atom_reps:
+            output.append([ibo.rho*ibo_atom_rep.rho, ibo_atom_rep.scalar_reps])
+    if pair_reps:
+        for i in range(count_ibo_atom_reps(oml_comp.comps[0])):
+            output[i][0]*=-1
+    output.sort(key=lambda x: abs(x[0]), reverse=True)
+    return output
+
+def count_ibo_atom_reps(oml_comp, pair_reps=False):
     output=0
-    for ibo in oml_comp.orb_reps:
+    for ibo in iterated_orb_reps(oml_comp, pair_reps):
         for ibo_atom_rep in ibo.ibo_atom_reps:
             output+=1
     return output
 
+def iterated_orb_reps(oml_comp, pair_reps=False):
+    if pair_reps:
+        return itertools.chain(oml_comp.comps[0].orb_reps, oml_comp.comps[1].orb_reps)
+    else:
+        return oml_comp.orb_reps
 
 def generate_GMO_kernel(A, B, kernel_params, sym_kernel_mat=False):
-    if kernel_params.pair_reps:
-        Ac=pair_GMO_kernel_input(A)
-        Bc=pair_GMO_kernel_input(B)
-    else:
-        Ac=GMO_kernel_input(A)
-        Bc=GMO_kernel_input(B)
+    Ac=GMO_kernel_input(A, kernel_params.pair_reps)
+    Bc=GMO_kernel_input(B, kernel_params.pair_reps)
     if kernel_params.use_Fortran:
         kernel_mat = np.empty((Ac.num_mols, Bc.num_mols), order='F')
         if kernel_params.use_Gaussian_kernel:
             fgmo_kernel(Ac.max_num_scalar_reps,
                     Ac.ibo_atom_sreps.T, Ac.rhos.T, Ac.max_tot_num_ibo_atom_reps, Ac.num_mols,
                     Bc.ibo_atom_sreps.T, Bc.rhos.T, Bc.max_tot_num_ibo_atom_reps, Bc.num_mols,
-                    kernel_params.width_params, kernel_params.final_sigma, kernel_params.normalize_lb_kernel,
-                    sym_kernel_mat, kernel_mat)
+                    kernel_params.width_params, kernel_params.final_sigma, kernel_params.density_neglect,
+                    kernel_params.normalize_lb_kernel, sym_kernel_mat, kernel_mat)
         else:
             flinear_base_kernel_mat(Ac.max_num_scalar_reps,
                     Ac.ibo_atom_sreps.T, Ac.rhos.T, Ac.max_tot_num_ibo_atom_reps, Ac.num_mols,
                     Bc.ibo_atom_sreps.T, Bc.rhos.T, Bc.max_tot_num_ibo_atom_reps, Bc.num_mols,
-                    kernel_params.width_params, sym_kernel_mat, kernel_mat)
+                    kernel_params.width_params, kernel_params.density_neglect, sym_kernel_mat, kernel_mat)
     else:
+        #TO-DO use density_neglect here too?
         jconfig.update("jax_enable_x64", True)
         if kernel_params.parallel:
             return jnp.array(embarassingly_parallel(GMO_kernel_row, zip(Ac.rhos, Ac.ibo_atom_sreps), Bc, kernel_params))
@@ -166,6 +185,8 @@ def generate_GMO_kernel(A, B, kernel_params, sym_kernel_mat=False):
                         Bc.ibo_atom_sreps, kernel_params.inv_sq_width_params, kernel_params.final_sigma, kernel_params.normalize_lb_kernel,
                         kernel_params.use_Gaussian_kernel)
     return kernel_mat
+
+
 
 def GMO_kernel_row(A_tuple, Bc, kernel_params):
     return jit(jax_GMO_kernel_row, static_argnums=(6,7))(A_tuple[0], A_tuple[1], Bc.rhos, Bc.ibo_atom_sreps, kernel_params.inv_sq_width_params,
@@ -211,33 +232,6 @@ def jax_GMO_lb_sq_norm(rho, srep, inv_sq_width_params):
     return jax_GMO_lb_kernel_element(rho, srep, rho, srep, inv_sq_width_params)
 
     
-# For pairs of Slater determinants.
-def pair_GMO_kernel_input(pair_oml_compound_array):
-    comp_arr1=[]
-    comp_arr2=[]
-    for pair_compound in pair_oml_compound_array:
-        comp_arr1.append(pair_compound.comps[0])
-        comp_arr2.append(pair_compound.comps[1])
-    conv_arr1=GMO_kernel_input(comp_arr1)
-    conv_arr2=GMO_kernel_input(comp_arr2)
-    final_result=GMO_kernel_input()
-    final_result.ibo_atom_sreps=merge_along_2nd_dim(conv_arr1.ibo_atom_sreps, conv_arr2.ibo_atom_sreps)
-    final_result.rhos=merge_along_2nd_dim(conv_arr1.rhos, conv_arr2.rhos, first_negative=True)
-    final_result.num_mols=len(pair_oml_compound_array)
-    final_result.max_tot_num_ibo_atom_reps=conv_arr1.max_tot_num_ibo_atom_reps+conv_arr2.max_tot_num_ibo_atom_reps
-    final_result.max_num_scalar_reps=conv_arr1.max_num_scalar_reps
-    return final_result
-
-def merge_along_2nd_dim(arr1, arr2, first_negative=False):
-    output=[]
-    for mol1, mol2 in zip(arr1, arr2):
-        part1=np.array(mol1)
-        part2=np.array(mol2)
-        if first_negative:
-            part1*=-1
-        output.append(np.concatenate((part1, part2)))
-    return jnp.array(output)
-
 #   Estimate the average square deviation of scalar representations of atomic contributions to IBOs
 #   in the orb_rep_array. Used to estimate reasonable hyperparameter values. 
 def oml_pair_ensemble_widths_estimate(orb_rep_array):
