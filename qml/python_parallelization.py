@@ -13,15 +13,11 @@ def embarassingly_parallel(func, array, other_args, disable_openmp=True):
     if type(other_args) is not tuple:
         other_args=(other_args,)
     if disable_openmp:
-        import pickle as pl
+        from .utils import dump2pkl, loadpkl
         dump_filename=subprocess.check_output(["mktemp", "-p", os.getcwd()])[:-1]
-        plf=open(dump_filename, 'wb')
-        pl.dump({"func" : func, "array" : array, "args" : other_args}, plf)
-        plf.close()
+        dump2pkl({"func" : func, "array" : array, "args" : other_args}, dump_filename)
         subprocess.run(["oml_emb_paral_func_exec.sh", dump_filename])
-        plf=open(dump_filename, 'rb')
-        output=pl.load(plf)
-        plf.close()
+        output=loadpkl(dump_filename)
         subprocess.run(["rm", '-f', dump_filename])
         return output
     else:

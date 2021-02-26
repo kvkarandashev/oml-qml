@@ -25,7 +25,7 @@ from .oml_representations import generate_ibo_rep_array, gen_fock_based_coup_mat
 import jax.numpy as jnp
 import numpy as np
 import math
-import pickle
+from .utils import dump2pkl, loadpkl
 from pyscf import lo, gto, scf, dft
 from os.path import isfile
 
@@ -90,10 +90,7 @@ class OML_compound(Compound):
             self.pyscf_chkfile_avail=isfile(self.pyscf_chkfile)
         if self.mats_created:
             # Import ab initio results from the savefile.
-            savefile = open(self.mats_savefile, "rb")
-            precalc_mats = pickle.load(savefile)
-            savefile.close()
-            precalc_vals=np.load(self.mats_savefile, allow_pickle=True)
+            precalc_vals=loadpkl(self.mats_savefile)
             self.mo_coeff=precalc_vals["mo_coeff"]
             self.mo_occ=precalc_vals["mo_occ"]
             self.mo_energy=precalc_vals["mo_energy"]
@@ -181,9 +178,7 @@ class OML_compound(Compound):
                     saved_data={**saved_data, "j_mat" : self.j_mat, "k_mat" : self.k_mat, "fock_mat" : self.fock_mat}
                 if self.optimize_geometry:
                     saved_data["opt_coords"]=self.opt_coords
-                savefile = open(self.mats_savefile, "wb")
-                pickle.dump(saved_data, savefile)
-                savefile.close()
+                dump2pkl(saved_data, self.mats_savefile)
     def generate_orb_reps(self, rep_params):
         """ Generates orbital representation.
 

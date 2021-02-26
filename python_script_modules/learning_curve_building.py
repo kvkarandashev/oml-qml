@@ -272,7 +272,7 @@ class OML_GMO_kernel_function(kernel_function):
                         normalize_lb_kernel=normalize_lb_kernel, use_Gaussian_kernel=use_Gaussian_kernel, pair_reps=pair_reps)
         self.sigma_rescale=sigma_rescale
         if width_params is not None:
-            self.kernel_params.update_width(width_params/self.sigma_rescale)
+            self.kernel_params.update_width(jnp.array(width_params)/self.sigma_rescale)
     def adjust_hyperparameters(self, compound_array, var_cutoff_val=0.0):
         orb_sample=qml.oml_kernels.random_ibo_sample(compound_array, pair_reps=self.kernel_params.pair_reps)
         self.kernel_params.update_width(qml.oml_kernels.oml_ensemble_widths_estimate(orb_sample, var_cutoff_val=var_cutoff_val)/self.sigma_rescale)
