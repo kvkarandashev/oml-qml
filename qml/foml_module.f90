@@ -72,15 +72,18 @@ double precision, dimension(B_max_tot_num_ibo_atom_reps), intent(in):: B_rhos
 double precision, intent(in):: density_neglect
 double precision:: flin_base_kernel_element
 integer:: i_A, i_B
+double precision:: A_rho, B_rho
 
     flin_base_kernel_element=0.0
     do i_A=1, A_max_tot_num_ibo_atom_reps
-        if (abs(A_rhos(i_A))<density_neglect) exit
+        A_rho=A_rhos(i_A)
+        if (abs(A_rho)<density_neglect) exit
         do i_B=1, B_max_tot_num_ibo_atom_reps
-            if (abs(B_rhos(i_B))<density_neglect) exit
+            B_rho=B_rhos(i_B)
+            if (abs(B_rho)<density_neglect) exit
             flin_base_kernel_element=flin_base_kernel_element+&
                         exp(-sum((A_ibo_atom_sreps_scaled(:, i_A)-B_ibo_atom_sreps_scaled(:, i_B))**2)/4)&
-                                *A_rhos(i_A)*B_rhos(i_B)
+                                *A_rho*B_rho
         enddo
     enddo
 
