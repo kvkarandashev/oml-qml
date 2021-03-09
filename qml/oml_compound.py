@@ -231,7 +231,13 @@ class OML_compound(Compound):
         mol.charge=self.charge
         mol.spin=self.charge%2
         mol.basis=self.basis
-        mol.build()
+        try:
+            mol.build()
+        except KeyError as KE:
+            if (str(KE)[1:-1]==mol.basis):
+                import basis_set_exchange as bse
+                mol.basis=bse.get_basis(basisset, fmt="nwchem")
+                mol.build()
         return mol
     def generate_pyscf_mf(self, pyscf_mol):
         mf=mf_creator[self.calc_type](pyscf_mol)
