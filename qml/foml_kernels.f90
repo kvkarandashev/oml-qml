@@ -25,7 +25,7 @@
 SUBROUTINE fgmo_kernel(num_scal_reps,&
                     A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
                     B_ibo_atom_sreps, B_rhos, B_max_tot_num_ibo_atom_reps, B_num_mols,&
-                    width_params, sigma, normalize_lb_kernel, sym_kernel_mat, kernel_mat)
+                    width_params, sigma, density_neglect, normalize_lb_kernel, sym_kernel_mat, kernel_mat)
 use foml_module, only : flinear_base_kernel_mat_with_opt, symmetrize_matrix
 implicit none
 integer, intent(in):: num_scal_reps
@@ -36,6 +36,7 @@ double precision, dimension(:,:,:), intent(in):: B_ibo_atom_sreps
 double precision, dimension(:, :), intent(in):: A_rhos, B_rhos
 double precision, dimension(:), intent(in):: width_params
 double precision, intent(in):: sigma
+double precision, intent(in):: density_neglect
 logical, intent(in):: normalize_lb_kernel
 logical, intent(in):: sym_kernel_mat
 double precision, dimension(:, :), intent(inout):: kernel_mat ! (A_num_mols, B_num_mols)
@@ -47,9 +48,9 @@ integer:: A_mol_counter, B_mol_counter, upper_A_mol_counter
 call flinear_base_kernel_mat_with_opt(num_scal_reps,&
                     A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
                     B_ibo_atom_sreps, B_rhos, B_max_tot_num_ibo_atom_reps, B_num_mols,&
-                    width_params, sym_kernel_mat, lb_kernel_mat, AA_products, BB_products)
+                    width_params, density_neglect, sym_kernel_mat, lb_kernel_mat, AA_products, BB_products)
 
-!$OMP PARALLEL DO
+!$OMP PARALLEL DO PRIVATE(upper_A_mol_counter) SCHEDULE(DYNAMIC)
 do B_mol_counter = 1, B_num_mols
     if (sym_kernel_mat) then
         upper_A_mol_counter=B_num_mols
@@ -77,7 +78,7 @@ END SUBROUTINE
 SUBROUTINE flinear_base_kernel_mat(num_scal_reps,&
                     A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
                     B_ibo_atom_sreps, B_rhos, B_max_tot_num_ibo_atom_reps, B_num_mols,&
-                    width_params, sym_kernel_mat, kernel_mat)
+                    width_params, density_neglect, sym_kernel_mat, kernel_mat)
 use foml_module, only : flinear_base_kernel_mat_with_opt
 implicit none
 integer, intent(in):: num_scal_reps
@@ -88,6 +89,7 @@ double precision, dimension(:, :, :), intent(in):: B_ibo_atom_sreps
 double precision, dimension(:, :), intent(in):: A_rhos
 double precision, dimension(:, :), intent(in):: B_rhos
 double precision, dimension(:), intent(in):: width_params
+double precision, intent(in):: density_neglect
 logical, intent(in):: sym_kernel_mat
 double precision, dimension(:, :), intent(inout):: kernel_mat
 
@@ -95,7 +97,7 @@ double precision, dimension(:, :), intent(inout):: kernel_mat
 call flinear_base_kernel_mat_with_opt(num_scal_reps,&
                     A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
                     B_ibo_atom_sreps, B_rhos, B_max_tot_num_ibo_atom_reps, B_num_mols,&
-                    width_params, sym_kernel_mat, kernel_mat)
+                    width_params, density_neglect, sym_kernel_mat, kernel_mat)
 
 END SUBROUTINE flinear_base_kernel_mat
 

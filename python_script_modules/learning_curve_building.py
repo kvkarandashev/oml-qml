@@ -266,10 +266,12 @@ class Laplacian_kernel_function(standard_geometric_kernel_function):
 
 class OML_GMO_kernel_function(kernel_function):
     def __init__(self, lambda_val=1e-9, final_sigma=1.0, sigma_rescale=1.0, use_Fortran=True, pair_reps=True,
-                    normalize_lb_kernel=False, use_Gaussian_kernel=False, diag_el_unity=False, width_params=None):
+                    normalize_lb_kernel=False, use_Gaussian_kernel=False, diag_el_unity=False, width_params=None,
+                    density_neglect=1e-9):
         super().__init__(lambda_val=lambda_val, diag_el_unity=diag_el_unity)
         self.kernel_params=qml.oml_kernels.GMO_kernel_params(final_sigma=final_sigma, use_Fortran=use_Fortran,
-                        normalize_lb_kernel=normalize_lb_kernel, use_Gaussian_kernel=use_Gaussian_kernel, pair_reps=pair_reps)
+                        normalize_lb_kernel=normalize_lb_kernel, use_Gaussian_kernel=use_Gaussian_kernel, pair_reps=pair_reps,
+                        density_neglect=density_neglect)
         self.sigma_rescale=sigma_rescale
         if width_params is not None:
             self.kernel_params.update_width(jnp.array(width_params)/self.sigma_rescale)
