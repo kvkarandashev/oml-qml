@@ -1,7 +1,5 @@
 from qml.oml_compound import OML_compound
 
-#from qml.
-
 def HOMO_en(xyz_name, calc_type="HF", basis="sto-3g", dft_xc='lda,vwn', dft_nlc=''):
     oml_comp=OML_compound(xyz = xyz_name, mats_savefile = xyz_name, calc_type=calc_type, basis=basis, dft_xc=dft_xc, dft_nlc=dft_nlc)
     oml_comp.run_calcs()
@@ -15,6 +13,10 @@ def LUMO_en(xyz_name, calc_type="HF", basis="sto-3g", dft_xc='lda,vwn', dft_nlc=
 def HOMO_LUMO_gap(xyz_name, calc_type="HF", basis="sto-3g", dft_xc='lda,vwn', dft_nlc=''):
     return LUMO_en(xyz_name, calc_type=calc_type, basis=basis, dft_xc=dft_xc, dft_nlc=dft_nlc)-HOMO_en(xyz_name, calc_type=calc_type, basis=basis, dft_xc=dft_xc, dft_nlc=dft_nlc)
 
+def potential_energy(xyz_name, calc_type="HF", basis="sto-3g", dft_xc='lda,vwn', dft_nlc=''):
+    oml_comp=OML_compound(xyz = xyz_name, mats_savefile = xyz_name, calc_type=calc_type, basis=basis, dft_xc=dft_xc, dft_nlc=dft_nlc)
+    oml_comp.run_calcs()
+    return oml_comp.e_tot
 
 quant_properties = {'Dipole moment' : (6, 'Debye'),
                 'Isotropic polarizability' : (7, 'Bohr^3'),
@@ -23,7 +25,7 @@ quant_properties = {'Dipole moment' : (6, 'Debye'),
                 'HOMO-LUMO gap': (10, 'Hartree', HOMO_LUMO_gap),
                 'Electronic spacial extent': (11, 'Bohr^2'),
                 'Zero point vibrational energy': (12, 'Hartree'),
-                'Internal energy at 0 K': (13, 'Hartree'),
+                'Internal energy at 0 K': (13, 'Hartree', potential_energy),
                 'Internal energy at 298.15 K': (14, 'Hartree'),
                 'Enthalpy at 298.15 K': (15, 'Hartree'),
                 'Free energy at 298.15 K': (16, 'Hartree'),
