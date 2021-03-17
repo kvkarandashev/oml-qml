@@ -26,7 +26,7 @@ SUBROUTINE fgmo_kernel(num_scal_reps,&
                     A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
                     B_ibo_atom_sreps, B_rhos, B_max_tot_num_ibo_atom_reps, B_num_mols,&
                     width_params, sigma, density_neglect, normalize_lb_kernel, sym_kernel_mat, kernel_mat)
-use foml_module, only : flinear_base_kernel_mat_with_opt, symmetrize_matrix
+use foml_module, only : fgmo_sq_dist_halfmat, symmetrize_matrix
 implicit none
 integer, intent(in):: num_scal_reps
 integer, intent(in):: A_max_tot_num_ibo_atom_reps, A_num_mols
@@ -40,15 +40,12 @@ double precision, intent(in):: density_neglect
 logical, intent(in):: normalize_lb_kernel
 logical, intent(in):: sym_kernel_mat
 double precision, dimension(:, :), intent(inout):: kernel_mat ! (A_num_mols, B_num_mols)
-double precision, dimension(A_num_mols, B_num_mols):: lb_kernel_mat
-double precision, dimension(A_num_mols):: AA_products
-double precision, dimension(B_num_mols):: BB_products
 integer:: A_mol_counter, B_mol_counter, upper_A_mol_counter
 
-call flinear_base_kernel_mat_with_opt(num_scal_reps,&
+call fgmo_sq_dist_halfmat(num_scal_reps,&
                     A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
                     B_ibo_atom_sreps, B_rhos, B_max_tot_num_ibo_atom_reps, B_num_mols,&
-                    width_params, density_neglect, sym_kernel_mat, lb_kernel_mat, AA_products, BB_products)
+                    width_params, density_neglect, normalize_lb_kernel, sym_kernel_mat, kernel_mat)
 
 !$OMP PARALLEL DO PRIVATE(upper_A_mol_counter) SCHEDULE(DYNAMIC)
 do B_mol_counter = 1, B_num_mols
@@ -58,15 +55,7 @@ do B_mol_counter = 1, B_num_mols
         upper_A_mol_counter=A_num_mols
     endif
     do A_mol_counter=1, upper_A_mol_counter
-        if (normalize_lb_kernel) then
-            kernel_mat(A_mol_counter, B_mol_counter)=&
-                    exp(-(1.0-lb_kernel_mat(A_mol_counter, B_mol_counter)/&
-                    sqrt(AA_products(A_mol_counter)*BB_products(B_mol_counter)))/sigma**2)
-        else
-            kernel_mat(A_mol_counter, B_mol_counter)=&
-                    exp(-(AA_products(A_mol_counter)+BB_products(B_mol_counter)-&
-                    2*lb_kernel_mat(A_mol_counter, B_mol_counter))/2/sigma**2)
-        endif
+        kernel_mat(A_mol_counter, B_mol_counter)=exp(-kernel_mat(A_mol_counter, B_mol_counter)/2/sigma**2)
     enddo
 enddo
 !$OMP END PARALLEL DO
@@ -102,5 +91,29 @@ call flinear_base_kernel_mat_with_opt(num_scal_reps,&
 END SUBROUTINE flinear_base_kernel_mat
 
 
+SUBROUTINE fgmo_sq_dist(num_scal_reps,&
+                    A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
+                    B_ibo_atom_sreps, B_rhos, B_max_tot_num_ibo_atom_reps, B_num_mols,&
+                    width_params, density_neglect, normalize_lb_kernel, sym_kernel_mat, sq_dist_mat)
+use foml_module, only : symmetrize_matrix, fgmo_sq_dist_halfmat
+implicit none
+integer, intent(in):: num_scal_reps
+integer, intent(in):: A_max_tot_num_ibo_atom_reps, A_num_mols
+integer, intent(in):: B_max_tot_num_ibo_atom_reps, B_num_mols
+double precision, dimension(:, :, :), intent(in):: A_ibo_atom_sreps
+double precision, dimension(:, :, :), intent(in):: B_ibo_atom_sreps
+double precision, dimension(:, :), intent(in):: A_rhos
+double precision, dimension(:, :), intent(in):: B_rhos
+double precision, dimension(:), intent(in):: width_params
+double precision, intent(in):: density_neglect
+logical, intent(in):: normalize_lb_kernel
+logical, intent(in):: sym_kernel_mat
+double precision, dimension(:, :), intent(inout):: sq_dist_mat ! (A_num_mols, B_num_mols)
 
+    call fgmo_sq_dist_halfmat(num_scal_reps,&
+                    A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
+                    B_ibo_atom_sreps, B_rhos, B_max_tot_num_ibo_atom_reps, B_num_mols,&
+                    width_params, density_neglect, normalize_lb_kernel, sym_kernel_mat, sq_dist_mat)
+    if (sym_kernel_mat) call symmetrize_matrix(sq_dist_mat, A_num_mols)
 
+END SUBROUTINE

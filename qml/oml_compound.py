@@ -55,7 +55,7 @@ class OML_compound(Compound):
         calc_type       - type of the calculation (for now only HF with IBO localization and the default basis set are supported).
     """
     def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="sto-3g", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False, charge=0,
-            dft_xc='lda,vwn', dft_nlc=''):
+            dft_xc='lda,vwn', dft_nlc='', pyscf_calc_params=None):
         super().__init__(xyz=xyz)
 
         self.calc_type=calc_type
@@ -65,6 +65,10 @@ class OML_compound(Compound):
         self.used_orb_type=used_orb_type
         self.use_Huckel=use_Huckel
         self.optimize_geometry=optimize_geometry
+        if pyscf_calc_params is None:
+            self.pyscf_calc_params=OML_pyscf_calc_params()
+        else:
+            self.pyscf_calc_params=pyscf_calc_params
         if is_KS[self.calc_type]:
             self.dft_xc=dft_xc
             self.dft_nlc=dft_nlc
@@ -126,7 +130,7 @@ class OML_compound(Compound):
             if self.optimize_geometry:
                 self.opt_coords=None
         self.orb_reps=[]
-    def run_calcs(self, pyscf_calc_params=None):
+    def run_calcs(self):
         """ Runs the ab initio calculations if they are necessary.
 
             pyscf_calc_params   - object of OML_pyscf_calc_params class containing parameters of the pySCF calculation. (To be made more useful.)
@@ -164,10 +168,7 @@ class OML_compound(Compound):
             self.ibo_mat=[]
             for occ_orb_arr in occ_orb_arrs:
                 self.iao_mat.append(jnp.array(lo.iao.iao(pyscf_mol, occ_orb_arr)))
-                if pyscf_calc_params is None:
-                   self.ibo_mat.append(jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_arr, max_iter=5000)))
-                else:
-                   self.ibo_mat.append(jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_arr, max_iter=pyscf_calc_params.ibo_max_iter,grad_tol=pyscf_calc_params.ibo_grad_tol)))
+                self.ibo_mat.append(jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_arr, **self.pyscf_calc_params.ibo_kwargs)))
             self.mats_created=True
             if self.mats_savefile is not None:
                 #TO-DO Check ways for doing it in a less ugly way.
@@ -245,11 +246,12 @@ class OML_compound(Compound):
             mf.xc=self.dft_xc
             mf.nlc=self.dft_nlc
         mf.chkfile=self.pyscf_chkfile
+        mf.conv_tol=self.pyscf_calc_params.scf_conv_tol
         if self.use_Huckel:
             mf.init_guess='huckel'
             mf.max_cycle=-1
         else:
-            mf.max_cycle=5000
+            mf.max_cycle=self.pyscf_calc_params.scf_max_cycle
             if self.pyscf_chkfile_avail:
                 mf.init_guess='chkfile'
         mf.run()
@@ -340,24 +342,25 @@ def orb_occ_prop_coeff(comp):
 
 
 class OML_pyscf_calc_params:
-#   Parameters of how Fock orbitals and IBOs are calculated.
-#   For now just includes IBOs.
-    def __init__(self, ibo_max_iter=500, ibo_grad_tol=1.0E-9):
-        self.ibo_max_iter=ibo_max_iter
-        self.ibo_grad_tol=ibo_grad_tol
+#   Parameters of pySCF calculations.
+    def __init__(self, ibo_max_iter=5000, ibo_grad_tol=1.0E-8, scf_max_cycle=5000, scf_conv_tol=1e-9):
+        self.ibo_kwargs={"max_iter" : ibo_max_iter, "grad_tol": ibo_grad_tol}
+        self.scf_max_cycle=scf_max_cycle
+        self.scf_conv_tol=scf_conv_tol
 
 
 class OML_Slater_pair:
     def __init__(self, xyz = None, mats_savefile = None, first_calc_type="HF", second_calc_type="HF", basis="sto-3g", second_charge=0,
-        second_orb_type="standard_IBO", optimize_geometry=False, use_Huckel=False):
+        second_orb_type="standard_IBO", optimize_geometry=False, use_Huckel=False, pyscf_calc_params=None):
         comp1=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=first_calc_type,
-                        basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)
-        comp2=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=second_calc_type,
-                        basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry, charge=second_charge, used_orb_type=second_orb_type)
+                        basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry, pyscf_calc_params=pyscf_calc_params)
+        comp2=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=second_calc_type, basis=basis,
+                use_Huckel=use_Huckel, optimize_geometry=optimize_geometry, charge=second_charge, used_orb_type=second_orb_type,
+                pyscf_calc_params=pyscf_calc_params)
         self.comps=[comp1, comp2]
-    def run_calcs(self, pyscf_calc_params=None):
-        self.comps[0].run_calcs(pyscf_calc_params=pyscf_calc_params)
-        self.comps[1].run_calcs(pyscf_calc_params=pyscf_calc_params)
+    def run_calcs(self):
+        self.comps[0].run_calcs()
+        self.comps[1].run_calcs()
     def generate_orb_reps(self, rep_params):
         self.comps[0].generate_orb_reps(rep_params)
         self.comps[1].generate_orb_reps(rep_params)

@@ -29,7 +29,7 @@ from .python_parallelization import embarassingly_parallel
 import math, itertools
 
 
-from .foml_kernels import fgmo_kernel, flinear_base_kernel_mat
+from .foml_kernels import fgmo_kernel, flinear_base_kernel_mat, fgmo_sq_dist
 
 
 
@@ -100,7 +100,7 @@ class GMO_kernel_params:
         self.parallel=parallel
         self.use_Gaussian_kernel=use_Gaussian_kernel
         self.pair_reps=pair_reps
-        self.density_neglect=density_neglect
+        self.density_neglect=np.double(density_neglect)
     def update_width(self, width_params):
         self.width_params=jnp.array(width_params)
         self.inv_sq_width_params=self.width_params**(-2)
@@ -112,6 +112,7 @@ class GMO_kernel_input:
         if oml_compound_array is None:
             self.num_mols=None
             self.max_tot_num_ibo_atom_reps=None
+            self.max_num_scala_reps=None
             self.rhos=None
             self.ibo_atom_sreps=None
         else:
@@ -186,7 +187,16 @@ def generate_GMO_kernel(A, B, kernel_params, sym_kernel_mat=False):
                         kernel_params.use_Gaussian_kernel)
     return kernel_mat
 
-
+def GMO_sqdist_mat(A, B, kernel_params, sym_kernel_mat=False):
+    Ac=GMO_kernel_input(A, kernel_params.pair_reps)
+    Bc=GMO_kernel_input(B, kernel_params.pair_reps)
+    sqdist_mat = np.empty((Ac.num_mols, Bc.num_mols), order='F')
+    fgmo_sq_dist(Ac.max_num_scalar_reps,
+                    Ac.ibo_atom_sreps.T, Ac.rhos.T, Ac.max_tot_num_ibo_atom_reps, Ac.num_mols,
+                    Bc.ibo_atom_sreps.T, Bc.rhos.T, Bc.max_tot_num_ibo_atom_reps, Bc.num_mols,
+                    kernel_params.width_params, kernel_params.density_neglect,
+                    kernel_params.normalize_lb_kernel, sym_kernel_mat, sqdist_mat)
+    return sqdist_mat
 
 def GMO_kernel_row(A_tuple, Bc, kernel_params):
     return jit(jax_GMO_kernel_row, static_argnums=(6,7))(A_tuple[0], A_tuple[1], Bc.rhos, Bc.ibo_atom_sreps, kernel_params.inv_sq_width_params,

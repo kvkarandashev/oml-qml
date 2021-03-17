@@ -165,7 +165,6 @@ class OML_representation(representation):
         comp.generate_orb_reps(self.rep_params)
         return comp
     def init_compound_list(self, comp_list=None, xyz_list=None, disable_openmp=True):
-        import pickle, subprocess
         if comp_list is not None:
             new_list=comp_list
         else:

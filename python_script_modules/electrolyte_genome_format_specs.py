@@ -1,5 +1,5 @@
 from qml.oml_compound import OML_Slater_pair
-import json, os, sys
+import json, os
 
 class QuantitiesNotAvailableError(Exception):
     pass
@@ -30,7 +30,7 @@ def Electron_Affinity(xyz_name, calc_type="HF", basis="sto-3g", use_Huckel=False
     return -electron_energy_change(xyz_name, -1, calc_type=calc_type, basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)
 
 def electron_energy_change(xyz_name, charge_change, calc_type="HF", basis="sto-3g", use_Huckel=False, optimize_geometry=True):
-    Slater_pair=OML_Slater_pair(xyz = xyz_name, mats_savefile = xyz_name, calc_type=calc_type,
+    Slater_pair=OML_Slater_pair(xyz = xyz_name, mats_savefile = xyz_name, first_calc_type=calc_type, second_calc_type=calc_type,
         basis=basis, second_charge=charge_change, optimize_geometry=optimize_geometry, use_Huckel=use_Huckel)
     Slater_pair.run_calcs()
     return (Slater_pair.comps[1].e_tot-Slater_pair.comps[0].e_tot)*au_to_eV_mult

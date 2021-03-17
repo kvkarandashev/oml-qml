@@ -192,6 +192,55 @@ integer:: i2, i3
 
 END SUBROUTINE
 
+SUBROUTINE fgmo_sq_dist_halfmat(num_scal_reps,&
+                    A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
+                    B_ibo_atom_sreps, B_rhos, B_max_tot_num_ibo_atom_reps, B_num_mols,&
+                    width_params, density_neglect, normalize_lb_kernel, sym_kernel_mat, sq_dist_mat)
+implicit none
+integer, intent(in):: num_scal_reps
+integer, intent(in):: A_max_tot_num_ibo_atom_reps, A_num_mols
+integer, intent(in):: B_max_tot_num_ibo_atom_reps, B_num_mols
+double precision, dimension(num_scal_reps, A_max_tot_num_ibo_atom_reps, A_num_mols),&
+                    intent(in):: A_ibo_atom_sreps
+double precision, dimension(num_scal_reps, B_max_tot_num_ibo_atom_reps, B_num_mols),&
+                    intent(in):: B_ibo_atom_sreps
+double precision, dimension(A_max_tot_num_ibo_atom_reps, A_num_mols), intent(in):: A_rhos
+double precision, dimension(B_max_tot_num_ibo_atom_reps, B_num_mols), intent(in):: B_rhos
+double precision, dimension(num_scal_reps), intent(in):: width_params
+double precision, intent(in):: density_neglect
+logical, intent(in):: normalize_lb_kernel
+logical, intent(in):: sym_kernel_mat
+double precision, dimension(A_num_mols, B_num_mols), intent(inout):: sq_dist_mat ! (A_num_mols, B_num_mols)
+double precision, dimension(A_num_mols):: AA_products
+double precision, dimension(B_num_mols):: BB_products
+integer:: A_mol_counter, B_mol_counter, upper_A_mol_counter
 
+
+call flinear_base_kernel_mat_with_opt(num_scal_reps,&
+                    A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
+                    B_ibo_atom_sreps, B_rhos, B_max_tot_num_ibo_atom_reps, B_num_mols,&
+                    width_params, density_neglect, sym_kernel_mat, sq_dist_mat, AA_products, BB_products)
+
+!$OMP PARALLEL DO PRIVATE(upper_A_mol_counter) SCHEDULE(DYNAMIC)
+do B_mol_counter = 1, B_num_mols
+    if (sym_kernel_mat) then
+        upper_A_mol_counter=B_num_mols
+    else
+        upper_A_mol_counter=A_num_mols
+    endif
+    do A_mol_counter=1, upper_A_mol_counter
+        if (normalize_lb_kernel) then
+            sq_dist_mat(A_mol_counter, B_mol_counter)=2*(1.0-sq_dist_mat(A_mol_counter, B_mol_counter)/&
+                    sqrt(AA_products(A_mol_counter)*BB_products(B_mol_counter)))
+        else
+            sq_dist_mat(A_mol_counter, B_mol_counter)=AA_products(A_mol_counter)+BB_products(B_mol_counter)-&
+                    2*sq_dist_mat(A_mol_counter, B_mol_counter)
+        endif
+    enddo
+enddo
+!$OMP END PARALLEL DO
+
+
+END SUBROUTINE
 
 END MODULE
