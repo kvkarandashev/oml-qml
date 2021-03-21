@@ -211,6 +211,8 @@ class OML_compound(Compound):
         ibo_occ=orb_occ_prop_coeff(self)
         for orb_rep_counter in range(len(self.orb_reps)):
             self.orb_reps[orb_rep_counter].rho=ibo_occ
+            if rep_params.norm_by_nelec:
+                self.orb_reps[orb_rep_counter].rho/=sum(self.nuclear_charges)
 #                if rep_params.ibo_spectral_representation: # It would be very funny if this representation proves to be useful.
 #                    self.orb_reps=generate_ibo_spectral_rep_array(sibo_mat, rep_params, self.orb_overlap, self.mo_coeff, self.mo_occ, self.mo_energy, self.HOMO_en())
 #                else:
@@ -343,7 +345,7 @@ def orb_occ_prop_coeff(comp):
 
 class OML_pyscf_calc_params:
 #   Parameters of pySCF calculations.
-    def __init__(self, ibo_max_iter=5000, ibo_grad_tol=1.0E-8, scf_max_cycle=5000, scf_conv_tol=1e-9):
+    def __init__(self, ibo_max_iter=5000, ibo_grad_tol=1.0E-8, scf_max_cycle=5000, scf_conv_tol=1e-9, scf_conv_tol_grad=None):
         self.ibo_kwargs={"max_iter" : ibo_max_iter, "grad_tol": ibo_grad_tol}
         self.scf_max_cycle=scf_max_cycle
         self.scf_conv_tol=scf_conv_tol

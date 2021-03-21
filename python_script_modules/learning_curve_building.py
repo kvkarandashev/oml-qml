@@ -148,10 +148,11 @@ class SLATM_representation(representation):
 class OML_representation(representation):
     def __init__(self, ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
                     fock_based_coup_mat=False, num_fbcm_times=1, fbcm_delta_t=1.0, use_Huckel=False, optimize_geometry=False, calc_type="HF",
-                    basis="sto-3g", fbcm_pseudo_orbs=False):
+                    basis="sto-3g", fbcm_pseudo_orbs=False, norm_by_nelec=False):
         self.rep_params=qml.oml_representations.OML_rep_params(ibo_atom_rho_comp=ibo_atom_rho_comp, max_angular_momentum=max_angular_momentum,
                                                                         use_Fortran=use_Fortran, fock_based_coup_mat=fock_based_coup_mat,
-                                                                        num_fbcm_times=num_fbcm_times, fbcm_delta_t=fbcm_delta_t, fbcm_pseudo_orbs=fbcm_pseudo_orbs)
+                                                                        num_fbcm_times=num_fbcm_times, fbcm_delta_t=fbcm_delta_t, fbcm_pseudo_orbs=fbcm_pseudo_orbs,
+                                                                        norm_by_nelec=norm_by_nelec)
         self.use_Huckel=use_Huckel
         self.optimize_geometry=optimize_geometry
         self.calc_type=calc_type
@@ -468,8 +469,8 @@ def calculate_MAE(xyz_list, training_size, check_size, quantity, model, delta_le
         training_quants, check_quants=import_train_check_arr(xyz_list, training_size, check_size, quantity,
                                         delta_learning_params=delta_learning_params, hyperparameter_opt_set=hyperparameter_opt_set)
     else:
-        training_quants = cutout_train_arr(quantity_train_array, training_size)
-        check_quants =quantity_check_array #cutout_check_arr(quantity_check_array, check_size)
+        training_quants=cutout_train_arr(quantity_train_array, training_size)
+        check_quants=quantity_check_array #cutout_check_arr(quantity_check_array, check_size)
 
     for log in [calc_logfile, quant_logfile]:
         log.write("Training size: ", training_size, "Model: ", model)
