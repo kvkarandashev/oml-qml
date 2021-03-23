@@ -28,8 +28,8 @@ import os
 class OML_compound_list(list):
     """ The class was created to allow easy embarassing parallelization of operations with lists of OML_compound objects.
     """
-    def run_calcs(self, pyscf_calc_params=None, disable_openmp=True):
-        self.embarassingly_parallelize(after_run_calcs, pyscf_calc_params, disable_openmp=disable_openmp)
+    def run_calcs(self, disable_openmp=True):
+        self.embarassingly_parallelize(after_run_calcs, disable_openmp=disable_openmp)
     def generate_orb_reps(self, rep_params, disable_openmp=True):
         self.embarassingly_parallelize(after_gen_orb_reps, rep_params, disable_openmp=disable_openmp)
     def embarassingly_parallelize(self, func_in, other_args, disable_openmp=True):
@@ -38,17 +38,16 @@ class OML_compound_list(list):
             self[i]=new_vals[i]
 
 #   Both functions are dirty as they modify the arguments, but it doesn't matter in this particular case.
-def after_run_calcs(oml_comp, pyscf_calc_params):
-    oml_comp.run_calcs(pyscf_calc_params=pyscf_calc_params)
+def after_run_calcs(oml_comp):
+    oml_comp.run_calcs()
     return oml_comp
 
 def after_gen_orb_reps(oml_comp, rep_params):
     oml_comp.generate_orb_reps(rep_params)
     return oml_comp
 
-def OML_compound_list_from_xyzs(xyz_files, calc_type="HF", basis="sto-3g", use_Huckel=False, optimize_geometry=False):
-    return OML_compound_list([OML_compound(xyz = xyz_file, mats_savefile = xyz_file, calc_type="HF", basis=basis, use_Huckel=False, optimize_geometry=False) for xyz_file in xyz_files])
+def OML_compound_list_from_xyzs(xyz_files, **oml_comp_kwargs):
+    return OML_compound_list([OML_compound(xyz = xyz_file, mats_savefile = xyz_file, **oml_comp_kwargs) for xyz_file in xyz_files])
     
-def OML_Slater_pair_list_from_xyzs(xyz_files, first_calc_type="HF", second_calc_type="HF", second_orb_type="standard_IBO", second_charge=0, basis="sto-3g", use_Huckel=False, optimize_geometry=False):
-    return OML_compound_list([OML_Slater_pair(xyz = xyz_file, mats_savefile = xyz_file, first_calc_type=first_calc_type, second_calc_type=second_calc_type, second_charge=second_charge,
-                        second_orb_type=second_orb_type, basis=basis, use_Huckel=False, optimize_geometry=False) for xyz_file in xyz_files])
+def OML_Slater_pair_list_from_xyzs(xyz_files, **slater_pair_kwargs):
+    return OML_compound_list([OML_Slater_pair(xyz = xyz_file, mats_savefile = xyz_file, **slater_pair_kwargs) for xyz_file in xyz_files])

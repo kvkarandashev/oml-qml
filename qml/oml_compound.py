@@ -204,7 +204,8 @@ class OML_compound(Compound):
                     cur_fock_mat=self.fock_mat[spin]
                 else:
                     cur_fock_mat=reconstruct_effective_Hamiltonian(self.mo_coeff[spin], self.mo_energy[spin])
-                coupling_matrices=(*coupling_matrices, cur_fock_mat)
+                if not rep_params.fbcm_exclude_Fock:
+                    coupling_matrices=(*coupling_matrices, cur_fock_mat)
             else:
                 coupling_matrices=(self.fock_mat[spin], self.j_mat[spin]/orb_occ_prop_coeff(self), self.k_mat[spin]/orb_occ_prop_coeff(self))
             self.orb_reps+=generate_ibo_rep_array(self.ibo_mat[spin], rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)
@@ -352,13 +353,9 @@ class OML_pyscf_calc_params:
 
 
 class OML_Slater_pair:
-    def __init__(self, xyz = None, mats_savefile = None, first_calc_type="HF", second_calc_type="HF", basis="sto-3g", second_charge=0,
-        second_orb_type="standard_IBO", optimize_geometry=False, use_Huckel=False, pyscf_calc_params=None):
-        comp1=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=first_calc_type,
-                        basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry, pyscf_calc_params=pyscf_calc_params)
-        comp2=OML_compound(xyz = xyz, mats_savefile = mats_savefile, calc_type=second_calc_type, basis=basis,
-                use_Huckel=use_Huckel, optimize_geometry=optimize_geometry, charge=second_charge, used_orb_type=second_orb_type,
-                pyscf_calc_params=pyscf_calc_params)
+    def __init__(self, first_calc_type="HF", second_calc_type="HF", second_charge=0, second_orb_type="standard_IBO", **oml_comp_kwargs):
+        comp1=OML_compound(calc_type=first_calc_type, **oml_comp_kwargs)
+        comp2=OML_compound(calc_type=second_calc_type, charge=second_charge, used_orb_type=second_orb_type, **oml_comp_kwargs)
         self.comps=[comp1, comp2]
     def run_calcs(self):
         self.comps[0].run_calcs()

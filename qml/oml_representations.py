@@ -38,7 +38,7 @@ class OML_rep_params:
 #   l_max               - maximal value of angular momentum.
     def __init__(self, tol_orb_cutoff=1.0e-6, en_bias_coeff=None, en_degen_tol=0.01, ibo_rho_comp=None,
                     ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True, mult_coup_mat=False,
-                    mult_coup_mat_level=1, fock_based_coup_mat=False, num_fbcm_times=1, fbcm_delta_t=1.0,
+                    mult_coup_mat_level=1, fock_based_coup_mat=False, num_fbcm_times=1, fbcm_delta_t=1.0, fbcm_exclude_Fock=False,
                     fbcm_pseudo_orbs=False, ibo_spectral_representation=False, energy_rho_comp=1.0, norm_by_nelec=False):
         self.tol_orb_cutoff=tol_orb_cutoff
         self.ibo_atom_rho_comp=ibo_atom_rho_comp
@@ -51,6 +51,7 @@ class OML_rep_params:
         self.ibo_spectral_representation=ibo_spectral_representation
         self.energy_rho_comp=energy_rho_comp
         self.norm_by_nelec=norm_by_nelec
+        self.fbcm_exclude_Fock=fbcm_exclude_Fock
     def __str__(self):
         str_out="ibo_atom_rho_comp:"+str(self.ibo_atom_rho_comp)+",max_ang_mom:"+str(self.max_angular_momentum)
         if self.fock_based_coup_mat:
