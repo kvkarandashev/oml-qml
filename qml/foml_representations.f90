@@ -21,89 +21,100 @@
 ! SOFTWARE.
 
 
-SUBROUTINE fgen_ibo_atom_scalar_rep(atom_id, atom_list, coeffs, atom_ao_ranges,&
-                                        angular_momenta, ovlp_mat, coup_mats, num_ibo_atoms,&
-                                        num_coup_mats, max_ang_mom, num_aos, tot_num_atoms,&
-                                        scalar_reps, rho_val)
+SUBROUTINE fang_mom_descr(atom_ao_range, coeffs, angular_momenta, ovlp_mat, max_ang_mom, num_aos, scalar_reps, rho_val)
 implicit none
-integer, intent(in):: atom_id
-integer, dimension(:), intent(in):: atom_list
+integer, dimension(:), intent(in):: atom_ao_range
 double precision, dimension(:), intent(in):: coeffs
-integer, dimension(:, :), intent(in):: atom_ao_ranges
 integer, dimension(:), intent(in):: angular_momenta
 double precision, dimension(:, :), intent(in):: ovlp_mat
-double precision, dimension(:, :, :), intent(in):: coup_mats
-integer, intent(in):: num_ibo_atoms, num_coup_mats, max_ang_mom, num_aos, tot_num_atoms
+integer, intent(in):: max_ang_mom, num_aos
 double precision, intent(inout), dimension(:):: scalar_reps
 double precision, dimension(1), intent(inout):: rho_val
-integer:: ang_mom1, ang_mom2, mat_counter, cur_array_position,&
-            same_atom_check, other_atom_counter, other_atom_id,&
-            true_atom_id
+integer:: ang_mom
 
-    true_atom_id=atom_id+1
-    cur_array_position=1
     scalar_reps=0.0
     ! First generate the angular momentum distribution descriptors.
-    do ang_mom1=1, max_ang_mom
-        call add_ibo_atom_coupling(scalar_reps(cur_array_position),&
-                true_atom_id, true_atom_id, ang_mom1, ang_mom1,&
-                atom_ao_ranges, coeffs, angular_momenta,&
-                ovlp_mat, tot_num_atoms, num_aos)
-        cur_array_position=cur_array_position+1
+    do ang_mom=1, max_ang_mom
+        call add_ibo_atom_coupling(scalar_reps(ang_mom),&
+                atom_ao_range, 0, ang_mom, ang_mom,&
+                coeffs, angular_momenta, ovlp_mat, num_aos)
     enddo
     rho_val=sum(scalar_reps)
-    call add_ibo_atom_coupling(rho_val(1), true_atom_id, true_atom_id,&
-                0, 0, atom_ao_ranges, coeffs, angular_momenta,&
-                ovlp_mat, tot_num_atoms, num_aos)
+    call add_ibo_atom_coupling(rho_val(1), atom_ao_range, 0, 0, 0, coeffs, angular_momenta, ovlp_mat, num_aos)
+
+                                        
+END SUBROUTINE
+
+SUBROUTINE fgen_ibo_atom_scalar_rep(atom_ao_range, coeffs, angular_momenta, coup_mats,&
+                                        num_coup_mats, max_ang_mom, num_aos, scalar_reps)
+implicit none
+integer, intent(in):: max_ang_mom, num_aos, num_coup_mats
+integer, dimension(:, :), intent(in):: atom_ao_range
+double precision, dimension(:), intent(in):: coeffs
+integer, dimension(:), intent(in):: angular_momenta
+double precision, dimension(:, :, :), intent(in):: coup_mats
+double precision, intent(inout), dimension(:):: scalar_reps
+integer:: ang_mom1, ang_mom2, mat_counter, cur_array_position, same_atom_check
+
+    cur_array_position=1
     do mat_counter=1, num_coup_mats
         do same_atom_check=0, 1
             do ang_mom1=0, max_ang_mom
                 do ang_mom2=0, max_ang_mom
                     if ((same_atom_check==0).and.(ang_mom1 > ang_mom2)) cycle
-                    if (same_atom_check==0) then
-                        call add_ibo_atom_coupling(scalar_reps(cur_array_position),&
-                                    true_atom_id, true_atom_id, ang_mom1, ang_mom2,&
-                                    atom_ao_ranges, coeffs, angular_momenta,&
-                                    coup_mats(:, :, mat_counter), tot_num_atoms, num_aos)
-                    else
-                        do other_atom_counter=1, num_ibo_atoms
-                            other_atom_id=atom_list(other_atom_counter)
-                            if (other_atom_id /= atom_id) &
-                                call add_ibo_atom_coupling(scalar_reps(cur_array_position), true_atom_id,&
-                                    other_atom_id+1, ang_mom1, ang_mom2, atom_ao_ranges,&
-                                    coeffs, angular_momenta, coup_mats(:, :, mat_counter),&
-                                    tot_num_atoms, num_aos)
-                        enddo
-                    endif
+                    call add_ibo_atom_coupling(scalar_reps(cur_array_position),&
+                                atom_ao_range, same_atom_check, ang_mom1, ang_mom2,&
+                                coeffs, angular_momenta, coup_mats(:, :, mat_counter), num_aos)
                     cur_array_position=cur_array_position+1
                 enddo
             enddo
         enddo
     enddo
-
 END SUBROUTINE
 
-SUBROUTINE add_ibo_atom_coupling(cur_coupling_val, atom_id1, atom_id2, ang_mom1, ang_mom2,&
-                                            atom_ao_ranges, coeffs, angular_momenta, mat,&
-                                            tot_num_atoms, num_aos)
+SUBROUTINE add_ibo_atom_coupling(cur_coupling_val, atom_ao_range, same_atom, ang_mom1, ang_mom2,&
+                                            coeffs, angular_momenta, mat, num_aos)
 implicit none
-integer, intent(in):: tot_num_atoms, num_aos
+integer, intent(in):: num_aos
 double precision, intent(inout):: cur_coupling_val
-integer, intent(in):: atom_id1, atom_id2
-integer, intent(in):: ang_mom1, ang_mom2
-integer, dimension(2, tot_num_atoms), intent(in):: atom_ao_ranges
+integer, intent(in):: ang_mom1, ang_mom2, same_atom
+integer, dimension(2), intent(in):: atom_ao_range
 double precision, dimension(num_aos), intent(in):: coeffs
 integer, dimension(num_aos), intent(in):: angular_momenta
 double precision, dimension(num_aos, num_aos), intent(in):: mat
-integer:: ao1, ao2
+integer:: ao1
 
-    do ao1=atom_ao_ranges(1, atom_id1)+1, atom_ao_ranges(2, atom_id1)
+
+    do ao1=atom_ao_range(1)+1, atom_ao_range(2)
         if (angular_momenta(ao1)/=ang_mom1) cycle
-        do ao2=atom_ao_ranges(1, atom_id2)+1, atom_ao_ranges(2, atom_id2)
+        if (same_atom==0) then
+            call add_aos_coupling(cur_coupling_val, ao1, mat, coeffs, angular_momenta,&
+                                            ang_mom2, atom_ao_range(1)+1, atom_ao_range(2), num_aos)
+        else
+            call add_aos_coupling(cur_coupling_val, ao1, mat, coeffs, angular_momenta,&
+                                                        ang_mom2, 1, atom_ao_range(1), num_aos)
+            call add_aos_coupling(cur_coupling_val, ao1, mat, coeffs, angular_momenta,&
+                                                ang_mom2, atom_ao_range(2)+1, num_aos, num_aos)
+        endif
+    enddo
+END SUBROUTINE
+
+SUBROUTINE add_aos_coupling(cur_coupling_val, ao1, mat, coeffs, angular_momenta, ang_mom2,&
+                                         lower_index, upper_index, num_aos)
+integer, intent(in):: num_aos
+double precision, intent(inout):: cur_coupling_val
+integer, intent(in):: ang_mom2, ao1
+double precision, dimension(num_aos), intent(in):: coeffs
+integer, dimension(num_aos), intent(in):: angular_momenta
+double precision, dimension(num_aos, num_aos), intent(in):: mat
+integer, intent(in):: lower_index, upper_index
+integer:: ao2
+
+        do ao2=lower_index, upper_index
             if (angular_momenta(ao2)/=ang_mom2) cycle
             cur_coupling_val=cur_coupling_val+mat(ao2, ao1)*coeffs(ao1)*coeffs(ao2)
         enddo
-    enddo
+
 END SUBROUTINE
 
 !   hf_orb_coeffs - first index - basis function, second - molecular orbital.
@@ -126,7 +137,7 @@ integer:: freq_counter, cos_or_sin, mat_counter
         propagation_time=freq_counter*pi*fbcm_delta_t
         do cos_or_sin=0, 1
             call fgen_fock_ft_coup_mat(inv_hf_orb_coeffs, hf_orb_energies, propagation_time,&
-                                            (cos_or_sin==0), num_orbs, ft_fock_mats(:, :, mat_counter))
+                                   (cos_or_sin==0), num_orbs, ft_fock_mats(:, :, mat_counter))
             mat_counter=mat_counter+1
         enddo
     enddo

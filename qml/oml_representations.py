@@ -26,7 +26,7 @@ import jax.numpy as jnp
 from jax import jit
 import math
 
-from .foml_representations import fgen_ibo_atom_scalar_rep, fgen_fock_ft_coup_mats
+from .foml_representations import fgen_ibo_atom_scalar_rep, fgen_fock_ft_coup_mats, fang_mom_descr
 
 
 class OML_rep_params:
@@ -80,16 +80,23 @@ def gen_fock_based_coup_mats(rep_params, hf_orb_coeffs, hf_orb_energies):
 #   Representation of contribution of a single atom to an IBO.
 
 class OML_ibo_atom_rep:
-    def __init__(self, atom_id, atom_list, coeffs, rep_params, atom_ao_ranges, angular_momenta, ovlp_mat, coup_mats):
+    def __init__(self, atom_ao_range, coeffs, rep_params, angular_momenta, ovlp_mat):
         if rep_params.use_Fortran:
-            self.scalar_reps=np.zeros(scalar_rep_length(rep_params, coup_mats))
+            self.atom_ao_range=atom_ao_range
+            self.scalar_reps=np.zeros(rep_params.max_angular_momentum)
             rho_arr=np.zeros(1)
-            fgen_ibo_atom_scalar_rep(atom_id, atom_list, coeffs, np.transpose(atom_ao_ranges), angular_momenta, ovlp_mat, np.transpose(coup_mats),
-                                        len(atom_list), len(coup_mats), rep_params.max_angular_momentum,
-                                        len(coeffs), len(atom_ao_ranges), self.scalar_reps, rho_arr)
+            fang_mom_descr(atom_ao_range, coeffs, angular_momenta, ovlp_mat, rep_params.max_angular_momentum, len(coeffs), self.scalar_reps, rho_arr)
             self.rho=rho_arr[0]
+            self.pre_renorm_rho=self.rho
         else:
             self.scalar_reps, self.rho=ang_mom_descr(atom_id, atom_ao_ranges, coeffs, angular_momenta, ovlp_mat, rep_params.max_angular_momentum)
+    def completed_scalar_reps(self, coeffs, rep_params, angular_momenta, coup_mats):
+        if rep_params.use_Fortran:
+            couplings=np.zeros(scalar_coup_length(rep_params, coup_mats))
+            fgen_ibo_atom_scalar_rep(self.atom_ao_range, coeffs, angular_momenta, np.transpose(coup_mats),
+                                        len(coup_mats), rep_params.max_angular_momentum, len(coeffs), couplings)
+        else:
+        #   TO-DO rewrite in JAX???
             couplings=[]
             for coup_id, mat in enumerate(coup_mats):
                 for same_atom in [True, False]:
@@ -107,8 +114,8 @@ class OML_ibo_atom_rep:
                                         cur_coupling+=ibo_atom_atom_coupling(atom_id, other_atom_id, ang_mom1, ang_mom2,
                                                         atom_ao_ranges, coeffs, mat, angular_momenta)
                             couplings.append(cur_coupling)
-            self.scalar_reps=np.append(self.scalar_reps, couplings)
-        self.scalar_reps/=self.rho
+        self.scalar_reps=np.append(self.scalar_reps, couplings)
+        self.scalar_reps/=self.pre_renorm_rho
     def __str__(self):
         return "OML_ibo_atom_rep,rho:"+str(self.rho)
     def __repr__(self):
@@ -125,9 +132,9 @@ def ang_mom_descr(atom_id, atom_ao_ranges, coeffs, angular_momenta, ovlp_mat, ma
 def avail_ang_mom(rep_params):
     return range(num_ang_mom(rep_params))
 
-def scalar_rep_length(rep_params, coup_mats):
+def scalar_coup_length(rep_params, coup_mats):
     nam=num_ang_mom(rep_params)
-    return nam-1+len(coup_mats)*(nam**2+(nam*(nam+1))//2)
+    return len(coup_mats)*(nam**2+(nam*(nam+1))//2)
 
 def num_ang_mom(rep_params):
     return rep_params.max_angular_momentum+1
@@ -222,11 +229,13 @@ class OML_ibo_rep:
                     atom_list.append(atom_id)
                     prev_atom=atom_id
         # Each of the resulting groups of AOs is represented with OML_ibo_atom_rep object.
-        self.ibo_atom_reps=weighted_array([OML_ibo_atom_rep(atom_id, atom_list, self.full_coeffs, rep_params, atom_ao_ranges, angular_momenta, ovlp_mat, coup_mats)
-                                for atom_id in atom_list])
+        self.ibo_atom_reps=weighted_array([OML_ibo_atom_rep(atom_ao_range, self.full_coeffs, rep_params, angular_momenta, ovlp_mat)
+                                for atom_ao_range in atom_ao_ranges])
         self.ibo_atom_reps.normalize_sort_rhos()
         # Try to decrease the number of atomic representations, leaving only the most relevant ones.
         self.ibo_atom_reps.cutoff_minor_weights(remaining_rho=rep_params.ibo_atom_rho_comp)
+        for ibo_arep_counter in range(len(self.ibo_atom_reps)):
+            self.ibo_atom_reps[ibo_arep_counter].completed_scalar_reps(self.full_coeffs, rep_params, angular_momenta, coup_mats)
 
 class weighted_array(list):
     def normalize_rhos(self, normalization_constant=None):
