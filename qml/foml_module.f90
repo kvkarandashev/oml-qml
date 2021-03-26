@@ -56,8 +56,39 @@ enddo
 
 END SUBROUTINE
 
+PURE SUBROUTINE fpart_ibo_gmo_kernel_row(num_scal_reps, comparr_ibo_atom_sreps, comparr_ibo_arep_rhos, comparr_ibo_rhos,&
+                                comparr_max_num_ibo_atom_reps, comparr_max_num_ibos, comparr_num_mols, comparr_ibo_self_products,&
+                                ibo_atom_sreps, ibo_rhos, num_ibo_atom_reps, ibo_self_prod, sigma, density_neglect,&
+                                normalize_lb_kernel, kernel_row)
+integer, intent(in):: num_ibo_atom_reps, comparr_max_num_ibo_atom_reps, comparr_max_num_ibos, comparr_num_mols,num_scal_reps
+double precision, dimension(num_scal_reps, comparr_max_num_ibo_atom_reps,&
+                                comparr_max_num_ibos, comparr_num_mols), intent(in):: comparr_ibo_atom_sreps
+double precision, dimension(comparr_max_num_ibo_atom_reps,&
+                                comparr_max_num_ibos, comparr_num_mols), intent(in):: comparr_ibo_arep_rhos
+double precision, dimension(comparr_max_num_ibos, comparr_num_mols), intent(in):: comparr_ibo_rhos
+double precision, dimension(comparr_max_num_ibos, comparr_num_mols), intent(in):: comparr_ibo_self_products
+double precision, dimension(num_scal_reps, num_ibo_atom_reps), intent(in):: ibo_atom_sreps
+double precision, dimension(num_ibo_atom_reps), intent(in):: ibo_rhos
+double precision, dimension(comparr_num_mols), intent(inout):: kernel_row
+double precision, intent(in):: ibo_self_prod, sigma, density_neglect
+logical, intent(in):: normalize_lb_kernel
+double precision:: cur_ibo_rho, klin, sqdist
+integer:: mol_counter, ibo_counter
 
+kernel_row=0.0
+do mol_counter=1, comparr_num_mols
+    do ibo_counter=1, comparr_max_num_ibos
+        cur_ibo_rho=comparr_ibo_rhos(ibo_counter, mol_counter)
+        if (abs(cur_ibo_rho)<density_neglect) exit
+        klin=flin_base_kernel_element(num_scal_reps, comparr_ibo_arep_rhos(:, ibo_counter, mol_counter),&
+                comparr_ibo_atom_sreps(:, :, ibo_counter, mol_counter), comparr_max_num_ibo_atom_reps,&
+                ibo_rhos, ibo_atom_sreps, num_ibo_atom_reps, density_neglect)
+        sqdist=linel2sqdist(klin, ibo_self_prod, comparr_ibo_self_products(ibo_counter, mol_counter), normalize_lb_kernel)
+        kernel_row(mol_counter)=kernel_row(mol_counter)+cur_ibo_rho*exp(-sqdist/2/sigma**2)
+    enddo
+enddo
 
+END SUBROUTINE
 
 PURE FUNCTION flin_base_kernel_element(num_scal_reps,&
                                         A_rhos, A_ibo_atom_sreps_scaled, A_max_tot_num_ibo_atom_reps,&
@@ -229,18 +260,25 @@ do B_mol_counter = 1, B_num_mols
         upper_A_mol_counter=A_num_mols
     endif
     do A_mol_counter=1, upper_A_mol_counter
-        if (normalize_lb_kernel) then
-            sq_dist_mat(A_mol_counter, B_mol_counter)=2*(1.0-sq_dist_mat(A_mol_counter, B_mol_counter)/&
-                    sqrt(AA_products(A_mol_counter)*BB_products(B_mol_counter)))
-        else
-            sq_dist_mat(A_mol_counter, B_mol_counter)=AA_products(A_mol_counter)+BB_products(B_mol_counter)-&
-                    2*sq_dist_mat(A_mol_counter, B_mol_counter)
-        endif
+        sq_dist_mat(A_mol_counter, B_mol_counter)=linel2sqdist(sq_dist_mat(A_mol_counter, B_mol_counter),&
+                AA_products(A_mol_counter), BB_products(B_mol_counter), normalize_lb_kernel)
     enddo
 enddo
 !$OMP END PARALLEL DO
 
-
 END SUBROUTINE
+
+PURE FUNCTION linel2sqdist(AB_prod, AA_prod, BB_prod, normalize_lb_kernel)
+double precision, intent(in):: AB_prod, AA_prod, BB_prod
+logical, intent(in):: normalize_lb_kernel
+double precision:: linel2sqdist
+
+if (normalize_lb_kernel) then
+    linel2sqdist=2*(1.0-AB_prod/sqrt(AA_prod*BB_prod))
+else
+    linel2sqdist=AA_prod+BB_prod-2*AB_prod
+endif
+
+END FUNCTION
 
 END MODULE
