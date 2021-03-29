@@ -7,6 +7,93 @@ double precision, parameter :: pi=3.14159265358979323846
 
 contains
 
+PURE SUBROUTINE fgmo_sep_ibo_kernel_element(num_scalar_reps, A_ibo_atom_sreps,&
+            A_ibo_arep_rhos, A_ibo_rhos, A_ibo_self_products,&
+            A_max_num_ibo_atom_reps, A_max_num_ibos,&
+            B_ibo_atom_sreps, B_ibo_arep_rhos, B_ibo_rhos, B_ibo_self_products,&
+            B_max_num_ibo_atom_reps, B_max_num_ibos, sigma, density_neglect,&
+            normalize_lb_kernel, kernel_element)
+integer, intent(in):: num_scalar_reps
+integer, intent(in):: A_max_num_ibo_atom_reps, A_max_num_ibos
+integer, intent(in):: B_max_num_ibo_atom_reps, B_max_num_ibos
+double precision, dimension(num_scalar_reps,A_max_num_ibo_atom_reps,&
+                        A_max_num_ibos), intent(in):: A_ibo_atom_sreps
+double precision, dimension(num_scalar_reps,B_max_num_ibo_atom_reps,&
+                        B_max_num_ibos), intent(in):: B_ibo_atom_sreps
+double precision, dimension(A_max_num_ibo_atom_reps,A_max_num_ibos), intent(in):: A_ibo_arep_rhos
+double precision, dimension(B_max_num_ibo_atom_reps,B_max_num_ibos), intent(in):: B_ibo_arep_rhos
+double precision, dimension(A_max_num_ibos), intent(in):: A_ibo_rhos, A_ibo_self_products
+double precision, dimension(B_max_num_ibos), intent(in):: B_ibo_rhos, B_ibo_self_products
+double precision, intent(in):: sigma, density_neglect
+logical, intent(in):: normalize_lb_kernel
+double precision, intent(inout):: kernel_element
+integer:: A_ibo_counter, B_ibo_counter
+double precision:: klin, cur_A_rho, cur_B_rho, sqdist
+
+kernel_element=0.0
+do B_ibo_counter=1, B_max_num_ibos
+    cur_B_rho=B_ibo_rhos(B_ibo_counter)
+    if (abs(cur_B_rho)<density_neglect) cycle
+    do A_ibo_counter=1, A_max_num_ibos
+        cur_A_rho=A_ibo_rhos(A_ibo_counter)
+        if (abs(cur_A_rho)<density_neglect) cycle
+        klin=flin_base_kernel_element(num_scalar_reps,&
+                A_ibo_arep_rhos(:, A_ibo_counter), A_ibo_atom_sreps(:, :, A_ibo_counter),&
+                A_max_num_ibo_atom_reps, B_ibo_arep_rhos(:, B_ibo_counter),&
+                B_ibo_atom_sreps(:, :, B_ibo_counter),&
+                B_max_num_ibo_atom_reps, density_neglect)
+        sqdist=linel2sqdist(klin, A_ibo_self_products(A_ibo_counter),&
+                        B_ibo_self_products(B_ibo_counter), normalize_lb_kernel)
+        kernel_element=kernel_element+cur_A_rho*cur_B_rho*exp(-sqdist/2/sigma**2)
+    enddo
+enddo
+
+END SUBROUTINE
+
+
+SUBROUTINE flin_ibo_self_products(num_scalar_reps, A_ibo_atom_sreps, A_ibo_arep_rhos,&
+                A_ibo_rhos, A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols,&
+                density_neglect, AA_products)
+integer, intent(in):: num_scalar_reps, A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols
+double precision, dimension(num_scalar_reps, A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols),&
+                intent(in):: A_ibo_atom_sreps
+double precision, dimension(A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols),&
+                intent(in):: A_ibo_arep_rhos
+double precision, dimension(A_max_num_ibos, A_num_mols),intent(in):: A_ibo_rhos
+double precision, intent(in):: density_neglect
+double precision, dimension(A_max_num_ibos, A_num_mols), intent(inout):: AA_products
+integer:: A_mol_counter, A_ibo_counter
+
+AA_products=0.0
+!$OMP PARALLEL DO SCHEDULE(DYNAMIC)
+do A_mol_counter=1, A_num_mols
+    do A_ibo_counter=1, A_max_num_ibos
+        if (abs(A_ibo_rhos(A_ibo_counter, A_mol_counter))<density_neglect) exit
+        AA_products(A_ibo_counter, A_mol_counter)=flin_self_product(num_scalar_reps,&
+                        A_ibo_arep_rhos(:, A_ibo_counter, A_mol_counter), A_ibo_atom_sreps(:,:,A_ibo_counter, A_mol_counter),&
+                        A_max_num_ibo_atom_reps, density_neglect)
+    enddo
+enddo
+!$OMP END PARALLEL DO
+
+END SUBROUTINE
+
+PURE function flin_self_product(num_scalar_reps, A_rhos, A_ibo_atom_sreps,&
+                        A_max_num_ibo_atom_reps, density_neglect)
+integer, intent(in):: num_scalar_reps, A_max_num_ibo_atom_reps
+double precision, dimension(num_scalar_reps,A_max_num_ibo_atom_reps),&
+        intent(in):: A_ibo_atom_sreps
+double precision, dimension(A_max_num_ibo_atom_reps), intent(in):: A_rhos
+double precision, intent(in):: density_neglect
+double precision:: flin_self_product
+
+flin_self_product=flin_base_kernel_element(num_scalar_reps, A_rhos,&
+        A_ibo_atom_sreps, A_max_num_ibo_atom_reps,&
+        A_rhos, A_ibo_atom_sreps, A_max_num_ibo_atom_reps, density_neglect)
+                                        
+END FUNCTION
+
+
 PURE SUBROUTINE flinear_base_kernel_row(num_scal_reps,&
                     A_ibo_atom_sreps_scaled, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
                     B_ibo_atom_sreps_scaled, B_rhos, B_max_tot_num_ibo_atom_reps,&
@@ -46,47 +133,12 @@ integer:: A_mol_counter
 
 !$OMP PARALLEL DO SCHEDULE(DYNAMIC)
 do A_mol_counter=1, A_num_mols
-    AA_products(A_mol_counter)=flin_base_kernel_element(num_scal_reps, A_rhos(:, A_mol_counter),&
-        A_ibo_atom_sreps_scaled(:, :, A_mol_counter), A_max_tot_num_ibo_atom_reps,&
-        A_rhos(:, A_mol_counter), A_ibo_atom_sreps_scaled(:, :, A_mol_counter),&
-        A_max_tot_num_ibo_atom_reps, density_neglect)
+    AA_products(A_mol_counter)=flin_self_product(num_scal_reps,&
+                        A_rhos(:, A_mol_counter), A_ibo_atom_sreps_scaled(:,:,A_mol_counter),&
+                        A_max_tot_num_ibo_atom_reps, density_neglect)
 enddo
 !$OMP END PARALLEL DO
 
-
-END SUBROUTINE
-
-PURE SUBROUTINE fpart_ibo_gmo_kernel_row(num_scal_reps, comparr_ibo_atom_sreps, comparr_ibo_arep_rhos, comparr_ibo_rhos,&
-                                comparr_max_num_ibo_atom_reps, comparr_max_num_ibos, comparr_num_mols, comparr_ibo_self_products,&
-                                ibo_atom_sreps, ibo_rhos, num_ibo_atom_reps, ibo_self_prod, sigma, density_neglect,&
-                                normalize_lb_kernel, kernel_row)
-integer, intent(in):: num_ibo_atom_reps, comparr_max_num_ibo_atom_reps, comparr_max_num_ibos, comparr_num_mols,num_scal_reps
-double precision, dimension(num_scal_reps, comparr_max_num_ibo_atom_reps,&
-                                comparr_max_num_ibos, comparr_num_mols), intent(in):: comparr_ibo_atom_sreps
-double precision, dimension(comparr_max_num_ibo_atom_reps,&
-                                comparr_max_num_ibos, comparr_num_mols), intent(in):: comparr_ibo_arep_rhos
-double precision, dimension(comparr_max_num_ibos, comparr_num_mols), intent(in):: comparr_ibo_rhos
-double precision, dimension(comparr_max_num_ibos, comparr_num_mols), intent(in):: comparr_ibo_self_products
-double precision, dimension(num_scal_reps, num_ibo_atom_reps), intent(in):: ibo_atom_sreps
-double precision, dimension(num_ibo_atom_reps), intent(in):: ibo_rhos
-double precision, dimension(comparr_num_mols), intent(inout):: kernel_row
-double precision, intent(in):: ibo_self_prod, sigma, density_neglect
-logical, intent(in):: normalize_lb_kernel
-double precision:: cur_ibo_rho, klin, sqdist
-integer:: mol_counter, ibo_counter
-
-kernel_row=0.0
-do mol_counter=1, comparr_num_mols
-    do ibo_counter=1, comparr_max_num_ibos
-        cur_ibo_rho=comparr_ibo_rhos(ibo_counter, mol_counter)
-        if (abs(cur_ibo_rho)<density_neglect) exit
-        klin=flin_base_kernel_element(num_scal_reps, comparr_ibo_arep_rhos(:, ibo_counter, mol_counter),&
-                comparr_ibo_atom_sreps(:, :, ibo_counter, mol_counter), comparr_max_num_ibo_atom_reps,&
-                ibo_rhos, ibo_atom_sreps, num_ibo_atom_reps, density_neglect)
-        sqdist=linel2sqdist(klin, ibo_self_prod, comparr_ibo_self_products(ibo_counter, mol_counter), normalize_lb_kernel)
-        kernel_row(mol_counter)=kernel_row(mol_counter)+cur_ibo_rho*exp(-sqdist/2/sigma**2)
-    enddo
-enddo
 
 END SUBROUTINE
 
@@ -172,7 +224,7 @@ endif
 !$OMP PARALLEL DO PRIVATE(upper_A_mol_counter) SCHEDULE(DYNAMIC)
 do B_mol_counter = 1, B_num_mols
     if (sym_kernel_mat) then
-        upper_A_mol_counter=B_num_mols
+        upper_A_mol_counter=B_mol_counter
     else
         upper_A_mol_counter=A_num_mols
     endif
@@ -202,6 +254,27 @@ enddo
 !$OMP END PARALLEL DO
 
 END SUBROUTINE
+
+SUBROUTINE scalar_rep_resc_ibo_sep(array_in, width_params, dim1, dim2, dim3, dim4, array_out)
+implicit none
+integer, intent(in):: dim1, dim2, dim3, dim4
+double precision, dimension(dim1, dim2, dim3, dim4), intent(in):: array_in
+double precision, dimension(dim1, dim2, dim3, dim4), intent(inout):: array_out
+double precision, dimension(dim1), intent(in):: width_params
+integer:: i2, i3, i4
+
+!$OMP PARALLEL DO
+do i4=1, dim4
+    do i3=1, dim3
+        do i2=1, dim2
+            array_out(:, i2, i3, i4)=array_in(:, i2, i3, i4)/width_params
+        enddo
+    enddo
+enddo
+!$OMP END PARALLEL DO
+
+
+END SUBROUTINE scalar_rep_resc_ibo_sep
 
 
 SUBROUTINE scalar_rep_resc(array_out, array_in, width_params, dim1, dim2, dim3)
@@ -255,7 +328,7 @@ call flinear_base_kernel_mat_with_opt(num_scal_reps,&
 !$OMP PARALLEL DO PRIVATE(upper_A_mol_counter) SCHEDULE(DYNAMIC)
 do B_mol_counter = 1, B_num_mols
     if (sym_kernel_mat) then
-        upper_A_mol_counter=B_num_mols
+        upper_A_mol_counter=B_mol_counter
     else
         upper_A_mol_counter=A_num_mols
     endif

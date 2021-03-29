@@ -6,8 +6,6 @@ seed=1
 num_test_mols_1=50
 num_test_mols_2=40
 
-num_test_orbs=60
-
 logfile_name=sys.argv[1]
 
 test_xyz_dir="./qm7"
@@ -22,13 +20,9 @@ my_representation=OML_representation(max_angular_momentum=1, use_Fortran=True, i
 oml_compounds_1=my_representation.init_compound_list(xyz_list=tested_xyzs_1, disable_openmp=True)
 oml_compounds_2=my_representation.init_compound_list(xyz_list=tested_xyzs_2, disable_openmp=False)
 
-random.seed(seed+2)
-
 oml_samp_orbs=qml.oml_kernels.random_ibo_sample(oml_compounds_1, pair_reps=False)
 
 width_params=qml.oml_kernels.oml_ensemble_widths_estimate(oml_samp_orbs)
-
-final_kernel_orbs=random.sample(oml_samp_orbs, num_test_orbs)
 
 logfile.write("Width params")
 logfile.write(width_params)
@@ -42,5 +36,9 @@ logfile.write("xyz list 2")
 logfile.write(tested_xyzs_2)
 
 logfile.write("kernel_11")
-kernel=qml.oml_kernels.part_IBO_GMO_kernel(oml_compounds_2, final_kernel_orbs, kernel_params)
+kernel=qml.oml_kernels.GMO_sep_IBO_kernel(oml_compounds_1, oml_compounds_1, kernel_params, sym_kernel_mat=True)
+logfile.export_matrix(kernel)
+
+logfile.write("kernel_12")
+kernel=qml.oml_kernels.GMO_sep_IBO_kernel(oml_compounds_1, oml_compounds_2, kernel_params, sym_kernel_mat=False)
 logfile.export_matrix(kernel)

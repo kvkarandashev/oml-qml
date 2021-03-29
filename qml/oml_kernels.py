@@ -29,7 +29,7 @@ from .python_parallelization import embarassingly_parallel
 import math, itertools
 
 
-from .foml_kernels import fgmo_kernel, flinear_base_kernel_mat, fgmo_sq_dist, fpart_ibo_gmo_kernel
+from .foml_kernels import fgmo_kernel, flinear_base_kernel_mat, fgmo_sq_dist, fgmo_sep_ibo_kernel
 
 
 
@@ -138,7 +138,7 @@ def orb_rep_rho_list(oml_comp, pair_reps=False):
     for ibo in iterated_orb_reps(oml_comp, pair_reps=pair_reps):
         output.append((ibo.rho, ibo))
     if pair_reps:
-        for i in range(oml_comp.comps[0]):
+        for i in range(oml_comp.comps[0].orb_reps):
             output[i][0]*=-1
     return output
 
@@ -196,7 +196,7 @@ def generate_GMO_kernel(A, B, kernel_params, sym_kernel_mat=False):
                         kernel_params.use_Gaussian_kernel)
     return kernel_mat
 
-class GMO_sep_kern_comp_input:
+class GMO_sep_IBO_kern_input:
     def __init__(self, oml_compound_array=None, pair_reps=False):
         self.num_mols=len(oml_compound_array)
         self.max_num_ibos=0
@@ -216,16 +216,17 @@ class GMO_sep_kern_comp_input:
                     self.ibo_arep_rhos[ind_comp, ind_ibo, ind_ibo_arep]=ibo_arep.rho
                     self.ibo_atom_sreps[ind_comp, ind_ibo, ind_ibo_arep, :]=ibo_arep.scalar_reps[:]
 
-def part_IBO_GMO_kernel(comp_array, ibo_array, kernel_params):
-    ibo_array_conv=GMO_kernel_input(oml_compound_array=ibo_array, single_ibo_list=True)
-    comp_array_conv=GMO_sep_kern_comp_input(oml_compound_array=comp_array, pair_reps=kernel_params.pair_reps)
-    kernel_mat = np.empty((comp_array_conv.num_mols, ibo_array_conv.num_mols), order='F')
-    fpart_ibo_gmo_kernel(comp_array_conv.max_num_scalar_reps,
-                    comp_array_conv.ibo_atom_sreps.T, comp_array_conv.ibo_arep_rhos.T, comp_array_conv.ibo_rhos.T,
-                    comp_array_conv.max_num_ibo_atom_reps, comp_array_conv.max_num_ibos, comp_array_conv.num_mols,
-                    ibo_array_conv.ibo_atom_sreps.T, ibo_array_conv.rhos.T, ibo_array_conv.max_tot_num_ibo_atom_reps, ibo_array_conv.num_mols,
+def GMO_sep_IBO_kernel(A, B, kernel_params, sym_kernel_mat=False):
+    Ac=GMO_sep_IBO_kern_input(oml_compound_array=A, pair_reps=kernel_params.pair_reps)
+    Bc=GMO_sep_IBO_kern_input(oml_compound_array=B, pair_reps=kernel_params.pair_reps)
+    kernel_mat = np.empty((Ac.num_mols, Bc.num_mols), order='F')
+    fgmo_sep_ibo_kernel(Ac.max_num_scalar_reps,
+                    Ac.ibo_atom_sreps.T, Ac.ibo_arep_rhos.T, Ac.ibo_rhos.T,
+                    Ac.max_num_ibo_atom_reps, Ac.max_num_ibos, Ac.num_mols,
+                    Bc.ibo_atom_sreps.T, Bc.ibo_arep_rhos.T, Bc.ibo_rhos.T,
+                    Bc.max_num_ibo_atom_reps, Bc.max_num_ibos, Bc.num_mols,
                     kernel_params.width_params, kernel_params.final_sigma, kernel_params.density_neglect,
-                    kernel_params.normalize_lb_kernel, kernel_mat)
+                    kernel_params.normalize_lb_kernel, sym_kernel_mat, kernel_mat)
     return kernel_mat
 
 def GMO_sqdist_mat(A, B, kernel_params, sym_kernel_mat=False):
