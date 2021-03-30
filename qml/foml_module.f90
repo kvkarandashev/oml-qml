@@ -33,10 +33,10 @@ double precision:: klin, cur_A_rho, cur_B_rho, sqdist
 kernel_element=0.0
 do B_ibo_counter=1, B_max_num_ibos
     cur_B_rho=B_ibo_rhos(B_ibo_counter)
-    if (abs(cur_B_rho)<density_neglect) cycle
+    if (abs(cur_B_rho)<density_neglect) exit
     do A_ibo_counter=1, A_max_num_ibos
         cur_A_rho=A_ibo_rhos(A_ibo_counter)
-        if (abs(cur_A_rho)<density_neglect) cycle
+        if (abs(cur_A_rho)<density_neglect) exit
         klin=flin_base_kernel_element(num_scalar_reps,&
                 A_ibo_arep_rhos(:, A_ibo_counter), A_ibo_atom_sreps(:, :, A_ibo_counter),&
                 A_max_num_ibo_atom_reps, B_ibo_arep_rhos(:, B_ibo_counter),&

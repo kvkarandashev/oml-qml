@@ -136,9 +136,9 @@ class GMO_kernel_input:
 def orb_rep_rho_list(oml_comp, pair_reps=False):
     output=[]
     for ibo in iterated_orb_reps(oml_comp, pair_reps=pair_reps):
-        output.append((ibo.rho, ibo))
+        output.append([ibo.rho, ibo])
     if pair_reps:
-        for i in range(oml_comp.comps[0].orb_reps):
+        for i in range(len(oml_comp.comps[0].orb_reps)):
             output[i][0]*=-1
     return output
 
@@ -202,15 +202,19 @@ class GMO_sep_IBO_kern_input:
         self.max_num_ibos=0
         self.max_num_ibo_atom_reps=0
         for oml_comp in oml_compound_array:
-            self.max_num_ibos=max(self.max_num_ibos, len(oml_comp.orb_reps))
-            for orb_rep in oml_comp.orb_reps:
+            rho_orb_list=orb_rep_rho_list(oml_comp, pair_reps=pair_reps)
+            self.max_num_ibos=max(self.max_num_ibos, len(rho_orb_list))
+            for [orb_rho, orb_rep] in rho_orb_list:
                 self.max_num_ibo_atom_reps=max(self.max_num_ibo_atom_reps, len(orb_rep.ibo_atom_reps))
-        self.max_num_scalar_reps=len(oml_compound_array[0].orb_reps[0].ibo_atom_reps[0].scalar_reps)
+        if pair_reps:
+            self.max_num_scalar_reps=len(oml_compound_array[0].comps[0].orb_reps[0].ibo_atom_reps[0].scalar_reps)
+        else:
+            self.max_num_scalar_reps=len(oml_compound_array[0].orb_reps[0].ibo_atom_reps[0].scalar_reps)
         self.ibo_rhos=np.zeros((self.num_mols, self.max_num_ibos))
         self.ibo_arep_rhos=np.zeros((self.num_mols, self.max_num_ibos, self.max_num_ibo_atom_reps))
         self.ibo_atom_sreps=np.zeros((self.num_mols, self.max_num_ibos, self.max_num_ibo_atom_reps, self.max_num_scalar_reps))
         for ind_comp, oml_comp in enumerate(oml_compound_array):
-            for ind_ibo, (ibo_rho, ibo_rep) in enumerate(orb_rep_rho_list(oml_comp, pair_reps=pair_reps)):
+            for ind_ibo, [ibo_rho, ibo_rep] in enumerate(orb_rep_rho_list(oml_comp, pair_reps=pair_reps)):
                 self.ibo_rhos[ind_comp, ind_ibo]=ibo_rho
                 for ind_ibo_arep, ibo_arep in enumerate(ibo_rep.ibo_atom_reps):
                     self.ibo_arep_rhos[ind_comp, ind_ibo, ind_ibo_arep]=ibo_arep.rho
