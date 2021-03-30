@@ -287,6 +287,18 @@ class OML_GMO_kernel_function(kernel_function):
         if self.kernel_params.use_Gaussian_kernel:
             output+=",fin_sigma:"+str(self.kernel_params.final_sigma)
         return output
+
+class OML_GMO_sep_IBO_kernel_function(OML_GMO_kernel_function):
+    def kernel_matrix(self, arr1, arr2):
+        return qml.oml_kernels.GMO_sep_IBO_kernel(arr1, arr2, self.kernel_params)
+    def sym_kernel_matrix(self, array):
+        return qml.oml_kernels.GMO_sep_IBO_kernel(array, array, self.kernel_params, sym_kernel_mat=True)
+    def __str__(self):
+        output="GMO_sep_IBO,sigma_rescale:"+str(self.sigma_rescale)
+        if self.kernel_params.use_Gaussian_kernel:
+            output+=",fin_sigma:"+str(self.kernel_params.final_sigma)
+        return output
+
 ### END
 
 
