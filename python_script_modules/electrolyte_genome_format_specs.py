@@ -17,21 +17,21 @@ def_float_format='{:.8E}'
 vacuum_to_lithium=1.4
 au_to_eV_mult=27.2113961
 
-def reduction_lithium(xyz_name, calc_type="UHF", basis="sto-3g", use_Huckel=False, optimize_geometry=True):
-    return Electron_Affinity(xyz_name, calc_type=calc_type, basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)-vacuum_to_lithium
+def reduction_lithium(xyz_name, calc_type="UHF", **oml_comp_kwargs):
+    return Electron_Affinity(xyz_name, calc_type=calc_type, **oml_comp_kwargs)-vacuum_to_lithium
 
-def oxidation_lithium(xyz_name, calc_type="UHF", basis="sto-3g", use_Huckel=False, optimize_geometry=True):
-    return Ionization_Energy(xyz_name, calc_type=calc_type, basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)-vacuum_to_lithium
+def oxidation_lithium(xyz_name, calc_type="UHF", **oml_comp_kwargs):
+    return Ionization_Energy(xyz_name, calc_type=calc_type, **oml_comp_kwargs)-vacuum_to_lithium
 
-def Ionization_Energy(xyz_name, calc_type="HF", basis="sto-3g", use_Huckel=False, optimize_geometry=True):
-    return electron_energy_change(xyz_name, 1, calc_type=calc_type, basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)
+def Ionization_Energy(xyz_name, calc_type="UHF", **oml_comp_kwargs):
+    return electron_energy_change(xyz_name, 1, calc_type=calc_type, **oml_comp_kwargs)
 
-def Electron_Affinity(xyz_name, calc_type="HF", basis="sto-3g", use_Huckel=False, optimize_geometry=True):
-    return -electron_energy_change(xyz_name, -1, calc_type=calc_type, basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)
+def Electron_Affinity(xyz_name, calc_type="UHF", **oml_comp_kwargs):
+    return -electron_energy_change(xyz_name, -1, calc_type=calc_type, **oml_comp_kwargs)
 
-def electron_energy_change(xyz_name, charge_change, calc_type="HF", basis="sto-3g", use_Huckel=False, optimize_geometry=True):
+def electron_energy_change(xyz_name, charge_change, calc_type="UHF", **oml_comp_kwargs):
     Slater_pair=OML_Slater_pair(xyz = xyz_name, mats_savefile = xyz_name, first_calc_type=calc_type, second_calc_type=calc_type,
-        basis=basis, second_charge=charge_change, optimize_geometry=optimize_geometry, use_Huckel=use_Huckel)
+        second_charge=charge_change, **oml_comp_kwargs)
     Slater_pair.run_calcs()
     return (Slater_pair.comps[1].e_tot-Slater_pair.comps[0].e_tot)*au_to_eV_mult
 
@@ -56,8 +56,8 @@ class Quantity:
                     break
         file.close()
         return output
-    def OML_calc_quant(self, xyz_name, calc_type="UHF", basis="sto-3g", use_Huckel=False, optimize_geometry=True):
-        return quant_properties[self.name][1](xyz_name, calc_type=calc_type, basis=basis, use_Huckel=use_Huckel, optimize_geometry=optimize_geometry)
+    def OML_calc_quant(self, xyz_name, calc_type="UHF", **oml_comp_kwargs):
+        return quant_properties[self.name][1](xyz_name, calc_type=calc_type, **oml_comp_kwargs)
     def write_byprod_result(self, val, io_out):
         io_out.write(str(self.qm9_id)+" "+str(val)+"\n")
         

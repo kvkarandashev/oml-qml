@@ -154,10 +154,14 @@ def ibo_atom_atom_coupling(atom_id1, atom_id2, ang_mom1, ang_mom2, atom_ao_range
 orb_ang_mom={"s" : 0, "p" : 1, "d" : 2, "f" : 3, "g" : 4, "h" : 5, "i" : 6}
 
 class AO:
-    def __init__(self, ao_label):
-        info=ao_label.split()
-        self.ao_type=info[2]
-        self.atom_id=int(info[0])
+    def __init__(self, ao_label, atom_id=None):
+        if atom_id is None:
+            info=ao_label.split()
+            self.ao_type=info[2]
+            self.atom_id=int(info[0])
+        else:
+            self.atom_id=atom_id
+            self.ao_type=ao_label
         for char in self.ao_type:
             try:
                 int(char)

@@ -5,20 +5,12 @@ MYDIR=$(pwd)
 
 cd ../python_script_modules
 ADD_PYTHON_DIR=$(pwd)
-cd ../bash_scripts
-BASH_SCR_DIR=$(pwd)
 cd $MYDIR
 
 if ! (echo $PYTHONPATH | tr ':' '\n' | grep -qFx $ADD_PYTHON_DIR)
 then
     export PYTHONPATH=$ADD_PYTHON_DIR:$PYTHONPATH
 fi
-
-if ! (echo $PATH | tr ':' '\n' | grep -qFx $BASH_SCR_DIR)
-then
-    export PATH=$BASH_SCR_DIR:$PATH
-fi
-
 
 export OMP_NUM_THREADS=2
 export OML_NUM_PROCS=2 # The variable says how many processes to use during joblib-parallelized parts.
@@ -27,7 +19,8 @@ export OML_NUM_PROCS=2 # The variable says how many processes to use during jobl
 ./recompile_qml.sh
 for script in FJK_Gauss_kernel FJK_pair_Gauss_kernel_HOMO FJK_pair_linear_kernel_LUMO FJK_pair_linear_kernel_UHF_HOMO\
              FJK_pair_Gauss_kernel_UHF_LUMO FBCM_pair_linear_kernel_UHF_HOMO FBCM_pair_gauss_kernel_UHF_gap\
-            FBCM_pair_gauss_kernel_KS_HOMO FBCM_pair_linear_kernel_UKS_gap FJK_sep_ibo_kernel FJK_pair_sep_ibo_kernel_HOMO
+            FBCM_pair_gauss_kernel_KS_HOMO FBCM_pair_linear_kernel_UKS_gap FJK_sep_ibo_kernel FJK_pair_sep_ibo_kernel_HOMO\
+            pair_Gauss_oxidation_molpro
 do
 	python $script.py $script.log
 	bench=benchmark_data/$script.dat
