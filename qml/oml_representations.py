@@ -26,49 +26,50 @@ import jax.numpy as jnp
 from jax import jit
 import math
 
-from .foml_representations import fgen_ibo_atom_scalar_rep, fgen_fock_ft_coup_mats, fang_mom_descr
+from .foml_representations import fgen_ibo_atom_scalar_rep, fgen_ft_coup_mats, fang_mom_descr
 
 
 class OML_rep_params:
 #   Parameters defining how IBO's are represented and biased.
 #   tol_orb_cutoff      - consider AO's coefficient zero if it's smaller than tol_orb_cutoff.
-#   en_bias_coeff       - coefficient for exponential biasing of energy.
 #   ibo_atom_rho_comp   - compose IBO representation out of AO's centered on minimal ammount of atoms that would (approximately) account for at least
 #                         ibo_atom_rho_comp of the electronic density.
 #   l_max               - maximal value of angular momentum.
-    def __init__(self, tol_orb_cutoff=1.0e-6, en_bias_coeff=None, en_degen_tol=0.01, ibo_rho_comp=None,
-                    ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True, mult_coup_mat=False,
-                    mult_coup_mat_level=1, fock_based_coup_mat=False, num_fbcm_times=1, fbcm_delta_t=1.0, fbcm_exclude_Fock=False,
-                    fbcm_pseudo_orbs=False, ibo_spectral_representation=False, energy_rho_comp=1.0, norm_by_nelec=False):
+    def __init__(self, tol_orb_cutoff=1.0e-6,  ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
+                    fock_based_coup_mat=False, num_prop_times=1, prop_delta_t=1.0, fbcm_exclude_Fock=False,
+                    fbcm_pseudo_orbs=False, ibo_fidelity_rep=False, norm_by_nelec=False):
         self.tol_orb_cutoff=tol_orb_cutoff
         self.ibo_atom_rho_comp=ibo_atom_rho_comp
         self.max_angular_momentum=max_angular_momentum
         self.use_Fortran=use_Fortran
         self.fock_based_coup_mat=fock_based_coup_mat
-        self.num_fbcm_times=num_fbcm_times
-        self.fbcm_delta_t=fbcm_delta_t
+        self.num_prop_times=num_prop_times
+        self.prop_delta_t=prop_delta_t
         self.fbcm_pseudo_orbs=fbcm_pseudo_orbs
-        self.ibo_spectral_representation=ibo_spectral_representation
-        self.energy_rho_comp=energy_rho_comp
         self.norm_by_nelec=norm_by_nelec
         self.fbcm_exclude_Fock=fbcm_exclude_Fock
+
+        self.ibo_fidelity_rep=ibo_fidelity_rep
     def __str__(self):
-        str_out="ibo_atom_rho_comp:"+str(self.ibo_atom_rho_comp)+",max_ang_mom:"+str(self.max_angular_momentum)
-        if self.fock_based_coup_mat:
-            str_out+=",fbcm_delta_t:"+str(self.fbcm_delta_t)+",num_fbcm_times:"+str(self.num_fbcm_times)
+        if self.ibo_fidelity_rep:
+            str_out="IBOFR,num_prop_times:"+str(self.num_prop_times)+",prop_delta_dt"+str(self.prop_delta_t)
+        else:
+            str_out="ibo_atom_rho_comp:"+str(self.ibo_atom_rho_comp)+",max_ang_mom:"+str(self.max_angular_momentum)
+            if self.fock_based_coup_mat:
+                str_out+=",prop_delta_t:"+str(self.prop_delta_t)+",num_prop_times:"+str(self.num_prop_times)
         return str_out
 
 def gen_fock_based_coup_mats(rep_params, hf_orb_coeffs, hf_orb_energies):
     num_orbs=len(hf_orb_energies)
     inv_hf_orb_coeffs=np.linalg.inv(hf_orb_coeffs)
     if rep_params.use_Fortran:
-        output=np.zeros((num_orbs, num_orbs, rep_params.num_fbcm_times*2), order='F')
-        fgen_fock_ft_coup_mats(inv_hf_orb_coeffs, hf_orb_energies, rep_params.fbcm_delta_t, num_orbs, rep_params.num_fbcm_times, output)
+        output=np.zeros((num_orbs, num_orbs, rep_params.num_prop_times*2), order='F')
+        fgen_ft_coup_mats(inv_hf_orb_coeffs, hf_orb_energies, rep_params.prop_delta_t, num_orbs, rep_params.num_prop_times, output)
         return tuple(np.transpose(output))
     else:
         output=()
-        for freq_counter in range(rep_params.num_fbcm_times):
-            prop_time=(freq_counter+1)*rep_params.fbcm_delta_t
+        for timestep_counter in range(rep_params.num_prop_times):
+            prop_time=(timestep_counter+1)*rep_params.prop_delta_t
             for trigon_func in [math.cos, math.sin]:
                 new_mat=np.zeros((num_orbs, num_orbs))
                 for i, en in enumerate(hf_orb_energies):
@@ -191,34 +192,6 @@ def generate_ibo_rep_array(ibo_mat, rep_params, aos, atom_ao_ranges, ovlp_mat, *
     ibo_tmat=ibo_mat.T
     return [OML_ibo_rep(ibo_coeffs, rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coupling_mats) for ibo_coeffs in ibo_tmat]
     
-def generate_ibo_spectral_rep_array(ibo_mat, rep_params, overlap_func, mo_coeff, mo_occ, mo_energy, reference_energy):
-    return weighted_array([OML_ibo_spectral_rep(ibo_coeffs, rep_params, overlap_func, mo_coeff, mo_occ, mo_energy, reference_energy) for ibo_coeffs in ibo_mat.T])
-    
-class OML_ibo_spectral_line:
-    def __init__(self, ibo_coeffs, reference_energy, mo_en, mo_c, overlap_func):
-        cur_coeff=overlap_func(ibo_coeffs, mo_c)
-        self.pos_sign=(cur_coeff >= 0.0)
-        self.rho=cur_coeff**2
-        self.relative_energy=mo_en-reference_energy
-    def covariance_measure(self, other_spectral_line, kernel_params):
-        return -((self.relative_energy-other_spectral_line.relative_energy)/kernel_params.width_params)**2
-    def covariance_finalized(self, measure_value, kernel_params):
-        return math.exp(measure_value/2)
-
-#   Representation of an IBO from its energy spectrum.
-class OML_ibo_spectral_rep:
-    def __init__(self, ibo_coeffs, rep_params, overlap_func, mo_coeff, mo_occ, mo_energy, reference_energy):
-        from .oml_representations import weighted_array
-        self.rho=0.0
-        self.full_coeffs=ibo_coeffs
-        self.energy_spectrum=weighted_array([])
-        for mo_en, mo_c, occ in zip(mo_energy, mo_coeff.T, mo_occ):
-            if occ>1.0:
-                self.energy_spectrum.append(OML_ibo_spectral_line(self.full_coeffs, reference_energy, mo_en, mo_c, overlap_func))
-        self.energy_spectrum.normalize_sort_rhos()
-        # Try to decrease the number of atomic representations, leaving only the most relevant ones.
-        self.energy_spectrum.cutoff_minor_weights(remaining_rho=rep_params.energy_rho_comp)
-
 #   Representation of an IBO from atomic contributions.
 class OML_ibo_rep:
     def __init__(self, ibo_coeffs, rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coup_mats):
@@ -265,4 +238,30 @@ class weighted_array(list):
                 del(self[delete_from_end:])
                 self.normalize_rhos(rho_new_sum)
 
-
+# Related to IBO fidelity representation.
+def generate_ibo_fidelity_rep(oml_compound, rep_params):
+    nspins=len(oml_compound.ibo_mat)
+    naos=len(oml_compound.aos)
+    num_orbs=0
+    for ispin in range(nspins):
+        num_orbs+=len(oml_compound.ibo_mat[ispin].T)
+    num_prop_types=1
+    tot_mat_num=num_prop_types*rep_params.num_prop_times*2
+    orb_reps=np.zeros((num_orbs, tot_mat_num))
+    prop_mats=np.zeros((naos, naos, tot_mat_num), order='F')
+    prp_wovlp=np.zeros((tot_mat_num, naos, naos), order='F')
+    cur_orb_id=0
+    for ispin in range(nspins):
+        if nspins==1:
+            vhf=oml_compound.j_mat[0]-0.5*oml_compound.k_mat[0]
+        else:
+            vhf=oml_compound.j_mat[0]+oml_compound.j_mat[1]-oml_compound.k_mat[ispin]
+        pseudo_ens, pseudo_orbs=np.linalg.eigh(vhf)
+        fgen_ft_coup_mats(pseudo_orbs.T, pseudo_ens, rep_params.prop_delta_t, naos, rep_params.num_prop_times, prop_mats)
+        for mat_id, mat in enumerate(prop_mats.T):
+            prp_wovlp[mat_id]=np.matmul(oml_compound.ovlp_mat, mat)
+        for orb_id, orb_coeffs in enumerate(oml_compound.ibo_mat[ispin].T):
+            for prop_time_id, prop_mat in enumerate(prop_mats.T):
+                orb_reps[cur_orb_id, prop_time_id]=np.dot(orb_coeffs,np.matmul(prop_mat,orb_coeffs))
+            cur_orb_id+=1
+    return orb_reps

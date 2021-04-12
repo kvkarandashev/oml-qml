@@ -179,3 +179,51 @@ double precision, dimension(:, :), intent(inout):: sq_dist_mat ! (A_num_mols, B_
     if (sym_kernel_mat) call symmetrize_matrix(sq_dist_mat, A_num_mols)
 
 END SUBROUTINE fgmo_sq_dist
+
+
+SUBROUTINE fibo_fr_kernel(vec_length,&
+                        A_ibo_scaled_vecs, A_rhos, A_max_num_ibos, A_num_mols,&
+                        B_ibo_scaled_vecs, B_rhos, B_max_num_ibos, B_num_mols,&
+                        density_neglect, sym_kernel_mat, kernel_mat)
+use foml_module, only : symmetrize_matrix
+implicit none
+integer, intent(in):: vec_length
+integer, intent(in):: A_max_num_ibos, A_num_mols
+integer, intent(in):: B_max_num_ibos, B_num_mols
+double precision, dimension(:, :, :), intent(in):: A_ibo_scaled_vecs
+double precision, dimension(:, :, :), intent(in):: B_ibo_scaled_vecs
+double precision, dimension(:, :), intent(in):: A_rhos
+double precision, dimension(:, :), intent(in):: B_rhos
+double precision, intent(in):: density_neglect
+logical, intent(in):: sym_kernel_mat
+double precision, dimension(:, :), intent(inout):: kernel_mat ! (A_num_mols, B_num_mols)
+integer:: upper_A_mol_counter, A_mol_counter, B_mol_counter, A_ibo_counter, B_ibo_counter
+double precision:: cur_A_rho, cur_B_rho
+
+kernel_mat=0.0
+!$OMP PARALLEL DO PRIVATE(upper_A_mol_counter) SCHEDULE(DYNAMIC)
+do B_mol_counter = 1, B_num_mols
+    if (sym_kernel_mat) then
+        upper_A_mol_counter=B_mol_counter
+    else
+        upper_A_mol_counter=A_num_mols
+    endif
+    do A_mol_counter=1, upper_A_mol_counter
+        do A_ibo_counter=1, A_max_num_ibos
+            cur_A_rho=A_rhos(A_ibo_counter, A_mol_counter)
+            if (abs(cur_A_rho)<density_neglect) exit
+            do B_ibo_counter=1, B_max_num_ibos
+                cur_B_rho=B_rhos(B_ibo_counter, B_mol_counter)
+                if (abs(cur_B_rho)<density_neglect) exit
+                kernel_mat(A_mol_counter, B_mol_counter)=kernel_mat(A_mol_counter, B_mol_counter)&
+                                +exp(-sum((A_ibo_scaled_vecs(:, A_ibo_counter, A_mol_counter)-&
+                                B_ibo_scaled_vecs(:, B_ibo_counter, B_mol_counter))**2)/4)&
+                                *cur_B_rho*cur_A_rho
+            enddo
+        enddo
+    enddo
+enddo
+!$OMP END PARALLEL DO
+if (sym_kernel_mat) call symmetrize_matrix(kernel_mat, A_num_mols)
+
+END SUBROUTINE fibo_fr_kernel

@@ -29,7 +29,7 @@ from .python_parallelization import embarassingly_parallel
 import math, itertools
 
 
-from .foml_kernels import fgmo_kernel, flinear_base_kernel_mat, fgmo_sq_dist, fgmo_sep_ibo_kernel
+from .foml_kernels import fgmo_kernel, flinear_base_kernel_mat, fgmo_sq_dist, fgmo_sep_ibo_kernel, fibo_fr_kernel
 
 
 
@@ -305,4 +305,73 @@ def oml_pair_ensemble_widths_estimate(orb_rep_array):
     av2_vals/=norm_prefac
     return jnp.array([sqrt_sign_checked(av2_val-av_val**2) for av_val, av2_val in zip(av_vals, av2_vals)])
 
+#   For IBO-FR procedures.
 
+class IBOFR_kernel_params:
+    def __init__(self, vec_rep_mult=None, pair_reps=False, density_neglect=1e-7):
+        self.vec_rep_mult=vec_rep_mult
+        self.pair_reps=pair_reps
+        self.density_neglect=density_neglect
+
+def rho_iterator(oml_comp):
+    return np.repeat(oml_comp.ibo_occ, len(oml_comp.orb_reps))
+
+def rho_orb_iterator(oml_comp, pair_reps):
+    if pair_reps:
+        return zip(itertools.chain(rho_iterator(oml_comp.comps[1]), -rho_iterator(oml_comp.comps[0])),
+                    itertools.chain(oml_comp.comps[1].orb_reps, oml_comp.comps[0].orb_reps))
+    else:
+        return zip(rho_iterator(oml_comp), oml_comp.orb_reps)
+
+# Introduced for convenience.
+def ibofr_smoothed_mult(val, rep_params):
+    output=np.repeat(val, 2*rep_params.num_prop_times)
+    for i in range(rep_params.num_prop_times):
+        multiplier=math.cos(math.pi*(i+1)/2/(rep_params.num_prop_times+1))**2
+        output[2*i:2*(i+1)]*=multiplier
+    return output
+
+class IBOFR_kernel_input:
+    def __init__(self, compound_list, vec_rep_mult, pair_reps=False):
+        self.num_mols=len(compound_list)
+        self.max_num_ibos=0
+        for compound in compound_list:
+            self.max_num_ibos=max(self.max_num_ibos, len(compound.orb_reps))
+        self.vec_length=len(compound_list[0].orb_reps[0])
+        self.ibo_scaled_vecs=np.zeros((self.vec_length, self.max_num_ibos, self.num_mols), order='F')
+        self.rhos=np.zeros((self.max_num_ibos, self.num_mols), order='F')
+        for comp_id, compound in enumerate(compound_list):
+            for ibo_id, (rho_val, ibo_rep) in enumerate(rho_orb_iterator(compound, pair_reps)):
+                self.ibo_scaled_vecs[:, ibo_id, comp_id]=ibo_rep[:]
+                self.rhos[ibo_id, comp_id]=rho_val
+        for vec_comp_id, cur_mult in enumerate(vec_rep_mult):
+            self.ibo_scaled_vecs[vec_comp_id]*=cur_mult
+
+def gen_ibofr_kernel(A, B, kernel_params, sym_kernel_mat=False):
+    Ac=IBOFR_kernel_input(A, kernel_params.vec_rep_mult, pair_reps=kernel_params.pair_reps)
+    Bc=IBOFR_kernel_input(B, kernel_params.vec_rep_mult, pair_reps=kernel_params.pair_reps)
+    kernel_mat = np.empty((Ac.num_mols, Bc.num_mols), order='F')
+    fibo_fr_kernel(Ac.vec_length,
+                    Ac.ibo_scaled_vecs, Ac.rhos, Ac.max_num_ibos, Ac.num_mols,
+                    Bc.ibo_scaled_vecs, Bc.rhos, Bc.max_num_ibos, Bc.num_mols,
+                    kernel_params.density_neglect, sym_kernel_mat, kernel_mat)
+    return kernel_mat
+
+def ibofr_rep_avs(compound_list, pair_reps=False):
+    vec_length=len(compound_list[0].orb_reps[0])
+    av_vals=np.zeros(vec_length)
+    av2_vals=np.zeros(vec_length)
+    norm_prefac=0.0
+    for oml_comp in compound_list:
+        for ibo_id, (rho_val, ibo_rep) in enumerate(rho_orb_iterator(oml_comp, pair_reps)):
+            norm_prefac+=abs(rho_val)
+            av_vals+=ibo_rep
+            av2_vals+=ibo_rep**2
+    av_vals/=norm_prefac
+    av2_vals/=norm_prefac
+    return av_vals, av2_vals
+
+
+def ibofr_rep_stddevs(compound_list, pair_reps=False):
+    av_vals, av2_vals=ibofr_rep_avs(compound_list, pair_reps=pair_reps)
+    return np.array([sqrt_sign_checked(av2_val-av_val**2) for av_val, av2_val in zip(av_vals, av2_vals)])

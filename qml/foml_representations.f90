@@ -117,92 +117,71 @@ integer:: ao2
 
 END SUBROUTINE
 
-!   hf_orb_coeffs - first index - basis function, second - molecular orbital.
-SUBROUTINE fgen_fock_ft_coup_mats(inv_hf_orb_coeffs, hf_orb_energies, fbcm_delta_t,&
-                                    num_orbs, num_fbcm_times, ft_fock_mats)
-!   TO-DO why doesn't it work?
-!use fconstants, only : pi
+!   orb_coeffs - first index - basis function, second - molecular orbital.
+SUBROUTINE fgen_ft_coup_mats(inv_orb_coeffs, orb_energies, prop_delta_t,&
+                                    num_orbs, num_prop_times, ft_mats)
 implicit none
-double precision, parameter:: pi=3.14159265358979323846
-integer, intent(in):: num_orbs, num_fbcm_times
-double precision, intent(in), dimension(:, :):: inv_hf_orb_coeffs
-double precision, intent(in), dimension(:):: hf_orb_energies
-double precision, intent(in):: fbcm_delta_t
-double precision, intent(inout), dimension(:, :, :):: ft_fock_mats
+integer, intent(in):: num_orbs, num_prop_times
+double precision, intent(in), dimension(:, :):: inv_orb_coeffs
+double precision, intent(in), dimension(:):: orb_energies
+double precision, intent(in):: prop_delta_t
+double precision, intent(inout), dimension(:, :, :):: ft_mats
 double precision:: propagation_time
-integer:: freq_counter, cos_or_sin, mat_counter
+integer:: time_point_counter, cos_or_sin, mat_counter
 
     mat_counter=1
-    do freq_counter=1, num_fbcm_times
-        propagation_time=freq_counter*pi*fbcm_delta_t
+    do time_point_counter=1, num_prop_times
+        propagation_time=time_point_counter*prop_delta_t
         do cos_or_sin=0, 1
-            call fgen_fock_ft_coup_mat(inv_hf_orb_coeffs, hf_orb_energies, propagation_time,&
-                                   (cos_or_sin==0), num_orbs, ft_fock_mats(:, :, mat_counter))
+            call fgen_ft_coup_mat(inv_orb_coeffs, orb_energies, propagation_time,&
+                                   (cos_or_sin==0), num_orbs, ft_mats(:, :, mat_counter))
             mat_counter=mat_counter+1
         enddo
     enddo
 
 END SUBROUTINE
 
-SUBROUTINE fgen_fock_ft_coup_mat(hf_orb_coeffs_transposed, hf_orb_energies,&
-                                    propagation_time, use_cos, num_orbs, ft_fock_mat)
+SUBROUTINE fgen_ft_coup_mat(inv_orb_coeffs, orb_energies,&
+                                    propagation_time, use_cos, num_orbs, ft_mat)
 implicit none
 integer, intent(in):: num_orbs
-double precision, dimension(num_orbs, num_orbs), intent(in):: hf_orb_coeffs_transposed
-double precision, dimension(num_orbs), intent(in):: hf_orb_energies
+double precision, dimension(num_orbs, num_orbs), intent(in):: inv_orb_coeffs
+double precision, dimension(num_orbs), intent(in):: orb_energies
 double precision, intent(in):: propagation_time
 logical, intent(in):: use_cos
-double precision, dimension(num_orbs, num_orbs), intent(inout):: ft_fock_mat
-integer:: i1, i2
+double precision, dimension(num_orbs, num_orbs), intent(inout):: ft_mat
+integer:: i1, i2, orb_counter
 double precision, dimension(num_orbs):: propagator_coeffs
 
 !$OMP PARALLEL DO
     do i1=1, num_orbs
-!       Not %100 sure what option is best.
-!        if (use_cos) then
-!            propagator_coeffs(i1)=hf_orb_energies(i1)*cos(hf_orb_energies(i1)*characteristic_time)
-!        else
-!            propagator_coeffs(i1)=hf_orb_energies(i1)*sin(hf_orb_energies(i1)*characteristic_time)
-!        endif
         if (use_cos) then
-            propagator_coeffs(i1)=cos(hf_orb_energies(i1)*propagation_time)
+            propagator_coeffs(i1)=cos(orb_energies(i1)*propagation_time)
         else
-            propagator_coeffs(i1)=sin(hf_orb_energies(i1)*propagation_time)
+            propagator_coeffs(i1)=sin(orb_energies(i1)*propagation_time)
         endif
     enddo
 !$OMP END PARALLEL DO
+ft_mat=0.0
 !$OMP PARALLEL DO
     do i2=1, num_orbs
         do i1=1, i2
-            call fgen_fock_ft_coup_el(hf_orb_coeffs_transposed(:, i1), hf_orb_coeffs_transposed(:, i2),&
-                                        propagator_coeffs, num_orbs, ft_fock_mat(i1, i2))
+            do orb_counter=1, num_orbs
+                ft_mat(i1, i2)=ft_mat(i1, i2)+propagator_coeffs(orb_counter)*&
+                    inv_orb_coeffs(orb_counter, i1)*inv_orb_coeffs(orb_counter, i2)
+            enddo
         enddo
     enddo
 !$OMP END PARALLEL DO
 !$OMP PARALLEL DO
     do i2=1, num_orbs-1
         do i1=i2+1, num_orbs
-            ft_fock_mat(i1, i2)=ft_fock_mat(i2, i1)
+            ft_mat(i1, i2)=ft_mat(i2, i1)
         enddo
     enddo
 !$OMP END PARALLEL DO
 
 END SUBROUTINE
-
-PURE SUBROUTINE fgen_fock_ft_coup_el(row1, row2, prop_coeffs, num_orbs, coup_el)
-implicit none
-integer, intent(in):: num_orbs
-double precision, intent(in), dimension(num_orbs):: row1, row2, prop_coeffs
-double precision, intent(inout):: coup_el
-integer:: orb_counter
-
-    coup_el=0.0
-    do orb_counter=1, num_orbs
-        coup_el=coup_el+row1(orb_counter)*row2(orb_counter)*prop_coeffs(orb_counter)
-    enddo
-
-END SUBROUTINE
-
 
 
 

@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 from .compound import Compound
-from .oml_representations import generate_ibo_rep_array, gen_fock_based_coup_mats, weighted_array, generate_ibo_spectral_rep_array
+from .oml_representations import generate_ibo_rep_array, gen_fock_based_coup_mats, weighted_array, generate_ibo_fidelity_rep
 import jax.numpy as jnp
 import numpy as np
 import math
@@ -216,36 +216,37 @@ class OML_compound(Compound):
         """
         if not self.mats_created:
             self.run_calcs()
-        if is_restricted[self.calc_type]:
-            num_spins=1
+        if rep_params.ibo_fidelity_rep:
+            self.ibo_occ=orb_occ_prop_coeff(self)
+            self.orb_reps=generate_ibo_fidelity_rep(self, rep_params)
         else:
-            num_spins=2
-        self.orb_reps=[]
-        for spin in range(num_spins):
-            #   Generate the array of orbital representations.
-            if rep_params.fock_based_coup_mat:
-                if (rep_params.fbcm_pseudo_orbs and is_HF[self.calc_type]):
-                    pseudo_ens, pseudo_orbs=jnp.linalg.eigh(self.fock_mat[spin])
-                    coupling_matrices=gen_fock_based_coup_mats(rep_params, pseudo_orbs, pseudo_ens)
-                else:
-                    coupling_matrices=gen_fock_based_coup_mats(rep_params, self.mo_coeff[spin], self.mo_energy[spin])
-                if is_HF[self.calc_type]:
-                    cur_fock_mat=self.fock_mat[spin]
-                else:
-                    cur_fock_mat=reconstruct_effective_Hamiltonian(self.mo_coeff[spin], self.mo_energy[spin])
-                if not rep_params.fbcm_exclude_Fock:
-                    coupling_matrices=(*coupling_matrices, cur_fock_mat)
+            if is_restricted[self.calc_type]:
+                num_spins=1
             else:
-                coupling_matrices=(self.fock_mat[spin], self.j_mat[spin]/orb_occ_prop_coeff(self), self.k_mat[spin]/orb_occ_prop_coeff(self))
-            self.orb_reps+=generate_ibo_rep_array(self.ibo_mat[spin], rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)
-        ibo_occ=orb_occ_prop_coeff(self)
-        for orb_rep_counter in range(len(self.orb_reps)):
-            self.orb_reps[orb_rep_counter].rho=ibo_occ
-            if rep_params.norm_by_nelec:
-                self.orb_reps[orb_rep_counter].rho/=sum(self.nuclear_charges)
-#                if rep_params.ibo_spectral_representation: # It would be very funny if this representation proves to be useful.
-#                    self.orb_reps=generate_ibo_spectral_rep_array(sibo_mat, rep_params, self.orb_overlap, self.mo_coeff, self.mo_occ, self.mo_energy, self.HOMO_en())
-#                else:
+                num_spins=2
+            self.orb_reps=[]
+            for spin in range(num_spins):
+            #   Generate the array of orbital representations.
+                if rep_params.fock_based_coup_mat:
+                    if (rep_params.fbcm_pseudo_orbs and is_HF[self.calc_type]):
+                        pseudo_ens, pseudo_orbs=jnp.linalg.eigh(self.fock_mat[spin])
+                        coupling_matrices=gen_fock_based_coup_mats(rep_params, pseudo_orbs, pseudo_ens)
+                    else:
+                        coupling_matrices=gen_fock_based_coup_mats(rep_params, self.mo_coeff[spin], self.mo_energy[spin])
+                    if is_HF[self.calc_type]:
+                        cur_fock_mat=self.fock_mat[spin]
+                    else:
+                        cur_fock_mat=reconstruct_effective_Hamiltonian(self.mo_coeff[spin], self.mo_energy[spin])
+                    if not rep_params.fbcm_exclude_Fock:
+                        coupling_matrices=(*coupling_matrices, cur_fock_mat)
+                else:
+                    coupling_matrices=(self.fock_mat[spin], self.j_mat[spin]/orb_occ_prop_coeff(self), self.k_mat[spin]/orb_occ_prop_coeff(self))
+                self.orb_reps+=generate_ibo_rep_array(self.ibo_mat[spin], rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)
+            ibo_occ=orb_occ_prop_coeff(self)
+            for orb_rep_counter in range(len(self.orb_reps)):
+                self.orb_reps[orb_rep_counter].rho=ibo_occ
+                if rep_params.norm_by_nelec:
+                    self.orb_reps[orb_rep_counter].rho/=sum(self.nuclear_charges)
     #   Find maximal value of angular momentum for AOs of current molecule.
     def find_max_angular_momentum(self):
         if not self.mats_created:

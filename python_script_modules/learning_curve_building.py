@@ -147,12 +147,12 @@ class SLATM_representation(representation):
 
 class OML_representation(representation):
     def __init__(self, ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
-                    fock_based_coup_mat=False, num_fbcm_times=1, fbcm_delta_t=1.0, use_Huckel=False, optimize_geometry=False, calc_type="HF",
-                    basis="sto-3g", fbcm_pseudo_orbs=False, norm_by_nelec=False, software="pySCF"):
+                    fock_based_coup_mat=False, num_prop_times=1, prop_delta_t=1.0, use_Huckel=False, optimize_geometry=False, calc_type="HF",
+                    basis="sto-3g", fbcm_pseudo_orbs=False, norm_by_nelec=False, software="pySCF", ibo_fidelity_rep=False):
         self.rep_params=qml.oml_representations.OML_rep_params(ibo_atom_rho_comp=ibo_atom_rho_comp, max_angular_momentum=max_angular_momentum,
                                                                         use_Fortran=use_Fortran, fock_based_coup_mat=fock_based_coup_mat,
-                                                                        num_fbcm_times=num_fbcm_times, fbcm_delta_t=fbcm_delta_t, fbcm_pseudo_orbs=fbcm_pseudo_orbs,
-                                                                        norm_by_nelec=norm_by_nelec)
+                                                                        num_prop_times=num_prop_times, prop_delta_t=prop_delta_t, fbcm_pseudo_orbs=fbcm_pseudo_orbs,
+                                                                        norm_by_nelec=norm_by_nelec, ibo_fidelity_rep=ibo_fidelity_rep)
         self.use_Huckel=use_Huckel
         self.optimize_geometry=optimize_geometry
         self.calc_type=calc_type
@@ -182,12 +182,12 @@ class OML_representation(representation):
 class OML_Slater_pair_rep(OML_representation):
     def __init__(self, ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
                     fock_based_coup_mat=False, second_charge=0, second_orb_type="standard_IBO",
-                    first_calc_type="HF", second_calc_type="HF", use_Huckel=False, optimize_geometry=False, num_fbcm_times=2,
-                    fbcm_delta_t=1.0, fbcm_pseudo_orbs=False, basis="sto-3g", software="pySCF"):
+                    first_calc_type="HF", second_calc_type="HF", use_Huckel=False, optimize_geometry=False, num_prop_times=2,
+                    prop_delta_t=1.0, fbcm_pseudo_orbs=False, basis="sto-3g", software="pySCF"):
         super().__init__(ibo_atom_rho_comp=ibo_atom_rho_comp, max_angular_momentum=max_angular_momentum,
                 use_Fortran=use_Fortran, fock_based_coup_mat=fock_based_coup_mat, use_Huckel=use_Huckel,
-                optimize_geometry=optimize_geometry, calc_type=first_calc_type, num_fbcm_times=num_fbcm_times,
-                fbcm_delta_t=fbcm_delta_t, fbcm_pseudo_orbs=fbcm_pseudo_orbs, basis=basis)
+                optimize_geometry=optimize_geometry, calc_type=first_calc_type, num_prop_times=num_prop_times,
+                prop_delta_t=prop_delta_t, fbcm_pseudo_orbs=fbcm_pseudo_orbs, basis=basis)
         self.second_calc_type=second_calc_type
         self.second_orb_type=second_orb_type
         self.second_charge=second_charge
@@ -302,6 +302,24 @@ class OML_GMO_sep_IBO_kernel_function(OML_GMO_kernel_function):
         if self.kernel_params.use_Gaussian_kernel:
             output+=",fin_sigma:"+str(self.kernel_params.final_sigma)
         return output
+
+class IBOFR_kernel_function(kernel_function):
+    def __init__(self, lambda_val=1e-9, gen_mult=1.0, use_Fortran=True, pair_reps=False, density_neglect=1e-9, rep_params=None):
+        super().__init__(lambda_val=lambda_val, diag_el_unity=False)
+        self.gen_mult=gen_mult
+        vec_rep_mult=qml.oml_kernels.ibofr_smoothed_mult(gen_mult, rep_params)
+        self.kernel_params=qml.oml_kernels.IBOFR_kernel_params(pair_reps=pair_reps,
+                        density_neglect=density_neglect, vec_rep_mult=vec_rep_mult)
+    def adjust_hyperparameters(self, compound_array, var_cutoff_val=0.0):
+        pass
+    def kernel_matrix(self, arr1, arr2):
+        return qml.oml_kernels.gen_ibofr_kernel(arr1, arr2, self.kernel_params)
+    def sym_kernel_matrix(self, array):
+        return qml.oml_kernels.gen_ibofr_kernel(array, array, self.kernel_params, sym_kernel_mat=True)
+    def __str__(self):
+        output="IBOFR_kernel,gen_mult:"+str(self.gen_mult)
+        return output
+
 
 ### END
 
