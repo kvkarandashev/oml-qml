@@ -1,10 +1,10 @@
 curve number 0
-GMO,sigma_rescale:0.25,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.013265548273921013
-GMO,sigma_rescale:0.25,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.01413873303681612
-GMO,sigma_rescale:0.5,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.012311163358390331
-GMO,sigma_rescale:0.5,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.014349712058901787
+GMO,sigma_rescale:0.25,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.013448044657707214
+GMO,sigma_rescale:0.25,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.014392946846783161
+GMO,sigma_rescale:0.5,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.012441483326256275
+GMO,sigma_rescale:0.5,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.014654172584414482
 curve number 1
-GMO,sigma_rescale:0.25,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.011508612893521786
-GMO,sigma_rescale:0.25,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.010234885849058628
-GMO,sigma_rescale:0.5,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.010262856259942055
-GMO,sigma_rescale:0.5,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.009387800469994545
+GMO,sigma_rescale:0.25,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.011227660812437534
+GMO,sigma_rescale:0.25,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.009967857040464878
+GMO,sigma_rescale:0.5,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.010088966228067875
+GMO,sigma_rescale:0.5,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 0.009330341592431068
