@@ -3,6 +3,7 @@ import qml
 import jax.numpy as jnp
 import math
 import numpy as np
+from qml.hyperparameter_optimization import np_cho_solve
 
 byprod_result_ending=".brf"
 
@@ -19,40 +20,6 @@ def find_max_size(compound_list):
     return output
 
 ### END
-
-### Some useful np-based routines. Analogous to some from qml.math,
-### introduced for cases when parallelization of qml.math does not work
-### properly.
-def np_svd_solve(a,b,rcond=0.0):
-    u,s,v = np.linalg.svd(a)
-    c = np.dot(u.T,b)
-#    w = np.linalg.solve(np.diag(s),c[:len(s)])
-    w=np.zeros(len(s))
-    for i, (cur_c, cur_s) in enumerate(zip(c[:len(s)], s)):
-        if (abs(cur_s>rcond)):
-            w[i]=cur_c/cur_s
-    x = np.dot(v.T,w)
-    return x
-
-def np_eigh_posd_solve(mat, vec, rcond=1e-9):
-    eigenvals, eigenvecs=np.linalg.eigh(mat)
-    vec_transformed=np.dot(vec, eigenvecs)
-    for eigenval_id, eigenval in enumerate(eigenvals):
-        if eigenval > rcond:
-            vec_transformed[eigenval_id]/=eigenval
-        else:
-            vec_transformed[eigenval_id]=0
-    return np.dot(eigenvecs, vec_transformed)
-
-def np_cho_solve(mat, vec, eigh_rcond=1e-9):
-    from scipy.linalg import cho_factor, cho_solve
-    try:
-        c, low=cho_factor(mat)
-        return cho_solve((c, low), vec)
-    except np.linalg.LinAlgError:
-        print("WARNING: Cholesky failed.")
-        return np_eigh_posd_solve(mat, vec, rcond=eigh_rcond)
-
 
 # Model class.
 class KR_model:
