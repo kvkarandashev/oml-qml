@@ -36,9 +36,9 @@ logfile.write("xyz list 2")
 logfile.write(tested_xyzs_2)
 
 logfile.write("kernel_11")
-kernel=qml.oml_kernels.GMO_sep_IBO_kernel(oml_compounds_1, oml_compounds_1, kernel_params, sym_kernel_mat=True)
+kernel=qml.oml_kernels.GMO_sep_IBO_sym_kernel(oml_compounds_1, kernel_params)
 logfile.export_matrix(kernel)
 
 logfile.write("kernel_12")
-kernel=qml.oml_kernels.GMO_sep_IBO_kernel(oml_compounds_1, oml_compounds_2, kernel_params, sym_kernel_mat=False)
+kernel=qml.oml_kernels.GMO_sep_IBO_kernel(oml_compounds_1, oml_compounds_2, kernel_params)
 logfile.export_matrix(kernel)

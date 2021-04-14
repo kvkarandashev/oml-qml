@@ -23,12 +23,13 @@
 
 SUBROUTINE fgmo_sep_ibo_kernel(num_scalar_reps,&
                     A_ibo_atom_reps, A_ibo_arep_rhos, A_ibo_rhos,&
+                    A_ibo_atom_nums, A_ibo_nums,&
                     A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols,&
                     B_ibo_atom_reps, B_ibo_arep_rhos, B_ibo_rhos,&
+                    B_ibo_atom_nums, B_ibo_nums,&
                     B_max_num_ibo_atom_reps, B_max_num_ibos, B_num_mols,&
-                    width_params, sigma, density_neglect,&
-                    normalize_lb_kernel, sym_kernel_mat, kernel_mat)
-use foml_module, only : scalar_rep_resc_ibo_sep, flin_ibo_self_products,&
+                    width_params, sigma, kernel_mat)
+use foml_module, only : scalar_rep_resc_ibo_sep, flin_ibo_prod_norms,&
             fgmo_sep_ibo_kernel_element, symmetrize_matrix
 implicit none
 integer, intent(in):: num_scalar_reps
@@ -36,16 +37,15 @@ integer, intent(in):: A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols
 integer, intent(in):: B_max_num_ibo_atom_reps, B_max_num_ibos, B_num_mols
 double precision, dimension(:,:,:,:), intent(in):: A_ibo_atom_reps, B_ibo_atom_reps
 double precision, dimension(:,:,:), intent(in):: A_ibo_arep_rhos, B_ibo_arep_rhos
-double precision, dimension(:, :), intent(in):: A_ibo_rhos, B_ibo_rhos
+double precision, dimension(:,:), intent(in):: A_ibo_rhos, B_ibo_rhos
 double precision, dimension(:), intent(in):: width_params
+integer, intent(in), dimension(:, :):: A_ibo_atom_nums, B_ibo_atom_nums
+integer, intent(in), dimension(:):: A_ibo_nums, B_ibo_nums
 double precision, intent(in):: sigma
-double precision, intent(in):: density_neglect
-logical, intent(in):: normalize_lb_kernel
-logical, intent(in):: sym_kernel_mat
 double precision, dimension(:, :), intent(inout):: kernel_mat
 double precision, dimension(:, :, :, :), allocatable:: A_ibo_atom_sreps, B_ibo_atom_sreps
 double precision, dimension(:, :), allocatable:: A_ibo_self_products, B_ibo_self_products
-integer:: B_mol_counter, upper_A_mol_counter, A_mol_counter
+integer:: B_mol_counter, A_mol_counter
 
 allocate(A_ibo_atom_sreps(num_scalar_reps, A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols),&
     B_ibo_atom_sreps(num_scalar_reps, B_max_num_ibo_atom_reps, B_max_num_ibos, B_num_mols))
@@ -56,33 +56,83 @@ call scalar_rep_resc_ibo_sep(B_ibo_atom_reps, width_params, num_scalar_reps, B_m
 
 allocate(A_ibo_self_products(A_max_num_ibos, A_num_mols),&
         B_ibo_self_products(B_max_num_ibos, B_num_mols))
-call flin_ibo_self_products(num_scalar_reps, A_ibo_atom_sreps, A_ibo_arep_rhos, A_ibo_rhos,&
-        A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols, density_neglect, A_ibo_self_products)
-call flin_ibo_self_products(num_scalar_reps, B_ibo_atom_sreps, B_ibo_arep_rhos, B_ibo_rhos,&
-        B_max_num_ibo_atom_reps, B_max_num_ibos, B_num_mols, density_neglect, B_ibo_self_products)
+call flin_ibo_prod_norms(num_scalar_reps, A_ibo_atom_sreps, A_ibo_arep_rhos,&
+        A_ibo_atom_nums, A_ibo_nums,&
+        A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols, A_ibo_self_products)
+call flin_ibo_prod_norms(num_scalar_reps, B_ibo_atom_sreps, B_ibo_arep_rhos,&
+        B_ibo_atom_nums, B_ibo_nums,&
+        B_max_num_ibo_atom_reps, B_max_num_ibos, B_num_mols, B_ibo_self_products)
 
-!$OMP PARALLEL DO PRIVATE(upper_A_mol_counter) SCHEDULE(DYNAMIC)
+!$OMP PARALLEL DO SCHEDULE(DYNAMIC)
 do B_mol_counter=1, B_num_mols
-    if (sym_kernel_mat) then
-        upper_A_mol_counter=B_mol_counter
-    else
-        upper_A_mol_counter=A_num_mols
-    endif
-    do A_mol_counter=1, upper_A_mol_counter
+    do A_mol_counter=1, A_num_mols
         call fgmo_sep_ibo_kernel_element(num_scalar_reps, A_ibo_atom_sreps(:,:,:,A_mol_counter),&
             A_ibo_arep_rhos(:,:,A_mol_counter), A_ibo_rhos(:,A_mol_counter),&
-            A_ibo_self_products(:,A_mol_counter), A_max_num_ibo_atom_reps, A_max_num_ibos,&
+            A_ibo_self_products(:,A_mol_counter), A_ibo_atom_nums(:, A_mol_counter),A_ibo_nums(A_mol_counter),&
+            A_max_num_ibo_atom_reps, A_max_num_ibos,&
             B_ibo_atom_sreps(:,:,:,B_mol_counter), B_ibo_arep_rhos(:,:,B_mol_counter),&
             B_ibo_rhos(:,B_mol_counter), B_ibo_self_products(:,B_mol_counter),&
-            B_max_num_ibo_atom_reps, B_max_num_ibos, sigma, density_neglect,&
-            normalize_lb_kernel, kernel_mat(A_mol_counter, B_mol_counter))
+            B_ibo_atom_nums(:, B_mol_counter), B_ibo_nums(B_mol_counter),&
+            B_max_num_ibo_atom_reps, B_max_num_ibos, sigma,&
+            kernel_mat(A_mol_counter, B_mol_counter))
     enddo
 enddo
 !$OMP END PARALLEL DO
 
-if (sym_kernel_mat) call symmetrize_matrix(kernel_mat, A_num_mols)
 
 END SUBROUTINE fgmo_sep_ibo_kernel
+
+SUBROUTINE fgmo_sep_ibo_sym_kernel(num_scalar_reps,&
+                    A_ibo_atom_reps, A_ibo_arep_rhos, A_ibo_rhos,&
+                    A_ibo_atom_nums, A_ibo_nums,&
+                    A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols,&
+                    width_params, sigma, kernel_mat)
+use foml_module, only : scalar_rep_resc_ibo_sep, flin_ibo_prod_norms,&
+            fgmo_sep_ibo_kernel_element, symmetrize_matrix
+implicit none
+integer, intent(in):: num_scalar_reps
+integer, intent(in):: A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols
+double precision, dimension(:,:,:,:), intent(in):: A_ibo_atom_reps
+double precision, dimension(:,:,:), intent(in):: A_ibo_arep_rhos
+double precision, dimension(:, :), intent(in):: A_ibo_rhos
+double precision, dimension(:), intent(in):: width_params
+integer, intent(in), dimension(:, :):: A_ibo_atom_nums
+integer, intent(in), dimension(:):: A_ibo_nums
+double precision, intent(in):: sigma
+double precision, dimension(:, :), intent(inout):: kernel_mat
+double precision, dimension(:, :, :, :), allocatable:: A_ibo_atom_sreps
+double precision, dimension(:, :), allocatable:: A_ibo_self_products
+integer:: A_mol_counter1, A_mol_counter2
+
+allocate(A_ibo_atom_sreps(num_scalar_reps, A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols))
+call scalar_rep_resc_ibo_sep(A_ibo_atom_reps, width_params, num_scalar_reps, A_max_num_ibo_atom_reps,&
+        A_max_num_ibos, A_num_mols, A_ibo_atom_sreps)
+
+allocate(A_ibo_self_products(A_max_num_ibos, A_num_mols))
+call flin_ibo_prod_norms(num_scalar_reps, A_ibo_atom_sreps, A_ibo_arep_rhos,&
+        A_ibo_atom_nums, A_ibo_nums, A_max_num_ibo_atom_reps, A_max_num_ibos,&
+        A_num_mols, A_ibo_self_products)
+
+!$OMP PARALLEL DO SCHEDULE(DYNAMIC)
+do A_mol_counter1=1, A_num_mols
+    do A_mol_counter2=1, A_mol_counter1
+        call fgmo_sep_ibo_kernel_element(num_scalar_reps, A_ibo_atom_sreps(:,:,:,A_mol_counter2),&
+            A_ibo_arep_rhos(:,:,A_mol_counter2), A_ibo_rhos(:,A_mol_counter2),&
+            A_ibo_self_products(:,A_mol_counter2), A_ibo_atom_nums(:, A_mol_counter2),A_ibo_nums(A_mol_counter2),&
+            A_max_num_ibo_atom_reps, A_max_num_ibos,&
+            A_ibo_atom_sreps(:,:,:,A_mol_counter1), A_ibo_arep_rhos(:,:,A_mol_counter1),&
+            A_ibo_rhos(:,A_mol_counter1), A_ibo_self_products(:,A_mol_counter1),&
+            A_ibo_atom_nums(:, A_mol_counter1), A_ibo_nums(A_mol_counter1),&
+            A_max_num_ibo_atom_reps, A_max_num_ibos, sigma,&
+            kernel_mat(A_mol_counter2, A_mol_counter1))
+    enddo
+enddo
+!$OMP END PARALLEL DO
+
+call symmetrize_matrix(kernel_mat, A_num_mols)
+
+END SUBROUTINE fgmo_sep_ibo_sym_kernel
+
 
 SUBROUTINE fgmo_kernel(num_scal_reps,&
                     A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&
