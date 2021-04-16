@@ -3,7 +3,7 @@ import qml
 import jax.numpy as jnp
 import math
 import numpy as np
-from qml.hyperparameter_optimization import np_cho_solve
+from qml.hyperparameter_optimization import np_cho_solve_wcheck as np_cho_solve
 
 byprod_result_ending=".brf"
 
@@ -263,7 +263,7 @@ class OML_GMO_sep_IBO_kernel_function(OML_GMO_kernel_function):
     def kernel_matrix(self, arr1, arr2):
         return qml.oml_kernels.GMO_sep_IBO_kernel(arr1, arr2, self.kernel_params)
     def sym_kernel_matrix(self, array):
-        return qml.oml_kernels.GMO_sep_IBO_kernel(array, array, self.kernel_params, sym_kernel_mat=True)
+        return qml.oml_kernels.GMO_sep_IBO_sym_kernel(array, self.kernel_params)
     def __str__(self):
         output="GMO_sep_IBO,sigma_rescale:"+str(self.sigma_rescale)
         if self.kernel_params.use_Gaussian_kernel:

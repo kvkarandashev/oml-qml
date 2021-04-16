@@ -29,13 +29,11 @@ integer, dimension(B_max_num_ibos), intent(in):: B_ibo_atom_nums
 double precision, intent(in):: sigma
 double precision, intent(inout):: kernel_element
 integer:: A_ibo_counter, B_ibo_counter
-double precision:: klin, cur_A_rho, cur_B_rho, sqdist
+double precision:: klin, sqdist
 
 kernel_element=0.0
 do B_ibo_counter=1, B_true_ibo_num
-    cur_B_rho=B_ibo_rhos(B_ibo_counter)
     do A_ibo_counter=1, A_true_ibo_num
-        cur_A_rho=A_ibo_rhos(A_ibo_counter)
         klin=flin_ibo_product(num_scalar_reps,&
                 A_ibo_arep_rhos(:, A_ibo_counter), A_ibo_atom_sreps(:, :, A_ibo_counter),&
                 A_max_num_ibo_atom_reps, A_ibo_atom_nums(A_ibo_counter),&
