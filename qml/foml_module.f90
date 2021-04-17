@@ -40,13 +40,49 @@ do B_ibo_counter=1, B_true_ibo_num
                 B_ibo_arep_rhos(:, B_ibo_counter),&
                 B_ibo_atom_sreps(:, :, B_ibo_counter),&
                 B_max_num_ibo_atom_reps, B_ibo_atom_nums(B_ibo_counter))
-        sqdist=2.0*(1.0-klin/A_ibo_self_products(A_ibo_counter)/B_ibo_self_products(B_ibo_counter))
+        sqdist=lineprod2sqdist(klin, A_ibo_self_products(A_ibo_counter), B_ibo_self_products(B_ibo_counter))
         kernel_element=kernel_element+exp(-sqdist/2/sigma**2)*A_ibo_rhos(A_ibo_counter)*B_ibo_rhos(B_ibo_counter)
     enddo
 enddo
 
 END SUBROUTINE
 
+PURE SUBROUTINE fgmo_sep_ibo_sqdist_sum_num(num_scalar_reps, A1_ibo_atom_sreps,&
+            A1_ibo_arep_rhos, A1_ibo_self_products,&
+            A1_ibo_atom_nums, A1_true_ibo_num,&
+            A2_ibo_atom_sreps, A2_ibo_arep_rhos, A2_ibo_self_products,&
+            A2_ibo_atom_nums, A2_true_ibo_num,&
+            A_max_num_ibo_atom_reps, A_max_num_ibos,&
+            sqdist_sum)
+integer, intent(in):: num_scalar_reps
+integer, intent(in):: A_max_num_ibo_atom_reps, A_max_num_ibos
+integer, intent(in):: A1_true_ibo_num, A2_true_ibo_num
+double precision, dimension(num_scalar_reps,A_max_num_ibo_atom_reps,&
+                        A_max_num_ibos), intent(in):: A1_ibo_atom_sreps
+double precision, dimension(num_scalar_reps,A_max_num_ibo_atom_reps,&
+                        A_max_num_ibos), intent(in):: A2_ibo_atom_sreps
+double precision, dimension(A_max_num_ibo_atom_reps,A_max_num_ibos),&
+                intent(in):: A1_ibo_arep_rhos, A2_ibo_arep_rhos
+double precision, dimension(A_max_num_ibos), intent(in):: A1_ibo_self_products, &
+                                                          A2_ibo_self_products
+integer, dimension(A_max_num_ibos), intent(in):: A1_ibo_atom_nums, A2_ibo_atom_nums
+double precision, intent(inout):: sqdist_sum
+integer:: A1_ibo_counter, A2_ibo_counter
+double precision:: klin
+
+sqdist_sum=0.0
+do A1_ibo_counter=1, A1_true_ibo_num
+    do A2_ibo_counter=1, A2_true_ibo_num
+        klin=flin_ibo_product(num_scalar_reps,&
+                A1_ibo_arep_rhos(:, A1_ibo_counter), A1_ibo_atom_sreps(:, :, A1_ibo_counter),&
+                A_max_num_ibo_atom_reps, A1_ibo_atom_nums(A1_ibo_counter),&
+                A2_ibo_arep_rhos(:, A2_ibo_counter), A2_ibo_atom_sreps(:, :, A2_ibo_counter),&
+                A_max_num_ibo_atom_reps, A2_ibo_atom_nums(A2_ibo_counter))
+        sqdist_sum=sqdist_sum+lineprod2sqdist(klin, A1_ibo_self_products(A1_ibo_counter), A2_ibo_self_products(A2_ibo_counter))
+    enddo
+enddo
+
+END SUBROUTINE
 
 SUBROUTINE flin_ibo_prod_norms(num_scalar_reps, A_ibo_atom_sreps, A_ibo_arep_rhos,&
                 A_ibo_atom_nums, A_ibo_nums,&
@@ -150,6 +186,15 @@ integer:: i_A, i_B
     enddo
 
 END FUNCTION
+
+PURE FUNCTION lineprod2sqdist(AB_prod, AA_prod, BB_prod)
+double precision, intent(in):: AB_prod, AA_prod, BB_prod
+double precision:: lineprod2sqdist
+
+lineprod2sqdist=2*(1.0-AB_prod/AA_prod/BB_prod)
+
+END FUNCTION
+
 
 !!!! Part of earlier drafts of the code preserved for testing purposes. Should be deleted?
 

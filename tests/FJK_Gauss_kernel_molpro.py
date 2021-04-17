@@ -16,7 +16,8 @@ tested_xyzs_2=random.Random(seed+1).sample(all_xyzs, num_test_mols_2)
 
 logfile=logfile(logfile_name)
 
-my_representation=OML_representation(max_angular_momentum=1, use_Fortran=True, ibo_atom_rho_comp=0.95, software="molpro")
+my_representation=OML_representation(max_angular_momentum=1, use_Fortran=True, ibo_atom_rho_comp=0.95, software="molpro",
+                                        use_pyscf_localization=False)
 oml_compounds_1=my_representation.init_compound_list(xyz_list=tested_xyzs_1, disable_openmp=True)
 oml_compounds_2=my_representation.init_compound_list(xyz_list=tested_xyzs_2, disable_openmp=False)
 

@@ -13,8 +13,8 @@ def_float_format='{:.8E}'
 
 au_to_kcalmol_mult=627.50960803
 
-def potential_energy(xyz_name, calc_type="HF", basis="sto-3g", dft_xc='lda,vwn', dft_nlc='', pyscf_calc_params=None):
-    oml_comp=OML_compound(xyz = xyz_name, mats_savefile = xyz_name, calc_type=calc_type, basis=basis, dft_xc=dft_xc, dft_nlc=dft_nlc, pyscf_calc_params=pyscf_calc_params)
+def potential_energy(xyz_name, **oml_calc_kwargs):
+    oml_comp=OML_compound(xyz = xyz_name, mats_savefile = xyz_name, **oml_calc_kwargs)
     oml_comp.run_calcs()
     return oml_comp.e_tot*au_to_kcalmol_mult
 
@@ -36,8 +36,8 @@ class Quantity:
             raise QuantityNotAvailableError
         else:
             return output
-    def OML_calc_quant(self, xyz_name, calc_type="HF", basis="sto-3g", pyscf_calc_params=None):
-        return potential_energy(xyz_name, calc_type=calc_type, basis=basis, pyscf_calc_params=pyscf_calc_params)
+    def OML_calc_quant(self, xyz_name, **oml_calc_kwargs):
+        return potential_energy(xyz_name, **oml_calc_kwargs)
 
 class Quantity_diff:
     def __init__(self, quant_name1, quant_name2):
@@ -46,8 +46,8 @@ class Quantity_diff:
     def extract_xyz(self, filename):
         return self.quant2.extract_xyz(filename)-self.quant1.extract_xyz(filename)
     # Perhaps should be improved.
-    def OML_calc_quant(self, xyz_name, calc_type="HF", basis="sto-3g"):
-        return self.quant2.OML_calc_quant(xyz_name, calc_type=calc_type, basis=basis)-self.quant1.OML_calc_quant(xyz_name, calc_type=calc_type, basis=basis)
+    def OML_calc_quant(self, xyz_name, **oml_calc_kwargs):
+        return self.quant2.OML_calc_quant(xyz_name, **oml_calc_kwargs)-self.quant1.OML_calc_quant(xyz_name, **oml_calc_kwargs)
         
 
 def file_to_2Dlist(filename):

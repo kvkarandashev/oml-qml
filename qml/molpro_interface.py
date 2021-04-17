@@ -3,6 +3,10 @@ from .oml_representations import AO
 import subprocess, os
 from .utils import rmdir, mktmpdir
 
+class OptionUnavailableError(Exception):
+    pass
+
+
 def check_els(l1, l2):
     if (len(l1)<len(l2)):
         return False
@@ -38,12 +42,23 @@ def read_xyz_coords(xyz_name):
                     if atom_id==num_atoms-1:
                         return coords
 
+def gen_atom_ao_ranges(aos):
+    cur_atom=aos[0].atom_id
+    cur_lower_bound=0
+    atom_ao_ranges=[]
+    for ao_id, ao in enumerate(aos):
+        if ao.atom_id != cur_atom:
+            atom_ao_ranges.append([cur_lower_bound, ao_id])
+            cur_lower_bound=ao_id
+            cur_atom=ao.atom_id
+    atom_ao_ranges.append([cur_lower_bound, len(aos)])
+    return atom_ao_ranges
+
 def process_molpro_output(input_filename, opt_geom, restricted_method):
     basis_data_start=["BASIS", "DATA"]
     basis_data_end=["NUCLEAR", "CHARGE:"]
 
-    ao_labels=[]
-    ao_atom_ids=[]
+    aos=[]
 
     reading_basis=False
 
@@ -58,19 +73,14 @@ def process_molpro_output(input_filename, opt_geom, restricted_method):
             if reading_basis:
                 if check_els(l, basis_data_end):
                     cur_lower_bound=0
-                    cur_atom=ao_atom_ids[0]
-                    ao_atom_ranges=[]
-
-                    for ao_id, atom_id in enumerate(ao_atom_ids):
-                        if atom_id != cur_atom:
-                            ao_atom_ranges.append([cur_lower_bound, ao_id])
-                            cur_lower_bound=ao_id
-                            cur_atom=atom_id
-                    ao_atom_ranges.append([cur_lower_bound, len(ao_atom_ids)])
                     reading_basis=False
-                if len(l)==6:
-                    ao_labels.append(l[3])
-                    ao_atom_ids.append(l[2])
+                if len(l)>1:
+                    if l[1]=="A":
+                        try:
+                            cur_ao=AO(l[3], atom_id=int(l[2])-1)
+                        except (KeyError, ValueError):
+                            pass
+                        aos.append(cur_ao)
             else:
                 if not final_calc:
                     if check_els(l, ["END", "OF", "GEOMETRY", "OPTIMIZATION."]):
@@ -89,11 +99,11 @@ def process_molpro_output(input_filename, opt_geom, restricted_method):
                 if len(l)==5:
                     if l[3]=="Energy":
                         tot_energy=np.float(l[4])
-                        return ao_labels, ao_atom_ranges, tot_energy, nocc
+                        return aos, tot_energy, nocc
 
 def get_molpro_output_matrices(filename, dim, aliases):
     matrix_start=["#", "MATRIX"]
-    matrices={"ibo_mat" : None, "iao_mat" : None}
+    matrices={}
 
     reading_matrix=False
     output_matrix=np.zeros((dim, dim))
@@ -155,19 +165,23 @@ symmetry,nosym;orient,noorient
     header_contents+="{"+method_string+";orbital,5100.2}\n"
     return header_contents
 
-def get_molpro_out_processing(out_name, matrices_name, opt_savexyz, matrix_aliases, optimize_geometry, restricted_method):
-    ao_labels, atom_ao_ranges, tot_energy, nocc=process_molpro_output(out_name, optimize_geometry, restricted_method)
-    naos=len(ao_labels)
+def get_molpro_out_processing(out_name, matrices_name, opt_savexyz, matrix_aliases, optimize_geometry, restricted_method, ibo_calculated):
+    aos, tot_energy, nocc=process_molpro_output(out_name, optimize_geometry, restricted_method)
+
+    naos=len(aos)
     results=get_molpro_output_matrices(matrices_name, naos, matrix_aliases)
     results["e_tot"]=tot_energy
-    results["atom_ao_ranges"]=atom_ao_ranges
-    results["aos"]=[]
-    for atom_id, atom_ao_range in enumerate(atom_ao_ranges):
-        for ao_id in range(*atom_ao_range):
-            results["aos"].append(AO(ao_labels[ao_id], atom_id=atom_id))
+    results["atom_ao_ranges"]=gen_atom_ao_ranges(aos)
+    results["aos"]=aos
     results["mo_energy"]=get_orb_ens(results["fock_mat"], results["mo_coeff"])
-    results["iao_mat"]=None
     results["mo_occ"]=mo_occs(nocc, naos)
+    results["iao_mat"]=None
+    if ibo_calculated:
+        # Need to cut out IBOs corresponding to occupied orbitals.
+        for spin_id, (ibo_mat, spin_nocc) in enumerate(zip(results["ibo_mat"], nocc)):
+            results["ibo_mat"][spin_id]=ibo_mat[:, :spin_nocc]
+    else:
+        results["ibo_mat"]=None
     if optimize_geometry:
         results["opt_coords"]=read_xyz_coords(opt_savexyz)
     return results
@@ -180,10 +194,20 @@ def make_tmpfiles():
     opt_savexyz="test_opt.xyz"
     return inp_name, out_name, matrices_name, opt_savexyz, tmpdir
 
+def matrop_write_lines(print_matrices, output_file):
+    output=add_molpro_write_line(print_matrices[0], output_file, status="new")
+    for printed_matrix in print_matrices[1:]:
+        output+=add_molpro_write_line(printed_matrix, output_file)
+    return output
+
 def get_molpro_calc_data_HF(oml_compound):
     inp_name, out_name, matrices_name, opt_savexyz, tmpdir=make_tmpfiles()
     os.chdir(tmpdir)
-    inp_contents=molpro_mol_header(oml_compound, "hf", opt_savexyz=opt_savexyz)+'''
+    inp_contents=molpro_mol_header(oml_compound, "hf", opt_savexyz=opt_savexyz)
+    ibo_calculated=(not oml_compound.use_pyscf_localization)
+    if ibo_calculated:
+        inp_contents+="{ibba;orbital,5100.2;save,5101.1}"
+    inp_contents+='''
 {matrop;
 load,dscf,den,5100.2
 load,s
@@ -192,19 +216,22 @@ load,orbs,orbital,5100.2
 coul,j,dscf
 exch,k,dscf
 '''
-    inp_contents+=add_molpro_write_line("orbs", matrices_name, status="new")
-    for molpro_mat_name in ["j", "k", "s", "f"]:
-        inp_contents+=add_molpro_write_line(molpro_mat_name, matrices_name)
-    inp_contents+='''
-}
+    printed_matrices=["j", "k", "s", "f", "orbs"]
+    if ibo_calculated:
+        inp_contents+="load,ibos,orbital,5101.1\n"
+        printed_matrices+=["ibos"]
+    inp_contents+=matrop_write_lines(printed_matrices, matrices_name)
+    inp_contents+='''}
 ---
 '''
     inp_file=open(inp_name, 'w')
     inp_file.write(inp_contents)
     inp_file.close()
-    subprocess.run(["molpro", inp_name, "-o", out_name])
+    subprocess.run(["molpro", inp_name, "-o", out_name, "-t", os.environ["OMP_NUM_THREADS"]])
     matrix_aliases={"F" : "fock_mat", "K" : "k_mat", "J" : "j_mat", "ORBS" : "mo_coeff", "S" : "ovlp_mat"}
-    results=get_molpro_out_processing(out_name, matrices_name, opt_savexyz, matrix_aliases, oml_compound.optimize_geometry, True)
+    if ibo_calculated:
+        matrix_aliases["IBOS"]="ibo_mat"
+    results=get_molpro_out_processing(out_name, matrices_name, opt_savexyz, matrix_aliases, oml_compound.optimize_geometry, True, ibo_calculated)
     for mult_mat_keys in ["k_mat", "j_mat"]:
         results[mult_mat_keys][0]*=2.0
     os.chdir("..")
@@ -212,6 +239,8 @@ exch,k,dscf
     return results
 
 def get_molpro_calc_data_UHF(oml_compound):
+    if not oml_compound.use_pyscf_localization:
+        raise OptionUnavailableError
     inp_name, out_name, matrices_name, opt_savexyz, tmpdir=make_tmpfiles()
     os.chdir(tmpdir)
     inp_contents=molpro_mol_header(oml_compound, "uhf", opt_savexyz=opt_savexyz)+'''
@@ -231,11 +260,9 @@ exch,k2,dbeta
 add,f1,1,h0,1,j1,1,j2,-1,k1
 add,f2,1,h0,1,j1,1,j2,-1,k2
 '''
-    inp_contents+=add_molpro_write_line("orbs1", matrices_name, status="new")
-    for molpro_mat_name in ["orbs2", "j1", "j2", "k1", "k2", "f1", "f2", "s"]:
-        inp_contents+=add_molpro_write_line(molpro_mat_name, matrices_name)
-    inp_contents+='''
-}
+    print_matrices=["orbs1", "orbs2", "j1", "j2", "k1", "k2", "f1", "f2", "s"]
+    inp_contents+=matrop_write_lines(print_matrices, matrices_name)
+    inp_contents+='''}
 ---
 '''
     inp_file=open(inp_name, 'w')
@@ -245,7 +272,7 @@ add,f2,1,h0,1,j1,1,j2,-1,k2
     matrix_aliases={"F1" : "fock_mat", "F2" : "fock_mat", "K1" : "k_mat", "K2" : "k_mat",
                     "J1" : "j_mat", "J2" : "j_mat", "ORBS1" : "mo_coeff", "ORBS2" : "mo_coeff",
                     "S" : "ovlp_mat"}
-    results=get_molpro_out_processing(out_name, matrices_name, opt_savexyz, matrix_aliases, oml_compound.optimize_geometry, False)
+    results=get_molpro_out_processing(out_name, matrices_name, opt_savexyz, matrix_aliases, oml_compound.optimize_geometry, False, False)
     os.chdir("..")
     rmdir(tmpdir)
     return results

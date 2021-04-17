@@ -28,6 +28,7 @@ import math
 from .utils import dump2pkl, loadpkl
 from pyscf import lo, gto, scf, dft
 from os.path import isfile
+from .molpro_interface import OptionUnavailableError
 
 mf_creator={"HF" : scf.RHF, "UHF" : scf.UHF, "KS" : dft.RKS, "UKS" : dft.UKS}
 
@@ -43,9 +44,6 @@ neglect_orb_occ=0.1
 class pySCFNotConvergedError(Exception):
     pass
 
-class OptionUnavailableError(Exception):
-    pass
-
 class OML_compound(Compound):
     """ 'Orbital Machine Learning (OML) compound' class is used to store data normally
         part of the compound class along with results of ab initio calculations done with
@@ -58,7 +56,7 @@ class OML_compound(Compound):
         calc_type       - type of the calculation (for now only HF with IBO localization and the default basis set are supported).
     """
     def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="sto-3g", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False,
-            charge=0, spin=None, dft_xc='lda,vwn', dft_nlc='', software="pySCF", pyscf_calc_params=None):
+            charge=0, spin=None, dft_xc='lda,vwn', dft_nlc='', software="pySCF", pyscf_calc_params=None, use_pyscf_localization=True):
         super().__init__(xyz=xyz)
 
         self.calc_type=calc_type
@@ -73,6 +71,7 @@ class OML_compound(Compound):
         self.use_Huckel=use_Huckel
         self.optimize_geometry=optimize_geometry
         self.software=software
+        self.use_pyscf_localization=use_pyscf_localization
         if pyscf_calc_params is None:
             self.pyscf_calc_params=OML_pyscf_calc_params()
         else:
@@ -97,7 +96,7 @@ class OML_compound(Compound):
                 if is_KS[self.calc_type]:
                     savefile_prename+=".xc_"+self.dft_xc+".nlc_"+str(self.dft_nlc)
                 if self.software != "pySCF":
-                    savefile_prename+="."+self.software
+                    savefile_prename+="."+self.software+".pySCF_loc_"+str(self.use_pyscf_localization)
                 self.pyscf_chkfile=savefile_prename+".chkfile"
                 self.mats_savefile=savefile_prename+"."+self.used_orb_type+".pkl"
             self.mats_created=isfile(self.mats_savefile)
@@ -154,7 +153,9 @@ class OML_compound(Compound):
                 from .molpro_interface import get_molpro_calc_data
                 calc_data=get_molpro_calc_data[self.calc_type](self)
                 self.assign_calc_res(calc_data)
-                self.iao_mat, self.ibo_mat=self.create_iao_ibo()
+                #TO-DO IMPORT BASIS FROM MOLPRO BEFORE LOCALIZATION???
+                if self.use_pyscf_localization:
+                    self.iao_mat, self.ibo_mat=self.create_iao_ibo()
                 self.create_mats_savefile()
                 return
             # Run the pySCF calculations.
@@ -383,8 +384,8 @@ class OML_pyscf_calc_params:
 
 
 class OML_Slater_pair:
-    def __init__(self, first_calc_type="HF", second_calc_type="HF", second_charge=0, second_orb_type="standard_IBO", **oml_comp_kwargs):
-        comp1=OML_compound(calc_type=first_calc_type, **oml_comp_kwargs)
+    def __init__(self, calc_type="HF", second_calc_type="HF", second_charge=0, second_orb_type="standard_IBO", **oml_comp_kwargs):
+        comp1=OML_compound(calc_type=calc_type, **oml_comp_kwargs)
         comp2=OML_compound(calc_type=second_calc_type, charge=second_charge, used_orb_type=second_orb_type, **oml_comp_kwargs)
         self.comps=[comp1, comp2]
     def run_calcs(self):

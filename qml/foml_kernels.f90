@@ -133,6 +133,53 @@ call symmetrize_matrix(kernel_mat, A_num_mols)
 
 END SUBROUTINE fgmo_sep_ibo_sym_kernel
 
+SUBROUTINE fgmo_sep_ibo_sqdist_sums_nums(num_scalar_reps,&
+                    A_ibo_atom_reps, A_ibo_arep_rhos,&
+                    A_ibo_atom_nums, A_ibo_nums,&
+                    A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols,&
+                    width_params, sqdist_sums)
+use foml_module, only : scalar_rep_resc_ibo_sep, flin_ibo_prod_norms,&
+            fgmo_sep_ibo_sqdist_sum_num, symmetrize_matrix
+implicit none
+integer, intent(in):: num_scalar_reps
+integer, intent(in):: A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols
+double precision, dimension(:,:,:,:), intent(in):: A_ibo_atom_reps
+double precision, dimension(:,:,:), intent(in):: A_ibo_arep_rhos
+double precision, dimension(:), intent(in):: width_params
+integer, intent(in), dimension(:, :):: A_ibo_atom_nums
+integer, intent(in), dimension(:):: A_ibo_nums
+double precision, dimension(:, :), intent(inout):: sqdist_sums
+double precision, dimension(:, :, :, :), allocatable:: A_ibo_atom_sreps
+double precision, dimension(:, :), allocatable:: A_ibo_self_products
+integer:: A_mol_counter1, A_mol_counter2
+
+allocate(A_ibo_atom_sreps(num_scalar_reps, A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols))
+call scalar_rep_resc_ibo_sep(A_ibo_atom_reps, width_params, num_scalar_reps, A_max_num_ibo_atom_reps,&
+        A_max_num_ibos, A_num_mols, A_ibo_atom_sreps)
+
+allocate(A_ibo_self_products(A_max_num_ibos, A_num_mols))
+call flin_ibo_prod_norms(num_scalar_reps, A_ibo_atom_sreps, A_ibo_arep_rhos,&
+        A_ibo_atom_nums, A_ibo_nums, A_max_num_ibo_atom_reps, A_max_num_ibos,&
+        A_num_mols, A_ibo_self_products)
+
+!$OMP PARALLEL DO SCHEDULE(DYNAMIC)
+do A_mol_counter1=1, A_num_mols
+    do A_mol_counter2=1, A_mol_counter1
+        call fgmo_sep_ibo_sqdist_sum_num(num_scalar_reps, A_ibo_atom_sreps(:,:,:,A_mol_counter2),&
+            A_ibo_arep_rhos(:,:,A_mol_counter2), A_ibo_self_products(:,A_mol_counter2),&
+            A_ibo_atom_nums(:, A_mol_counter2), A_ibo_nums(A_mol_counter2),&
+            A_ibo_atom_sreps(:,:,:,A_mol_counter1), A_ibo_arep_rhos(:,:,A_mol_counter1),&
+            A_ibo_self_products(:,A_mol_counter1), A_ibo_atom_nums(:, A_mol_counter1), A_ibo_nums(A_mol_counter1),&
+            A_max_num_ibo_atom_reps, A_max_num_ibos, sqdist_sums(A_mol_counter2, A_mol_counter1))
+    enddo
+enddo
+!$OMP END PARALLEL DO
+
+call symmetrize_matrix(sqdist_sums, A_num_mols)
+
+
+END SUBROUTINE fgmo_sep_ibo_sqdist_sums_nums
+
 
 SUBROUTINE fgmo_kernel(num_scal_reps,&
                     A_ibo_atom_sreps, A_rhos, A_max_tot_num_ibo_atom_reps, A_num_mols,&

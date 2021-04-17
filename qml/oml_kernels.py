@@ -29,7 +29,7 @@ from .python_parallelization import embarassingly_parallel
 import math, itertools
 
 
-from .foml_kernels import fgmo_kernel, flinear_base_kernel_mat, fgmo_sq_dist, fgmo_sep_ibo_kernel, fibo_fr_kernel, fgmo_sep_ibo_sym_kernel
+from .foml_kernels import fgmo_kernel, flinear_base_kernel_mat, fgmo_sq_dist, fgmo_sep_ibo_kernel, fibo_fr_kernel, fgmo_sep_ibo_sym_kernel, fgmo_sep_ibo_sqdist_sums_nums
 
 
 
@@ -234,10 +234,10 @@ def GMO_sep_IBO_kernel(A, B, kernel_params):
     kernel_mat = np.empty((Ac.num_mols, Bc.num_mols), order='F')
     fgmo_sep_ibo_kernel(Ac.max_num_scalar_reps,
                     Ac.ibo_atom_sreps.T, Ac.ibo_arep_rhos.T, Ac.ibo_rhos.T,
-                    Ac.ibo_atom_nums.T, Ac.ibo_nums.T,
+                    Ac.ibo_atom_nums.T, Ac.ibo_nums,
                     Ac.max_num_ibo_atom_reps, Ac.max_num_ibos, Ac.num_mols,
                     Bc.ibo_atom_sreps.T, Bc.ibo_arep_rhos.T, Bc.ibo_rhos.T,
-                    Bc.ibo_atom_nums.T, Bc.ibo_nums.T,
+                    Bc.ibo_atom_nums.T, Bc.ibo_nums,
                     Bc.max_num_ibo_atom_reps, Bc.max_num_ibos, Bc.num_mols,
                     kernel_params.width_params, kernel_params.final_sigma,
                     kernel_mat)
@@ -248,12 +248,27 @@ def GMO_sep_IBO_sym_kernel(A, kernel_params):
     kernel_mat = np.empty((Ac.num_mols, Ac.num_mols), order='F')
     fgmo_sep_ibo_sym_kernel(Ac.max_num_scalar_reps,
                     Ac.ibo_atom_sreps.T, Ac.ibo_arep_rhos.T, Ac.ibo_rhos.T,
-                    Ac.ibo_atom_nums.T, Ac.ibo_nums.T,
+                    Ac.ibo_atom_nums.T, Ac.ibo_nums,
                     Ac.max_num_ibo_atom_reps, Ac.max_num_ibos, Ac.num_mols,
                     kernel_params.width_params, kernel_params.final_sigma,
                     kernel_mat)
     return kernel_mat
 
+#   Create matrices containing sum over square distances between IBOs and the number of such pairs.
+#   Mainly introduced for convenient sanity check of hyperparameter optimization results.
+def GMO_sep_IBO_sqdist_sums_nums(A, kernel_params):
+    Ac=GMO_sep_IBO_kern_input(oml_compound_array=A, pair_reps=kernel_params.pair_reps)
+    sqdist_sums = np.empty((Ac.num_mols, Ac.num_mols), order='F')
+    sqdist_nums = np.empty((Ac.num_mols, Ac.num_mols), dtype=int, order='F')
+    for iA1, ibo_num1 in enumerate(Ac.ibo_nums):
+        for iA2, ibo_num2 in enumerate(Ac.ibo_nums):
+            sqdist_nums[iA1, iA2]=ibo_num1*ibo_num2
+    fgmo_sep_ibo_sqdist_sums_nums(Ac.max_num_scalar_reps,
+                    Ac.ibo_atom_sreps.T, Ac.ibo_arep_rhos.T,
+                    Ac.ibo_atom_nums.T, Ac.ibo_nums,
+                    Ac.max_num_ibo_atom_reps, Ac.max_num_ibos, Ac.num_mols,
+                    kernel_params.width_params, sqdist_sums)
+    return sqdist_sums, sqdist_nums
 
 def GMO_sqdist_mat(A, B, kernel_params, sym_kernel_mat=False):
     Ac=GMO_kernel_input(A, kernel_params.pair_reps)

@@ -40,7 +40,7 @@ oml_representation_parameters=OML_rep_params(ibo_atom_rho_comp=0.95, max_angular
 
 def get_quants_comps(xyz_list, quantity, dl_params, oml_representation_parameters, ibo_type):
     quant_vals=import_quantity_array(xyz_list, quantity, dl_params)
-    comps=OML_Slater_pair_list_from_xyzs(xyz_list, first_calc_type="HF", second_calc_type="UHF",
+    comps=OML_Slater_pair_list_from_xyzs(xyz_list, calc_type="HF", second_calc_type="UHF",
                                 second_orb_type=ibo_type, basis='sto-3g')
     comps.generate_orb_reps(oml_representation_parameters)
     return comps, quant_vals

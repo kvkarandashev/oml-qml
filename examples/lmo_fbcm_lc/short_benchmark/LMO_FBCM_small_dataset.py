@@ -23,7 +23,7 @@ hyperparam_opt_number=40
 
 use_delta_learning=True
 
-current_representation=OML_Slater_pair_rep(max_angular_momentum=1, use_Fortran=True, ibo_atom_rho_comp=0.95, first_calc_type="HF", second_calc_type="UHF",
+current_representation=OML_Slater_pair_rep(max_angular_momentum=1, use_Fortran=True, ibo_atom_rho_comp=0.95, calc_type="HF", second_calc_type="UHF",
                                 fock_based_coup_mat=True, second_orb_type="IBO_HOMO_removed", num_prop_times=2, prop_delta_t=1.0)
 
 xyz_hyperparam_opt=random.Random(seed_OML_hyperparams).sample(dirs_xyz_list(QM9_dir), hyperparam_opt_number)

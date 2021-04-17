@@ -48,7 +48,7 @@ def cho_solve(mat, vec, cho_impl='qml'):
 
 #   Functions for optimizing hyperparameters.
 
-#   This function makes scripting more convenient.
+#   Return optimal lambda and the corresponding MAE.
 def optimized_lambda_MAE(train_kernel, train_vals, check_kernel, check_vals, cho_impl='qml', **optimize_lambda_kwargs):
     lambda_val=optimize_lambda(train_kernel, train_vals, check_kernel, check_vals, cho_impl=cho_impl, **optimize_lambda_kwargs)
     tk_wlambda=added_diagonal_lambda(train_kernel, lambda_val)
