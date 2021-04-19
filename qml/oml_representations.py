@@ -236,8 +236,8 @@ class weighted_array(list):
                     break
             if delete_from_end != 0:
                 del(self[delete_from_end:])
-                self[-1].rho+=remaining_rho-rho_new_sum
-                self.normalize_rhos()
+            self[-1].rho+=remaining_rho-rho_new_sum
+            self.normalize_rhos()
 
 # Related to IBO fidelity representation.
 def generate_ibo_fidelity_rep(oml_compound, rep_params):
