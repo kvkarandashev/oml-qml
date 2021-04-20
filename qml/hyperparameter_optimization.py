@@ -90,7 +90,6 @@ def optimized_lambda_MAE(train_kernel, train_vals, check_kernel, check_vals, sca
                 bisection_interval=[next_lambda_val, cur_lambda_val]
             else:
                 bisection_interval=[cur_lambda_val, next_lambda_val]
-            scan_endpoint_min_MAE=min(cur_scan_step, next_scan_step, key=lambda x: x.MAE_val)
         else:
             if ((next_lambda_val<minimal_lambda) or (next_lambda_val>maximal_lambda)):
                 return next_lambda_val, next_MAE
@@ -116,6 +115,5 @@ def optimized_lambda_MAE(train_kernel, train_vals, check_kernel, check_vals, sca
     final_bisection_step=Lambda_opt_step(middle_lambda)
     final_bisection_step_MAE=final_bisection_step.MAE(train_kernel, train_vals, check_kernel, check_vals)
     print("final_bisection_step:",final_bisection_step)
-    output_step=min(final_bisection_step, scan_endpoint_min_MAE, key=lambda x: x.MAE_val)
-    return output_step.lambda_val, output_step.MAE_val
+    return middle_lambda, final_bisection_step_MAE
     
