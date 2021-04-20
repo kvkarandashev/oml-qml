@@ -3,7 +3,9 @@ import qml
 import jax.numpy as jnp
 import math
 import numpy as np
-from qml.hyperparameter_optimization import np_cho_solve_wcheck as np_cho_solve
+from qml.math import cho_solve as fcho_solve
+from scipy.linalg import cho_factor
+from scipy.linalg import cho_solve as scipy_cho_solve
 
 byprod_result_ending=".brf"
 
@@ -20,6 +22,47 @@ def find_max_size(compound_list):
     return output
 
 ### END
+
+## Some useful np-based routines. Analogous to some from qml.math,
+### introduced for cases when parallelization of qml.math does not work
+### properly.
+def np_svd_solve(a,b,rcond=0.0):
+    u,s,v = np.linalg.svd(a)
+    c = np.dot(u.T,b)
+#    w = np.linalg.solve(np.diag(s),c[:len(s)])
+    w=np.zeros(len(s))
+    for i, (cur_c, cur_s) in enumerate(zip(c[:len(s)], s)):
+        if (abs(cur_s>rcond)):
+            w[i]=cur_c/cur_s
+    x = np.dot(v.T,w)
+    return x
+
+def np_eigh_posd_solve(mat, vec, rcond=1e-9):
+    eigenvals, eigenvecs=np.linalg.eigh(mat)
+    vec_transformed=np.dot(vec, eigenvecs)
+    for eigenval_id, eigenval in enumerate(eigenvals):
+        if eigenval > rcond:
+            vec_transformed[eigenval_id]/=eigenval
+        else:
+            vec_transformed[eigenval_id]=0
+    return np.dot(eigenvecs, vec_transformed)
+
+
+def np_cho_solve(mat, vec):
+    c, low=cho_factor(mat)
+    return scipy_cho_solve((c, low), vec)
+
+def np_cho_solve_wcheck(mat, vec, eigh_rcond=1e-9):
+    try:
+        return np_cho_solve(mat, vec)
+    except np.linalg.LinAlgError:
+        print("WARNING: Cholesky failed.")
+        return np_eigh_posd_solve(mat, vec, rcond=eigh_rcond)
+
+cho_solve_implementations={'qml' : fcho_solve, 'scipy' : np_cho_solve}
+
+def cho_solve(mat, vec, cho_impl='qml'):
+    return cho_solve_implementations[cho_impl](mat, vec)
 
 # Model class.
 class KR_model:
@@ -458,7 +501,7 @@ def calculate_MAE(xyz_list, training_size, check_size, quantity, model, delta_le
     K=model.kernel_function.km_added_lambda(training_compounds)
     calc_logfile.write("Determinant of K: ", jnp.linalg.det(K))
     calc_logfile.write("Asymmetry measure of K: ", asymmetry_measure(K))
-    alpha=np_cho_solve(K, training_quants, eigh_rcond=eigh_rcond)
+    alpha=np_cho_solve_wcheck(K, training_quants, eigh_rcond=eigh_rcond)
 #    alpha = cho_solve(K, training_quants)
 #    alpha = jnp.linalg.solve(K, training_quants)
     quant_logfile.write("Training K:")

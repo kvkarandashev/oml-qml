@@ -1,7 +1,9 @@
-# Builds a learning curve for a very small number of datapoints; mainly here to test that learning_curve_building module is working properly.
+# Minimal example that calculates model MAEs for LUMO and HOMO energies, and the gap.
+# Note that it requires having a directory with QM9 xyz files.
+
 
 # For brevity import some functions from python_script_modules/learning_curve_building
-from learning_curve_building import Delta_learning_parameters, dirs_xyz_list, np_cho_solve, import_quantity_array
+from learning_curve_building import Delta_learning_parameters, dirs_xyz_list, np_cho_solve_wcheck, import_quantity_array
 from qm9_format_specs import Quantity
 import os, random, qml
 import numpy as np
@@ -58,7 +60,7 @@ for quant_name, ibo_type, opt_sigma_rescaling, opt_final_sigma in zip(quant_name
     # Train the model.
     K_train=generate_GMO_kernel(training_comps, training_comps, gmo_kernel_parameters, sym_kernel_mat=True)
     K_train[np.diag_indices_from(K_train)]+=lambda_val
-    alphas=np_cho_solve(K_train, training_quants, eigh_rcond=1e-9)
+    alphas=np_cho_solve_wcheck(K_train, training_quants, eigh_rcond=1e-9)
     del(K_train)
     #
     check_comps, check_quants=get_quants_comps(xyz_list[-check_num:], quant, delta_learning_params, oml_representation_parameters, ibo_type)
