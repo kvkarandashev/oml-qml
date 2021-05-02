@@ -14,6 +14,9 @@ for mol_counter, molecule in enumerate(results):
     if quant_set.issubset(set(molecule.keys())):
         mol_id=molecule["task_id"]
         xyz_name=dir_name+"/"+mol_id+'.xyz'
+        if "charge" in molecule:
+            if molecule["charge"] != 0:
+                continue
         try:
             create_entry_xyz(xyz_name, mol_id, output_quants=quant_names)
         except TaskIDRepeated:

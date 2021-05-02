@@ -32,7 +32,7 @@ def np_svd_solve(a,b,rcond=0.0):
 #    w = np.linalg.solve(np.diag(s),c[:len(s)])
     w=np.zeros(len(s))
     for i, (cur_c, cur_s) in enumerate(zip(c[:len(s)], s)):
-        if (abs(cur_s>rcond)):
+        if (abs(cur_s)>rcond):
             w[i]=cur_c/cur_s
     x = np.dot(v.T,w)
     return x

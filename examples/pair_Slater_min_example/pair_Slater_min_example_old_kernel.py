@@ -9,19 +9,19 @@ import os, random, qml
 import numpy as np
 from qml import OML_Slater_pair_list_from_xyzs
 from qml.oml_representations import OML_rep_params
-from qml.oml_kernels import GMO_kernel_params, random_ibo_sample, oml_ensemble_widths_estimate, GMO_sep_IBO_sym_kernel, GMO_sep_IBO_kernel
+from qml.oml_kernels import GMO_kernel_params, random_ibo_sample, oml_ensemble_widths_estimate, generate_GMO_kernel
 
 def_float_format='{:.8E}'
 
 quant_names=['HOMO eigenvalue', 'LUMO eigenvalue', 'HOMO-LUMO gap']
 ibo_types=["IBO_HOMO_removed", "IBO_LUMO_added", "IBO_first_excitation"]
-# TO-DO: replace with better hyperparameters once the calculations are done.
+# Those are parameters I found through scanning at 8000 training points.
 opt_sigma_rescalings=[0.5, 0.25, 1.0]
 opt_final_sigmas=[8.0, 2.0, 1.0]
 
 seed=1
 
-lambda_val=1e-5
+lambda_val=1e-7
 
 # Replace with path to QM9 directory
 QM9_dir=os.environ["DATA"]+"/QM9_formatted"
@@ -58,13 +58,13 @@ for quant_name, ibo_type, opt_sigma_rescaling, opt_final_sigma in zip(quant_name
     gmo_kernel_parameters=GMO_kernel_params(final_sigma=opt_final_sigma, use_Fortran=True,
                         normalize_lb_kernel=True, use_Gaussian_kernel=True, pair_reps=True, width_params=width_params)
     # Train the model.
-    K_train=GMO_sep_IBO_sym_kernel(training_comps, gmo_kernel_parameters)
+    K_train=generate_GMO_kernel(training_comps, training_comps, gmo_kernel_parameters, sym_kernel_mat=True)
     K_train[np.diag_indices_from(K_train)]+=lambda_val
     alphas=np_cho_solve_wcheck(K_train, training_quants, eigh_rcond=1e-9)
     del(K_train)
     #
     check_comps, check_quants=get_quants_comps(xyz_list[-check_num:], quant, delta_learning_params, oml_representation_parameters, ibo_type)
-    K_check=GMO_sep_IBO_kernel(check_comps, training_comps, gmo_kernel_parameters)
+    K_check=generate_GMO_kernel(check_comps, training_comps, gmo_kernel_parameters)
     predicted_quants=np.dot(K_check, alphas)
     MAE=np.mean(np.abs(predicted_quants-check_quants))
     print("Quantity: ", quant_name, ", MAE:", MAE)

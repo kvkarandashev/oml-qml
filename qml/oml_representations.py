@@ -226,17 +226,19 @@ class weighted_array(list):
         self.normalize_rhos()
         self.sort_rhos()
     def cutoff_minor_weights(self, remaining_rho=None):
-        if remaining_rho is not None:
-            rho_new_sum=0.0
-            delete_from_end=0
-            for counter, el in enumerate(self):
-                rho_new_sum+=el.rho
-                if rho_new_sum>remaining_rho:
-                    delete_from_end=counter+1-len(self)
+        if (remaining_rho is not None) and (len(self)>1):
+            ignored_rhos=0.0
+            for remaining_length in range(len(self),0,-1):
+                upper_cutoff=self[remaining_length-1].rho
+                cut_rho=upper_cutoff*remaining_length+ignored_rhos
+                if cut_rho>(1.0-remaining_rho):
+                    density_cut=(1.0-remaining_rho-ignored_rhos)/remaining_length
                     break
-            if delete_from_end != 0:
-                del(self[delete_from_end:])
-            self[-1].rho+=remaining_rho-rho_new_sum
+                else:
+                    ignored_rhos+=upper_cutoff
+            del(self[remaining_length:])
+            for el_id in range(remaining_length):
+                self[el_id].rho-=density_cut
             self.normalize_rhos()
 
 # Related to IBO fidelity representation.

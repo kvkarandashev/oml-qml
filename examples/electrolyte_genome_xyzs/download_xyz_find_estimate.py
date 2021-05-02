@@ -11,5 +11,5 @@ create_entry_xyz(xyz_name, mol_id, output_quants=quant_names)
 
 for quant_name in quant_names:
     quantity=Quantity(quant_name)
-    estimate=quantity.OML_calc_quant(xyz_name, basis='6-31g', optimize_geometry=False, software="molpro")
+    estimate=quantity.OML_calc_quant(xyz_name, basis='6-31g', optimize_geometry=False, software="molpro", calc_type="UHF", second_calc_type="UHF")
     print(quantity.name, ' estimate: ', estimate, ' true: ', quantity.extract_xyz(xyz_name))

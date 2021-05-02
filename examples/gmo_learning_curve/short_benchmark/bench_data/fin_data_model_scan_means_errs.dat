@@ -1,4 +1,4 @@
-GMO,sigma_rescale:0.25,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 1.23378523E-02 7.85024255E-04
-GMO,sigma_rescale:0.25,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 1.21804019E-02 1.56450551E-03
-GMO,sigma_rescale:0.5,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 1.12652248E-02 8.31740384E-04
-GMO,sigma_rescale:0.5,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 1.19922571E-02 1.88225857E-03
+GMO,sigma_rescale:0.25,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 1.23390164E-02 5.34314371E-04
+GMO,sigma_rescale:0.25,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 1.20883901E-02 1.26207224E-03
+GMO,sigma_rescale:0.5,fin_sigma:1.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 1.12946518E-02 7.14955793E-04
+GMO,sigma_rescale:0.5,fin_sigma:2.0;OML_rep,ibo_atom_rho_comp:0.9,max_ang_mom:1 1.18939094E-02 1.70798949E-03

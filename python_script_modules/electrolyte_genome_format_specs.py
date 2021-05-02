@@ -30,7 +30,7 @@ def Electron_Affinity(xyz_name, calc_type="UHF", **oml_comp_kwargs):
     return -electron_energy_change(xyz_name, -1, calc_type=calc_type, **oml_comp_kwargs)
 
 def electron_energy_change(xyz_name, charge_change, calc_type="UHF", **oml_comp_kwargs):
-    Slater_pair=OML_Slater_pair(xyz = xyz_name, mats_savefile = xyz_name, first_calc_type=calc_type, second_calc_type=calc_type,
+    Slater_pair=OML_Slater_pair(xyz = xyz_name, mats_savefile = xyz_name, calc_type=calc_type, second_calc_type=calc_type,
         second_charge=charge_change, **oml_comp_kwargs)
     Slater_pair.run_calcs()
     return (Slater_pair.comps[1].e_tot-Slater_pair.comps[0].e_tot)*au_to_eV_mult
