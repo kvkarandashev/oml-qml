@@ -59,18 +59,25 @@ def random_sample_length_checked(list_in, num_rand_samp):
 #   Estimate the average square deviation of scalar representations of atomic contributions to IBOs
 #   in the orb_rep_array. Used to estimate reasonable hyperparameter values. 
 def oml_ensemble_widths_estimate(orb_rep_array, var_cutoff_val=0.0):
+    sum_vals, sum2_vals, norm_prefac=sum12_from_orbs(orb_rep_array)
+    return sum12_to_RMSE(sum_vals, sum2_vals, norm_prefac, var_cutoff_val=var_cutoff_val)
+
+def sum12_from_orbs(orb_rep_array):
     vec_length=len(orb_rep_array[0].ibo_atom_reps[0].scalar_reps)
-    av_vals=jnp.zeros(vec_length)
-    av2_vals=jnp.zeros(vec_length)
+    sum_vals=jnp.zeros(vec_length)
+    sum2_vals=jnp.zeros(vec_length)
     norm_prefac=0.0
     for orb_rep in orb_rep_array:
         for atom_rep in orb_rep.ibo_atom_reps:
             weight_factor=orb_rep.rho*atom_rep.rho
-            av_vals+=atom_rep.scalar_reps*weight_factor
-            av2_vals+=atom_rep.scalar_reps**2*weight_factor
+            sum_vals+=atom_rep.scalar_reps*weight_factor
+            sum2_vals+=atom_rep.scalar_reps**2*weight_factor
             norm_prefac+=weight_factor
-    av_vals/=norm_prefac
-    av2_vals/=norm_prefac
+    return sum_vals, sum2_vals, norm_prefac
+
+def sum12_to_RMSE(sum_vals, sum2_vals, norm_prefac, var_cutoff_val=0.0):
+    av_vals=sum_vals/norm_prefac
+    av2_vals=sum2_vals/norm_prefac
     return jnp.array([sqrt_sign_checked(av2_val-av_val**2, var_cutoff_val=var_cutoff_val) for av_val, av2_val in zip(av_vals, av2_vals)])
 
 def sqrt_sign_checked(val, var_cutoff_val=0.0):
