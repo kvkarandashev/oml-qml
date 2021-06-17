@@ -68,7 +68,7 @@ def kwdstr(keyword, value):
         return " ,"+keyword+": "+str(value)
 
 def optimized_lambda_MAE(train_kernel, train_vals, check_kernel, check_vals, scan_multiplier=10.0,
-                    initial_lambda_val=1e-9, initial_scan_num=7, additional_bisection=True, **bisec_kwargs):
+                    initial_lambda_val=1e-9, initial_scan_num=9, additional_bisection=True, **bisec_kwargs):
     data_args=(train_kernel, train_vals, check_kernel, check_vals)
     cur_lambda=initial_lambda_val
     min_MAE=None
