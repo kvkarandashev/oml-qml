@@ -594,3 +594,49 @@ def linear_interpolation_points(start_val, end_val, num_vals):
 
 ### END
 
+# Finalized version of a building procedure for learning curves.
+def MAE_from_kernels(train_kernel, train_quantities, check_kernel, check_quantities, lambda_val):
+    train_kernel[np.diag_indices_from(train_kernel)]+=lambda_val
+    alphas=np_cho_solve(train_kernel, train_quantities)
+    predicted_quantities=np.dot(check_kernel, alphas)
+    return np.mean(np.abs(predicted_quantities-check_quantities))
+
+def generate_randomized_index_subsets(training_set_size, max_training_set_size, max_training_set_num):
+    import random
+    random.seed(1)
+    num_training_sets=min(max_training_set_num, max_training_set_size//training_set_size)
+    shuffled_index_list=list(range(max_training_set_size))
+    random.shuffle(shuffled_index_list)
+    output=[]
+    for tr_set_id in range(num_training_sets):
+        output.append(shuffled_index_list[tr_set_id*training_set_size:(tr_set_id+1)*training_set_size])
+    return output
+
+def build_learning_curve(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=0.0):
+    max_training_set_size=len(train_kernel)
+    all_MAEs=[]
+    for training_set_size in training_set_sizes:
+        if training_set_size==max_training_set_size:
+            cur_train_MAEs=[MAE_from_kernels(train_kernel, train_quantities, train_check_kernel, check_quantities, lambda_val)]
+        else:
+            cur_train_MAEs=[]
+            randomized_index_subsets=generate_randomized_index_subsets(training_set_size, max_training_set_size, max_training_set_num)
+            for randomized_index_subset in randomized_index_subsets:
+                cur_train_kernel=train_kernel[randomized_index_subset][:, randomized_index_subset]
+                cur_check_kernel=train_check_kernel[:, randomized_index_subset]
+                cur_train_quantities=train_quantities[randomized_index_subset]
+                cur_train_MAEs.append(MAE_from_kernels(cur_train_kernel, cur_train_quantities, cur_check_kernel, check_quantities, lambda_val))
+        all_MAEs.append(cur_train_MAEs)
+    return all_MAEs
+
+def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=0.0):
+    all_MAEs=build_learning_curve(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=lambda_val)
+    all_vals_output_file=open(all_vals_output_name, 'w')
+    mean_stderr_output_file=open(mean_stderr_output_name, 'w')
+    for training_set_size, MAE_line in zip(training_set_sizes, all_MAEs):
+        np_MAE=np.array(MAE_line)
+        print(training_set_size, np.mean(np_MAE), np.std(np_MAE)/math.sqrt(len(np_MAE)), file=mean_stderr_output_file)
+        print(training_set_size, *np_MAE, file=all_vals_output_file)
+    all_vals_output_file.close()
+    mean_stderr_output_file.close()
+
