@@ -6,6 +6,8 @@ import numpy as np
 from qml.math import cho_solve as fcho_solve
 from scipy.linalg import cho_factor
 from scipy.linalg import cho_solve as scipy_cho_solve
+import datetime
+
 
 byprod_result_ending=".brf"
 
@@ -620,8 +622,10 @@ def build_learning_curve(train_kernel, train_quantities, train_check_kernel, che
     max_training_set_size=len(train_kernel)
     all_MAEs=[]
     for training_set_size in training_set_sizes:
+        print("Started:", training_set_size, ", date:", datetime.datetime.now())
         if training_set_size==max_training_set_size:
             cur_train_MAEs=[MAE_from_kernels(train_kernel, train_quantities, train_check_kernel, check_quantities, lambda_val, eigh_rcond=eigh_rcond)]
+            print("Finished:", training_set_size, ", date:", datetime.datetime.now())
         else:
             cur_train_MAEs=[]
             randomized_index_subsets=generate_randomized_index_subsets(training_set_size, max_training_set_size, max_training_set_num)
@@ -630,6 +634,7 @@ def build_learning_curve(train_kernel, train_quantities, train_check_kernel, che
                 cur_check_kernel=train_check_kernel[:, randomized_index_subset]
                 cur_train_quantities=train_quantities[randomized_index_subset]
                 cur_train_MAEs.append(MAE_from_kernels(cur_train_kernel, cur_train_quantities, cur_check_kernel, check_quantities, lambda_val, eigh_rcond=eigh_rcond))
+                print("Finished:", training_set_size, ", date:", datetime.datetime.now())
         all_MAEs.append(cur_train_MAEs)
     return all_MAEs
 
