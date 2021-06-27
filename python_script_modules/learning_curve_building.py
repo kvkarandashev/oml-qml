@@ -56,7 +56,7 @@ def np_cho_solve_wcheck(mat, vec, eigh_rcond=1e-9):
     try:
         return np_cho_solve(mat, vec)
     except np.linalg.LinAlgError:
-        print("WARNING: Cholesky failed.")
+        print("WARNING: Cholesky failed, mat size:", len(mat), ", vec size:", len(vec))
         return np_eigh_posd_solve(mat, vec, rcond=eigh_rcond)
 
 cho_solve_implementations={'qml' : fcho_solve, 'scipy' : np_cho_solve}
@@ -595,9 +595,13 @@ def linear_interpolation_points(start_val, end_val, num_vals):
 ### END
 
 # Finalized version of a building procedure for learning curves.
-def MAE_from_kernels(train_kernel, train_quantities, check_kernel, check_quantities, lambda_val):
+def MAE_from_kernels(train_kernel, train_quantities, check_kernel, check_quantities, lambda_val, eigh_rcond=None):
     train_kernel[np.diag_indices_from(train_kernel)]+=lambda_val
-    alphas=np_cho_solve(train_kernel, train_quantities)
+    if eigh_rcond is None:
+        true_eigh_rcond=lambda_val
+    else:
+        true_eigh_rcond=eigh_rcond
+    alphas=np_cho_solve_wcheck(train_kernel, train_quantities, eigh_rcond=true_eigh_rcond)
     predicted_quantities=np.dot(check_kernel, alphas)
     return np.mean(np.abs(predicted_quantities-check_quantities))
 
@@ -612,12 +616,12 @@ def generate_randomized_index_subsets(training_set_size, max_training_set_size, 
         output.append(shuffled_index_list[tr_set_id*training_set_size:(tr_set_id+1)*training_set_size])
     return output
 
-def build_learning_curve(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=0.0):
+def build_learning_curve(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=0.0, eigh_rcond=None):
     max_training_set_size=len(train_kernel)
     all_MAEs=[]
     for training_set_size in training_set_sizes:
         if training_set_size==max_training_set_size:
-            cur_train_MAEs=[MAE_from_kernels(train_kernel, train_quantities, train_check_kernel, check_quantities, lambda_val)]
+            cur_train_MAEs=[MAE_from_kernels(train_kernel, train_quantities, train_check_kernel, check_quantities, lambda_val, eigh_rcond=eigh_rcond)]
         else:
             cur_train_MAEs=[]
             randomized_index_subsets=generate_randomized_index_subsets(training_set_size, max_training_set_size, max_training_set_num)
@@ -625,12 +629,12 @@ def build_learning_curve(train_kernel, train_quantities, train_check_kernel, che
                 cur_train_kernel=train_kernel[randomized_index_subset][:, randomized_index_subset]
                 cur_check_kernel=train_check_kernel[:, randomized_index_subset]
                 cur_train_quantities=train_quantities[randomized_index_subset]
-                cur_train_MAEs.append(MAE_from_kernels(cur_train_kernel, cur_train_quantities, cur_check_kernel, check_quantities, lambda_val))
+                cur_train_MAEs.append(MAE_from_kernels(cur_train_kernel, cur_train_quantities, cur_check_kernel, check_quantities, lambda_val, true_eigh_rcond))
         all_MAEs.append(cur_train_MAEs)
     return all_MAEs
 
-def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=0.0):
-    all_MAEs=build_learning_curve(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=lambda_val)
+def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=0.0, eigh_rcond=None):
+    all_MAEs=build_learning_curve(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=lambda_val, eigh_rcond=eigh_rcond)
     all_vals_output_file=open(all_vals_output_name, 'w')
     mean_stderr_output_file=open(mean_stderr_output_name, 'w')
     for training_set_size, MAE_line in zip(training_set_sizes, all_MAEs):
