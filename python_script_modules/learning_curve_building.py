@@ -629,7 +629,7 @@ def build_learning_curve(train_kernel, train_quantities, train_check_kernel, che
                 cur_train_kernel=train_kernel[randomized_index_subset][:, randomized_index_subset]
                 cur_check_kernel=train_check_kernel[:, randomized_index_subset]
                 cur_train_quantities=train_quantities[randomized_index_subset]
-                cur_train_MAEs.append(MAE_from_kernels(cur_train_kernel, cur_train_quantities, cur_check_kernel, check_quantities, lambda_val, true_eigh_rcond))
+                cur_train_MAEs.append(MAE_from_kernels(cur_train_kernel, cur_train_quantities, cur_check_kernel, check_quantities, lambda_val, eigh_rcond=eigh_rcond))
         all_MAEs.append(cur_train_MAEs)
     return all_MAEs
 
