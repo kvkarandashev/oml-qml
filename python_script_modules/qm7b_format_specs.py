@@ -7,6 +7,7 @@ class QuantityNotAvailableError(Exception):
 
 au_to_kcalmol_mult=627.50960803
 
+angstrom_to_au=1.8897259885789
 
 #   For creating the xyz files from api.qcarchive.molssi.org
 def replace_spaces(input_str):
@@ -82,7 +83,7 @@ def create_xyz_dir(xyz_dir_name, additional_info_file=None):
         xyz_name="qm7b_"+str(mol_id+1).zfill(4)+".xyz"
         xyz_output=open(xyz_dir_name+"/"+xyz_name, 'w')
         mol=mol_arr[0]
-        coords=mol.geometry
+        coords=mol.geometry/angstrom_to_au
         elements=mol.symbols
         xyz_output.write(str(len(elements))+"\n\n")
         for el, atom_coord in zip(elements, coords): 

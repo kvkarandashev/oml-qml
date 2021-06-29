@@ -41,6 +41,15 @@ is_KS={"HF" : False, "UHF" : False, "KS" : True, "UKS" : True}
 neglect_orb_occ=0.1
 
 
+def pySCFNotConvergedErrorMessage(oml_comp=None):
+    if oml_comp is None:
+        message="WARNING: A SCF calculation failed to converge."
+    else:
+        message="WARNING: A SCF calculation failed to converge at "+str(oml_comp.pyscf_calc_params.scf_max_cycle)+" cycles."
+        if oml_comp.mats_savefile is not None:
+            message+=" Problematic mats_savefile: "+oml_comp.mats_savefile
+    return message
+
 class pySCFNotConvergedError(Exception):
     pass
 
@@ -271,7 +280,8 @@ class OML_compound(Compound):
         except KeyError as KE:
             if (str(KE)[1:-1]==mol.basis):
                 import basis_set_exchange as bse
-                mol.basis=bse.get_basis(basisset, fmt="nwchem")
+                # WARNING: was never used.
+                mol.basis=bse.get_basis(mol.basis, fmt="nwchem")
                 mol.build()
         return mol
     def generate_pyscf_mf(self, pyscf_mol):
@@ -290,8 +300,12 @@ class OML_compound(Compound):
                 mf.init_guess='chkfile'
         mf.run()
         if not (mf.converged or self.use_Huckel):
-            print("WARNING: A SCF calculation failed to converge at ", mf.max_cycle, " cycles.")
-            raise pySCFNotConvergedError
+            mf=scf.newton(mf)
+            mf.run()
+            if mf.converged:
+                print("SCF converged with SO-SCF.")
+            else:
+                raise pySCFNotConvergedError(pySCFNotConvergedErrorMessage(self))
 #        subprocess.run(["rm", '-f', chkfile])
         return mf
 
