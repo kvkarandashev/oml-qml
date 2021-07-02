@@ -185,9 +185,9 @@ class OML_representation(representation):
         
         
 class OML_Slater_pair_rep(OML_representation):
-    def __init__(self, second_charge=0, second_orb_type="standard_IBO", second_calc_type="HF", **OML_representation_kwargs):
+    def __init__(self, second_charge=0, second_orb_type="standard_IBO", second_calc_type="HF", second_spin=None, **OML_representation_kwargs):
         super().__init__(**OML_representation_kwargs)
-        self.second_calc_kwargs={"second_calc_type" : second_calc_type, "second_orb_type" : second_orb_type, "second_charge" : second_charge}
+        self.second_calc_kwargs={"second_calc_type" : second_calc_type, "second_orb_type" : second_orb_type, "second_charge" : second_charge, "second_spin" : second_spin}
     def xyz2compound(self, xyz=None):
         return qml.oml_compound.OML_Slater_pair(xyz=xyz, **self.second_calc_kwargs, **self.OML_compound_kwargs)
     def compound_list(self, xyz_list):

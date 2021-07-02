@@ -108,7 +108,7 @@ def electron_energy_change(xyz_name, charge_change, first_calc_type="HF", second
 
 #   Placeholder, probably need to come up with something better.
 def excitation_energy(xyz_name, **kwargs):
-    return (LUMO_en(xyz_name, **kwargs)-HOMO_en(xyz_name, **kwargs))*au_to_kcalmol_mult
+    return (LUMO_en(xyz_name, **kwargs)-HOMO_en(xyz_name, **kwargs)) #*au_to_kcalmol_mult It seems like for some reason excitation energy is in a.u.
 
 #   HOMO and LUMO have been copied from qm9_format_specs.py
 def HOMO_en(xyz_name, **oml_kwargs):

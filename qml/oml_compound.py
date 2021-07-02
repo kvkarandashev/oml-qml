@@ -24,7 +24,7 @@ from .compound import Compound
 from .oml_representations import generate_ibo_rep_array, gen_fock_based_coup_mats, weighted_array, generate_ibo_fidelity_rep
 import jax.numpy as jnp
 import numpy as np
-import math
+import copy
 from .utils import dump2pkl, loadpkl
 from pyscf import lo, gto, scf, dft
 from os.path import isfile
@@ -70,10 +70,13 @@ class OML_compound(Compound):
 
         self.calc_type=calc_type
         self.charge=charge
-        if spin is None:
-            self.spin=self.charge%2
-        else:
-            self.spin=spin
+
+        self.spin=self.charge%2
+        default_spin_chosen=True
+        if spin is not None:
+            if spin != self.spin:
+                self.spin=spin
+                default_spin_chosen=False
         self.mats_savefile=mats_savefile
         self.basis=basis
         self.used_orb_type=used_orb_type
@@ -102,6 +105,8 @@ class OML_compound(Compound):
                     savefile_prename+=".geom_opt"
                 if self.charge != 0:
                     savefile_prename+=".charge_"+str(self.charge)
+                if not default_spin_chosen:
+                    savefile_prename+=".spin_"+str(self.spin)
                 if is_KS[self.calc_type]:
                     savefile_prename+=".xc_"+self.dft_xc+".nlc_"+str(self.dft_nlc)
                 if self.software != "pySCF":
@@ -397,10 +402,17 @@ class OML_pyscf_calc_params:
         self.scf_conv_tol=scf_conv_tol
 
 
+#   TO-DO replace the growing number of "second_" arguments with "second_kwarg_override" or something similarly named.
 class OML_Slater_pair:
-    def __init__(self, calc_type="HF", second_calc_type="HF", second_charge=0, second_orb_type="standard_IBO", **oml_comp_kwargs):
-        comp1=OML_compound(calc_type=calc_type, **oml_comp_kwargs)
-        comp2=OML_compound(calc_type=second_calc_type, charge=second_charge, used_orb_type=second_orb_type, **oml_comp_kwargs)
+    def __init__(self, second_calc_type="HF", second_charge=0, second_orb_type="standard_IBO", second_spin=None, second_xyz=None, second_mats_savefile=None, **oml_comp_kwargs):
+        comp1=OML_compound(**oml_comp_kwargs)
+        second_special_kwarg_dict={"calc_type" : second_calc_type, "charge" : second_charge, "used_orb_type" : second_orb_type, "spin" : second_spin, "xyz" : second_xyz, "mats_savefile" : second_mats_savefile}
+        second_oml_comp_kwargs=copy.copy(oml_comp_kwargs)
+        for special_key in second_special_kwarg_dict:
+            special_val=second_special_kwarg_dict[special_key]
+            if special_val is not None:
+                second_oml_comp_kwargs[special_key]=second_special_kwarg_dict[special_key]
+        comp2=OML_compound(**second_oml_comp_kwargs)
         self.comps=[comp1, comp2]
     def run_calcs(self):
         self.comps[0].run_calcs()
