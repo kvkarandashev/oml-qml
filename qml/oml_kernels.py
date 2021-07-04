@@ -177,8 +177,14 @@ def iterated_orb_reps(oml_comp, pair_reps=False, single_ibo_list=False):
             return oml_comp.orb_reps
 
 def generate_GMO_kernel(A, B, kernel_params, sym_kernel_mat=False):
-    Ac=GMO_kernel_input(oml_compound_array=A, pair_reps=kernel_params.pair_reps)
-    Bc=GMO_kernel_input(oml_compound_array=B, pair_reps=kernel_params.pair_reps)
+    if isinstance(kernel_params.pair_reps, list):
+        pair_reps_A=kernel_params.pair_reps[0]
+        pair_reps_B=kernel_params.pair_reps[1]
+    else:
+        pair_reps_A=kernel_params.pair_reps
+        pair_reps_B=kernel_params.pair_reps
+    Ac=GMO_kernel_input(oml_compound_array=A, pair_reps=pair_reps_A)
+    Bc=GMO_kernel_input(oml_compound_array=B, pair_reps=pair_reps_B)
     if kernel_params.use_Fortran:
         kernel_mat = np.empty((Ac.num_mols, Bc.num_mols), order='F')
         if kernel_params.use_Gaussian_kernel:
