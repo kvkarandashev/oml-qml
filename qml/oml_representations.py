@@ -184,11 +184,19 @@ def generate_atom_ao_ranges(mol):
         output.append(atom_data[2:4])
     return np.array(output)
 
+def placeholder_ibo_rep(rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coupling_mats):
+    placeholder_ibo_coeffs=np.repeat(1.0, len(ovlp_mat))
+    placeholder_rep=OML_ibo_rep(placeholder_ibo_coeffs, rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coupling_mats)
+    placeholder_rep.virtual=True
+    return placeholder_rep
+
 #   Generate an array of IBO representations.
 def generate_ibo_rep_array(ibo_mat, rep_params, aos, atom_ao_ranges, ovlp_mat, *coupling_mats):
-    # It's important that ovlp_mat appears first in this array.
     atom_ids=[ao.atom_id for ao in aos]
     angular_momenta=[ao.angular for ao in aos]
+    if len(ibo_mat)==0:
+        return [placeholder_ibo_rep(rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coupling_mats)]
+    # It's important that ovlp_mat appears first in this array.
     ibo_tmat=ibo_mat.T
     return [OML_ibo_rep(ibo_coeffs, rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coupling_mats) for ibo_coeffs in ibo_tmat]
     
@@ -198,6 +206,7 @@ class OML_ibo_rep:
         from .oml_representations import weighted_array
         self.rho=0.0
         self.full_coeffs=ibo_coeffs
+        self.virtual=False
         atom_list=[]
         prev_atom=-1
         for atom_id, ao_coeff in zip(atom_ids, self.full_coeffs):

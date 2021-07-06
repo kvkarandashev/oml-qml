@@ -208,8 +208,12 @@ class OML_compound(Compound):
         iao_mat=[]
         ibo_mat=[]
         for occ_orb_arr in occ_orb_arrs:
-            iao_mat.append(jnp.array(lo.iao.iao(pyscf_mol, occ_orb_arr)))
-            ibo_mat.append(jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_arr, **self.pyscf_calc_params.ibo_kwargs)))
+            if occ_orb_arr.size==0:
+                iao_mat.append([])
+                ibo_mat.append([])
+            else:
+                iao_mat.append(jnp.array(lo.iao.iao(pyscf_mol, occ_orb_arr)))
+                ibo_mat.append(jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_arr, **self.pyscf_calc_params.ibo_kwargs)))
         return iao_mat, ibo_mat
 
     def create_mats_savefile(self):
@@ -259,7 +263,8 @@ class OML_compound(Compound):
                 self.orb_reps+=generate_ibo_rep_array(self.ibo_mat[spin], rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)
             ibo_occ=orb_occ_prop_coeff(self)
             for orb_rep_counter in range(len(self.orb_reps)):
-                self.orb_reps[orb_rep_counter].rho=ibo_occ
+                if not self.orb_reps[orb_rep_counter].virtual:
+                    self.orb_reps[orb_rep_counter].rho=ibo_occ
                 if rep_params.norm_by_nelec:
                     self.orb_reps[orb_rep_counter].rho/=sum(self.nuclear_charges)
     #   Find maximal value of angular momentum for AOs of current molecule.
