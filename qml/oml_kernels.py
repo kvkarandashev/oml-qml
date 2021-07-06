@@ -242,8 +242,14 @@ class GMO_sep_IBO_kern_input:
                     self.ibo_atom_sreps[ind_comp, ind_ibo, ind_ibo_arep, :]=ibo_arep.scalar_reps[:]
 
 def GMO_sep_IBO_kernel(A, B, kernel_params):
-    Ac=GMO_sep_IBO_kern_input(oml_compound_array=A, pair_reps=kernel_params.pair_reps)
-    Bc=GMO_sep_IBO_kern_input(oml_compound_array=B, pair_reps=kernel_params.pair_reps)
+    if isinstance(kernel_params.pair_reps, list):
+        pair_reps_A=kernel_params.pair_reps[0]
+        pair_reps_B=kernel_params.pair_reps[1]
+    else:
+        pair_reps_A=kernel_params.pair_reps
+        pair_reps_B=kernel_params.pair_reps
+    Ac=GMO_sep_IBO_kern_input(oml_compound_array=A, pair_reps=pair_reps_A)
+    Bc=GMO_sep_IBO_kern_input(oml_compound_array=B, pair_reps=pair_reps_B)
     kernel_mat = np.empty((Ac.num_mols, Bc.num_mols), order='F')
     fgmo_sep_ibo_kernel(Ac.max_num_scalar_reps,
                     Ac.ibo_atom_sreps.T, Ac.ibo_arep_rhos.T, Ac.ibo_rhos.T,
