@@ -137,4 +137,11 @@ def MAE_bisection_optimization(initial_lambda_opt_step, train_kernel, train_vals
     final_bisection_step=Lambda_opt_step(middle_lambda)
     final_bisection_step_MAE=final_bisection_step.MAE(*data_args)
     print("final_bisection_step:",final_bisection_step)
-    return middle_lambda, final_bisection_step_MAE
+    if final_bisection_step_MAE is None:
+        upper_interval_bound=bisection_interval[1]
+        upper_interval_step=Lambda_opt_step(upper_interval_bound)
+        upper_interval_MAE=upper_interval_step.MAE(*data_args)
+        print("Final bisection result changed to upper bound:", upper_interval_bound, upper_interval_MAE)
+        return upper_interval_bound, upper_interval_MAE
+    else:
+        return middle_lambda, final_bisection_step_MAE
