@@ -62,7 +62,10 @@ def create_xyz_files(QM7bT_dir, output_dir):
         new_xyz_name=output_dir+'/ext_'+xyz_id+'.xyz'
         possible_xyzs=glob.glob(QM7bT_dir+"/molecules/"+xyz_id+'__*.xyz')
         if len(possible_xyzs)>1:
-            print("xyz id duplicated")
+            print("xyz id duplicated:", xyz_id, possible_xyzs)
+            quit()
+        elif len(possible_xyzs)==0:
+            print('xyz id absent', xyz_id)
             quit()
         subprocess.run(["cp", '-f', possible_xyzs[0], new_xyz_name])
         cur_xyz=open(new_xyz_name, "a+")
