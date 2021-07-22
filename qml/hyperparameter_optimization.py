@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
-from math import sqrt, exp
+import math, random, copy
+from .oml_kernels import lin_sep_IBO_kernel_conv, lin_sep_IBO_sym_kernel_conv, GMO_sep_IBO_kern_input
+from scipy.optimize import minimize
 
 class Lambda_opt_step:
     def __init__(self, lambda_val=None):
@@ -122,10 +124,10 @@ def MAE_bisection_optimization(initial_lambda_opt_step, train_kernel, train_vals
             cur_lambda_val=next_lambda_val
             cur_MAE=next_MAE
     # Do the bisection search.
-    log_diff_tol_mult=exp(bisec_log_diff_tol)
+    log_diff_tol_mult=math.exp(bisec_log_diff_tol)
     print('bisection interval:', bisection_interval)
     while (bisection_interval[1]>bisection_interval[0]*log_diff_tol_mult):
-        middle_lambda=sqrt(bisection_interval[0]*bisection_interval[1])
+        middle_lambda=math.sqrt(bisection_interval[0]*bisection_interval[1])
         middle_step=Lambda_opt_step(middle_lambda)
         cur_der=middle_step.err_der(*data_args, square_der=True)
         print("bisection:middle_step:", middle_step)
@@ -145,3 +147,93 @@ def MAE_bisection_optimization(initial_lambda_opt_step, train_kernel, train_vals
         return upper_interval_bound, upper_interval_MAE
     else:
         return middle_lambda, final_bisection_step_MAE
+
+
+
+class Gradient_optimization_obj:
+    def __init__(self, training_compounds, training_quants, check_compounds, check_quants, density_neglect=1e-9):
+        self.training_compounds=GMO_sep_IBO_kern_input(training_compounds)
+        self.num_params=self.training_compounds.max_num_scalar_reps+1
+
+        self.check_compounds=GMO_sep_IBO_kern_input(check_compounds)
+
+        self.training_quants=training_quants
+        self.check_quants=check_quants
+        self.density_neglect=density_neglect
+    def MSE(self, parameters):
+        self.reinitiate_matrices(parameters)
+        return np.mean((self.predictions-self.check_quants)**2)
+
+    def MSE_der(self, parameters):
+        self.reinitiate_mats_ders(parameters)
+        output=np.empty((self.num_params,), float)
+        for param_id in range(self.num_params):
+            cur_train_der=self.train_kernel_ders[:, :, param_id]
+            cur_check_der=self.check_kernel_ders[:, :, param_id]
+            output[param_id]=2*np.mean((self.predictions-self.check_quants)*self.der_predictions(cur_train_der, cur_check_der))
+        return output
+
+    def der_predictions(self, train_der, check_der):
+        output=np.matmul(train_der, self.alphas)
+        output=cho_solve(self.train_cho_decomp, output)
+        output=-np.matmul(self.check_kernel, output)
+        output+=np.matmul(check_der, self.alphas)
+        return output
+
+    def reinitiate_basic_params(self, parameters):
+        self.lambda_val=parameters[0]
+        self.inv_sq_width_params=parameters[1:]
+        self.num_ders=len(parameters)
+
+    def reinitiate_basic_components(self, train_kernel):
+        train_kernel[np.diag_indices_from(train_kernel)]+=self.lambda_val
+        self.train_cho_decomp=cho_factor(train_kernel)
+        self.alphas=cho_solve(self.train_cho_decomp, self.training_quants)
+        self.predictions=np.matmul(self.check_kernel, self.alphas)
+
+    def reinitiate_matrices(self, parameters):
+        self.reinitiate_basic_params(parameters)
+        train_kernel=lin_sep_IBO_sym_kernel_conv(self.training_compounds, self.inv_sq_width_params, self.density_neglect)
+        self.check_kernel=lin_sep_IBO_kernel_conv(self.check_compounds, self.training_compounds, self.inv_sq_width_params, self.density_neglect)
+        self.reinitiate_basic_components(train_kernel)
+
+    def reinitiate_mats_ders(self, parameters):
+        self.reinitiate_basic_params(parameters)
+        train_kernel_wders=lin_sep_IBO_sym_kernel_conv(self.training_compounds, self.inv_sq_width_params, self.density_neglect, with_ders=True)
+        check_kernel_wders=lin_sep_IBO_kernel_conv(self.check_compounds, self.training_compounds, self.inv_sq_width_params, self.density_neglect, with_ders=True)
+
+        train_kernel=train_kernel_wders[:, :, 0]
+        self.check_kernel=check_kernel_wders[:, :, 0]
+        num_train_compounds=self.training_compounds.num_mols
+        self.train_kernel_ders=np.zeros((num_train_compounds, num_train_compounds, self.num_params))
+        for mol_id in range(num_train_compounds):
+            self.train_kernel_ders[mol_id, mol_id, 0]=1.0
+        self.check_kernel_ders=np.zeros((self.check_compounds.num_mols, num_train_compounds, self.num_params))
+
+        self.train_kernel_ders[:, :, 1:]=train_kernel_wders[:, :, 1:]
+        self.check_kernel_ders[:, :, 1:]=check_kernel_wders[:, :, 1:]
+
+        self.reinitiate_basic_components(train_kernel)
+
+def min_sep_IBO_MSE_train_defined(training_compounds, training_quants, check_compounds, check_quants, init_lambda_guess, init_inv_sq_width_guess):
+    go_obj=Gradient_optimization_oBj(training_compounds, training_quants, check_compounds, check_quants)
+    init_param_guess=np.zeros((len(init_inv_sq_width_guess+1),))
+    init_param_guess[0]=init_lambda_guess
+    init_param_guess[1:]=np.array(init_inv_sq_width_guess)
+    return minimize(Gradient_optimization_obj.MSE, init_param_guess, method='BFGS', jac=Gradient_optimization_obj.MSE_der, options={'disp': True})
+
+
+def min_sep_IBO_MSE(compound_list, quant_list, init_lambda_guess=0.001, training_set_ratio=0.5, initial_guess_sigma_rescale=1.0):
+    orb_sample=random_ibo_sample(compound_list, pair_reps=True)
+    stddevs=oml_ensemble_widths_estimate(orb_sample)
+    init_inv_sq_width_guess=0.25/(initial_guess_sigma_rescale*stddevs)**2
+
+    comp_list_copy=copy.deepcopy(compound_list)
+    quant_list_copy=copy.deepcopy(quant_list)
+    comp_quant_list=list(zip(comp_list_copy, quant_list_copy))
+    divisor=int(len(compound_list)*training_set_ratio)
+    random.shuffle(comp_quant_list)
+    comp_list_shuffled, quant_list_shuffled = zip(*comp_quant_list)
+
+    return min_sep_IBO_MSE_train_defined(comp_list_shuffled[:divisor], quant_list_shuffled[:divisor], comp_list_shuffled[divisor:], quant_list_shuffled[divisor:], init_lambda_guess, init_inv_sq_width_guess)
+

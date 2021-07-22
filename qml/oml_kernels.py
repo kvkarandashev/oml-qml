@@ -26,7 +26,8 @@ import jax.numpy as jnp
 import jax.config as jconfig
 from jax import jit, vmap
 from .python_parallelization import embarassingly_parallel
-import math, itertools
+import math, itertools, copy
+from numba import njit, prange
 
 
 from .foml_kernels import fgmo_kernel, flinear_base_kernel_mat, fgmo_sq_dist, fgmo_sep_ibo_kernel, fibo_fr_kernel, fgmo_sep_ibo_sym_kernel, fgmo_sep_ibo_sqdist_sums_nums
@@ -361,7 +362,9 @@ def oml_pair_ensemble_widths_estimate(orb_rep_array):
     av2_vals/=norm_prefac
     return jnp.array([sqrt_sign_checked(av2_val-av_val**2) for av_val, av2_val in zip(av_vals, av2_vals)])
 
+############
 #   For IBO-FR procedures.
+############
 
 class IBOFR_kernel_params:
     def __init__(self, vec_rep_mult=None, pair_reps=False, density_neglect=1e-7):
@@ -431,3 +434,169 @@ def ibofr_rep_avs(compound_list, pair_reps=False):
 def ibofr_rep_stddevs(compound_list, pair_reps=False):
     av_vals, av2_vals=ibofr_rep_avs(compound_list, pair_reps=pair_reps)
     return np.array([sqrt_sign_checked(av2_val-av_val**2) for av_val, av2_val in zip(av_vals, av2_vals)])
+
+
+#########
+# END OF IBO-FR.
+#########
+
+### For linear kernel with separable IBOs.
+
+# Orbital-orbital covariance.
+@njit(fastmath=True)
+def orb_areps_sqdiffs(orb_areps_A, arep_A_id, orb_areps_B, arep_B_id):
+    return (orb_areps_A[arep_A_id, :]-orb_areps_B[arep_B_id, :])**2
+
+@njit(fastmath=True)
+def orb_orb_cov(orb_areps_A, orb_areps_B, arep_rhos_A, arep_rhos_B, max_num_ibo_atom_reps_A, max_num_ibo_atom_reps_B, inv_sq_width_params, density_neglect, with_ders=False):
+    if with_ders:
+        output=np.zeros((inv_sq_width_params.shape[0]+1,))
+    else:
+        output=np.zeros((1,))
+    for arep_A_id in range(max_num_ibo_atom_reps_A):
+        rho_A=arep_rhos_A[arep_A_id]
+        if rho_A<density_neglect:
+            break
+        for arep_B_id in range(max_num_ibo_atom_reps_B):
+            rho_B=arep_rhos_B[arep_B_id]
+            if rho_B<density_neglect:
+                break
+            sqdiffs=orb_areps_sqdiffs(orb_areps_A, arep_A_id, orb_areps_B, arep_B_id)
+            orb_orb_cov_comp=rho_A*rho_B*np.exp(-np.sum(inv_sq_width_params*sqdiffs))
+            output[0]+=orb_orb_cov_comp
+            if with_ders:
+                output[1:]-=orb_orb_cov_comp*sqdiffs
+    return output
+
+# Self-covariance (used for normalizing the orbitals).
+@njit(fastmath=True)
+def orb_sqrt_self_cov(orb_areps, arep_rhos, max_num_ibo_atom_reps, inv_sq_width_params, density_neglect):
+    return np.sqrt(orb_orb_cov(orb_areps, orb_areps, arep_rhos, arep_rhos, max_num_ibo_atom_reps, max_num_ibo_atom_reps, inv_sq_width_params, density_neglect)[0])
+
+
+# For renormalizing orbital arep rho coefficients.
+@njit(fastmath=True, parallel=True)
+def lin_sep_kern_renormalized_arep_rhos(inp_arr_orb_areps, inp_arr_arep_rhos, inp_arr_ibo_rhos, inv_sq_width_params, density_neglect):
+    num_mols=inp_arr_orb_areps.shape[0]
+    max_num_ibos=inp_arr_orb_areps.shape[1]
+    max_num_ibo_atom_reps=inp_arr_orb_areps.shape[2]
+    output=np.copy(inp_arr_arep_rhos)
+    for mol_id in prange(num_mols):
+        for ibo_id in range(max_num_ibos):
+            if np.abs(inp_arr_ibo_rhos[mol_id, ibo_id])<density_neglect:
+                break
+            output[mol_id, ibo_id, :]/=orb_sqrt_self_cov(inp_arr_orb_areps[mol_id, ibo_id, :, :], inp_arr_arep_rhos[mol_id, ibo_id, :], max_num_ibo_atom_reps, inv_sq_width_params, density_neglect)
+    return output
+
+@njit(fastmath=True, parallel=True)
+def numba_lin_sep_IBO_kernel(A_orb_areps, A_arep_rhos, A_orb_rhos,
+                                B_orb_areps, B_arep_rhos, B_orb_rhos,
+                                inv_sq_width_params, density_neglect, sym_kernel, with_ders):
+
+    A_num_mols=A_orb_areps.shape[0]
+    A_num_ibos=A_orb_areps.shape[1]
+    A_num_ibo_atom_reps=A_orb_areps.shape[2]
+
+    B_num_mols=B_orb_areps.shape[0]
+    B_num_ibos=B_orb_areps.shape[1]
+    B_num_ibo_atom_reps=B_orb_areps.shape[2]
+
+    if with_ders:
+        num_ders=inv_sq_width_params.shape[0]
+
+        A_sp_log_ders=self_product_log_ders(A_orb_areps, A_arep_rhos, A_orb_rhos, inv_sq_width_params, density_neglect)
+        B_sp_log_ders=self_product_log_ders(B_orb_areps, B_arep_rhos, B_orb_rhos, inv_sq_width_params, density_neglect)
+    else:
+        num_ders=0
+
+    cur_ibo_contribution=np.zeros((num_ders+1,))
+
+    Kernel=np.zeros((A_num_mols, B_num_mols, num_ders+1))
+
+    for A_mol_id in prange(A_num_mols):
+        if sym_kernel:
+            upper_B_mol_range=A_mol_id+1
+        else:
+            upper_B_mol_range=B_num_mols
+        for B_mol_id in range(upper_B_mol_range):
+            for A_ibo_id in range(A_num_ibos):
+                rho_A=A_orb_rhos[A_mol_id, A_ibo_id]
+                if np.abs(rho_A)<density_neglect:
+                    break
+                for B_ibo_id in range(B_num_ibos):
+                    rho_B=B_orb_rhos[B_mol_id, B_ibo_id]
+                    if np.abs(rho_B)<density_neglect:
+                        break
+                    cur_ibo_contribution=orb_orb_cov(A_orb_areps[A_mol_id, A_ibo_id, :, :], B_orb_areps[B_mol_id, B_ibo_id, :, :], A_arep_rhos[A_mol_id, A_ibo_id, :], B_arep_rhos[B_mol_id, B_ibo_id, :], A_num_ibo_atom_reps,
+                                                                B_num_ibo_atom_reps, inv_sq_width_params, density_neglect, with_ders=with_ders)
+                    if with_ders:
+                        cur_ibo_contribution[1:]-=cur_ibo_contribution[0]*(A_sp_log_ders[A_mol_id, A_ibo_id]+B_sp_log_ders[B_mol_id, B_ibo_id])/2
+                    Kernel[A_mol_id, B_mol_id,:]+=rho_A*rho_B*cur_ibo_contribution
+            if sym_kernel:
+                if A_mol_id != B_mol_id:
+                    Kernel[B_mol_id, A_mol_id, :]=Kernel[A_mol_id, B_mol_id, :]
+    return Kernel
+
+def lin_sep_IBO_kernel_conv(Ac, Bc, inv_sq_width_params, density_neglect, preserve_converted_arrays=True, with_ders=False):
+    if preserve_converted_arrays:
+        Ac_renormed=copy.deepcopy(Ac)
+        Bc_renormed=copy.deepcopy(Bc)
+    else:
+        Ac_renormed=Ac
+        Bc_renormed=Bc
+    Ac_renormed.ibo_arep_rhos=lin_sep_kern_renormalized_arep_rhos(Ac_renormed.ibo_atom_sreps, Ac_renormed.ibo_arep_rhos, Ac_renormed.ibo_rhos, inv_sq_width_params, density_neglect)
+    sym_kernel=(Bc is None)
+    if sym_kernel:
+        Bc_renormed=Ac_renormed
+    else:
+        Bc_renormed.ibo_arep_rhos=lin_sep_kern_renormalized_arep_rhos(Bc_renormed.ibo_atom_sreps, Bc_renormed.ibo_arep_rhos, Bc_renormed.ibo_rhos, inv_sq_width_params, density_neglect)
+    final_kernel=numba_lin_sep_IBO_kernel(Ac_renormed.ibo_atom_sreps, Ac_renormed.ibo_arep_rhos, Ac_renormed.ibo_rhos,
+                                    Bc_renormed.ibo_atom_sreps, Bc_renormed.ibo_arep_rhos, Bc_renormed.ibo_rhos,
+                                    inv_sq_width_params, density_neglect, sym_kernel, with_ders)
+    if with_ders:
+        return final_kernel
+    else:
+        return final_kernel[:, :, 0]
+
+def is_pair_reps(comp_arr):
+    return (hasattr(comp_arr[0], 'comps'))
+
+def lin_sep_IBO_kernel(A, B, inv_sq_width_params, density_neglect, with_ders=False):
+    pair_reps_A=is_pair_reps(A)
+    pair_reps_B=is_pair_reps(B)
+    Ac=GMO_sep_IBO_kern_input(oml_compound_array=A, pair_reps=pair_reps_A)
+    Bc=GMO_sep_IBO_kern_input(oml_compound_array=B, pair_reps=pair_reps_B)
+    return lin_sep_IBO_kernel_conv(Ac, Bc, inv_sq_width_params, density_neglect, preserve_converted_arrays=False, with_ders=with_ders)
+
+def lin_sep_IBO_sym_kernel_conv(Ac, inv_sq_width_params, density_neglect, with_ders=False, preserve_converted_arrays=True):
+    return lin_sep_IBO_kernel_conv(Ac, None, inv_sq_width_params, density_neglect, preserve_converted_arrays=preserve_converted_arrays, with_ders=with_ders)
+
+def lin_sep_IBO_sym_kernel(A, inv_sq_width_params, density_neglect, with_ders=False):
+    pair_reps_A=is_pair_reps(A)
+    Ac=GMO_sep_IBO_kern_input(oml_compound_array=A, pair_reps=pair_reps_A)
+    return lin_sep_IBO_sym_kernel_conv(Ac, inv_sq_width_params, density_neglect, preserve_converted_arrays=False, with_ders=with_ders)
+
+### Generate log derivatives.
+@njit(fastmath=True)
+def orb_self_cov_wders(orb_areps, arep_rhos, max_num_ibo_atom_reps, inv_sq_width_params, density_neglect):
+    return orb_orb_cov(orb_areps, orb_areps, arep_rhos, arep_rhos, max_num_ibo_atom_reps, max_num_ibo_atom_reps, inv_sq_width_params, density_neglect, with_ders=True)
+
+@njit(fastmath=True, parallel=True)
+def self_product_log_ders(orb_areps, arep_rhos, ibo_rhos, inv_sq_width_params, density_neglect):
+    num_mols=orb_areps.shape[0]
+    num_ibos=orb_areps.shape[1]
+    num_ibo_atom_reps=orb_areps.shape[2]
+
+    num_ders=inv_sq_width_params.shape[0]
+
+    log_ders=np.zeros((num_mols, num_ibos, num_ders))
+
+    cur_prod_self_der=np.zeros((num_ders+1,))
+    for mol_id in prange(num_mols):
+        for ibo_id in range(num_ibos):
+            if np.abs(ibo_rhos[mol_id, ibo_id])<density_neglect:
+                break
+            cur_prod_self_der=orb_self_cov_wders(orb_areps[mol_id, ibo_id, :, :], arep_rhos[mol_id, ibo_id, :], num_ibo_atom_reps, inv_sq_width_params, density_neglect)
+            log_ders[mol_id, ibo_id, :]=cur_prod_self_der[1:]/cur_prod_self_der[0]
+    return log_ders
+

@@ -35,9 +35,9 @@ class OML_rep_params:
 #   ibo_atom_rho_comp   - compose IBO representation out of AO's centered on minimal ammount of atoms that would (approximately) account for at least
 #                         ibo_atom_rho_comp of the electronic density.
 #   l_max               - maximal value of angular momentum.
-    def __init__(self, tol_orb_cutoff=1.0e-6,  ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
+    def __init__(self, tol_orb_cutoff=0.0,  ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
                     fock_based_coup_mat=False, num_prop_times=1, prop_delta_t=1.0, fbcm_exclude_Fock=False,
-                    fbcm_pseudo_orbs=False, ibo_fidelity_rep=False, norm_by_nelec=False):
+                    fbcm_pseudo_orbs=False, ibo_fidelity_rep=False):
         self.tol_orb_cutoff=tol_orb_cutoff
         self.ibo_atom_rho_comp=ibo_atom_rho_comp
         self.max_angular_momentum=max_angular_momentum
@@ -46,7 +46,6 @@ class OML_rep_params:
         self.num_prop_times=num_prop_times
         self.prop_delta_t=prop_delta_t
         self.fbcm_pseudo_orbs=fbcm_pseudo_orbs
-        self.norm_by_nelec=norm_by_nelec
         self.fbcm_exclude_Fock=fbcm_exclude_Fock
 
         self.ibo_fidelity_rep=ibo_fidelity_rep
@@ -247,7 +246,7 @@ class weighted_array(list):
                     ignored_rhos+=upper_cutoff
             del(self[remaining_length:])
             for el_id in range(remaining_length):
-                self[el_id].rho-=density_cut
+                self[el_id].rho=max(0.0, self[el_id].rho-density_cut) # max was introduced in case there is some weird numerical noise.
             self.normalize_rhos()
 
 # Related to IBO fidelity representation.

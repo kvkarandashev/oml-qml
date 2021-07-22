@@ -265,8 +265,6 @@ class OML_compound(Compound):
             for orb_rep_counter in range(len(self.orb_reps)):
                 if not self.orb_reps[orb_rep_counter].virtual:
                     self.orb_reps[orb_rep_counter].rho=ibo_occ
-                if rep_params.norm_by_nelec:
-                    self.orb_reps[orb_rep_counter].rho/=sum(self.nuclear_charges)
     #   Find maximal value of angular momentum for AOs of current molecule.
     def find_max_angular_momentum(self):
         if not self.mats_created:

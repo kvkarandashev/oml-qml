@@ -6,3 +6,4 @@ jax
 pyscf
 jaxlib
 geometric
+numba
