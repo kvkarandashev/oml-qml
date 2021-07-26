@@ -2,7 +2,7 @@
 
 MYDIR=$(pwd)
 package_name=qml
-if [ -z "$(pip show $package_name 2>&1 >/dev/null)" ]
+if [ ! -z "$(pip show $package_name 2>/dev/null)" ]
 then
     rm -Rf "$(pip show --verbose $package_name | awk '{if ($1=="Location:") print $2}')/$package_name"
 fi

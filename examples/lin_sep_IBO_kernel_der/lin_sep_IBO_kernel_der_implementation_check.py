@@ -1,3 +1,5 @@
+# A script that compares analytical derivative values with the ones obtained via finite difference.
+
 import glob, random, copy
 from qml.oml_kernels import lin_sep_IBO_sym_kernel, lin_sep_IBO_kernel
 from qml.oml_compound_list import OML_compound_list_from_xyzs
@@ -16,8 +18,6 @@ def model_MSE(K_train, K_check, train_quant, check_quant, lambda_val):
 xyz_list=glob.glob("../../tests/qm7/*.xyz")
 
 inv_sq_width_params=np.repeat(1.0, 22)
-
-density_neglect=1e-9
 
 lambda_val=0.5
 
@@ -44,9 +44,8 @@ B=OML_compound_list_from_xyzs(xyz_list_B)
 A.generate_orb_reps(rep_params)
 B.generate_orb_reps(rep_params)
 
-K_train=lin_sep_IBO_sym_kernel(A, inv_sq_width_params, density_neglect)
-K_check=lin_sep_IBO_kernel(B, A, inv_sq_width_params, density_neglect)
-
+K_train=lin_sep_IBO_sym_kernel(A, inv_sq_width_params)
+K_check=lin_sep_IBO_kernel(B, A, inv_sq_width_params)
 
 K_train_fd_der=np.zeros((num_A_mols, num_A_mols))
 K_check_fd_der=np.zeros((num_B_mols, num_A_mols))
@@ -59,8 +58,8 @@ fd_step=0.001
 for fd_grid_step in [-1, 1]:
     cur_inv_sq_width_params=copy.deepcopy(inv_sq_width_params)
     cur_inv_sq_width_params[der_id]+=fd_step*fd_grid_step
-    cur_K_train=lin_sep_IBO_sym_kernel(A, cur_inv_sq_width_params, density_neglect)
-    cur_K_check=lin_sep_IBO_kernel(B, A, cur_inv_sq_width_params, density_neglect)
+    cur_K_train=lin_sep_IBO_sym_kernel(A, cur_inv_sq_width_params)
+    cur_K_check=lin_sep_IBO_kernel(B, A, cur_inv_sq_width_params)
     MSE_der+=model_MSE(cur_K_train, cur_K_check, train_quant, check_quant, lambda_val)*fd_grid_step
     MSE_der_lambda+=model_MSE(K_train, K_check, train_quant, check_quant, lambda_val+fd_step*fd_grid_step)*fd_grid_step
 
@@ -71,8 +70,8 @@ MSE_der/=2*fd_step
 K_check_fd_der/=2*fd_step
 MSE_der_lambda/=2*fd_step
 
-K_train_wders=lin_sep_IBO_sym_kernel(A, inv_sq_width_params, density_neglect, with_ders=True)
-K_check_wders=lin_sep_IBO_kernel(B, A, inv_sq_width_params, density_neglect, with_ders=True)
+K_train_wders=lin_sep_IBO_sym_kernel(A, inv_sq_width_params, with_ders=True)
+K_check_wders=lin_sep_IBO_kernel(B, A, inv_sq_width_params, with_ders=True)
 
 print("K_train")
 print(K_train)
@@ -94,7 +93,7 @@ print(K_check_fd_der)
 print(K_check_wders[:,:,der_id+1])
 print(K_check_fd_der-K_check_wders[:,:,der_id+1])
 
-GOO=Gradient_optimization_obj(A, train_quant, B, check_quant, density_neglect=density_neglect)
+GOO=Gradient_optimization_obj(A, train_quant, B, check_quant)
 params0=np.array([lambda_val, *inv_sq_width_params])
 print("MSE")
 MSE_ref=model_MSE(K_train, K_check, train_quant, check_quant, lambda_val)
