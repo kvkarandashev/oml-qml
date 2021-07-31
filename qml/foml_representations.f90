@@ -20,6 +20,73 @@
 ! OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 ! SOFTWARE.
 
+SUBROUTINE fgen_ibo_global_couplings(ibo_coeffs, ibo_id, angular_momenta, max_ang_mom,&
+                            num_aos, coup_mats, num_coup_mats, scalar_reps)
+implicit none
+double precision, dimension(:, :), intent(in):: ibo_coeffs
+integer, intent(in):: ibo_id
+double precision, dimension(:, :, :), intent(in):: coup_mats
+integer, dimension(:), intent(in):: angular_momenta
+integer, intent(in):: max_ang_mom, num_aos
+double precision, dimension(:), intent(inout):: scalar_reps
+integer:: cur_array_position_other, ang_mom1, ang_mom2, index_to_add,&
+                    mat_counter, num_coup_mats, num_ibos, other_ibo_id
+logical:: self_term_present
+
+    cur_array_position_other=1
+    scalar_reps=0.0
+
+    do mat_counter=1, num_coup_mats
+        do ang_mom1=0, max_ang_mom
+            do ang_mom2=0, max_ang_mom
+                self_term_present=(ang_mom1<=ang_mom2)
+                do other_ibo_id=1, num_ibos
+                    if (other_ibo_id==ibo_id) then
+                        if (self_term_present) then
+                            index_to_add=cur_array_position_other+1
+                        else
+                            cycle
+                        endif
+                    else
+                        index_to_add=cur_array_position_other
+                    endif
+                    call add_ibo_ibo_sq_coupling(ibo_coeffs(:, other_ibo_id), ibo_coeffs(:, ibo_id),&
+                            coup_mats(:, :, mat_counter), angular_momenta, ang_mom1, ang_mom2, num_aos,&
+                            scalar_reps(index_to_add))
+                enddo
+                if (self_term_present) then
+                    cur_array_position_other=cur_array_position_other+2
+                else
+                    cur_array_position_other=cur_array_position_other+1
+                endif
+            enddo
+        enddo
+    enddo
+
+END SUBROUTINE
+
+SUBROUTINE add_ibo_ibo_sq_coupling(ibo_coeffs1, ibo_coeffs2, coup_mat, angular_momenta,&
+                                ang_mom1, ang_mom2, num_aos, added_output)
+integer, intent(in):: num_aos, ang_mom1, ang_mom2
+integer, intent(in), dimension(num_aos):: angular_momenta
+double precision, intent(in), dimension(num_aos):: ibo_coeffs1, ibo_coeffs2
+double precision, intent(in), dimension(num_aos, num_aos):: coup_mat
+double precision, intent(inout):: added_output
+integer:: aos_id1, aos_id2
+double precision:: coupling
+
+    coupling=0.0
+    do aos_id1=1, num_aos
+        if (angular_momenta(aos_id1)/=ang_mom1) cycle
+        do aos_id2=1, num_aos
+            if (angular_momenta(aos_id2)/=ang_mom2) cycle
+            coupling=coupling+ibo_coeffs1(aos_id1)*ibo_coeffs2(aos_id2)*coup_mat(aos_id1, aos_id2)
+        enddo
+    enddo
+    added_output=added_output+coupling**2
+
+END SUBROUTINE
+
 
 SUBROUTINE fang_mom_descr(atom_ao_range, coeffs, angular_momenta, ovlp_mat, max_ang_mom, num_aos, scalar_reps, rho_val)
 implicit none

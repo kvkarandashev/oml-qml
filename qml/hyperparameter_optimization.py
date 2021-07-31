@@ -1,9 +1,13 @@
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 import math, random, copy
-from .oml_kernels import lin_sep_IBO_kernel_conv, lin_sep_IBO_sym_kernel_conv, GMO_sep_IBO_kern_input, is_pair_reps, oml_ensemble_avs_stddevs
-from scipy.optimize import minimize
+from .oml_kernels import lin_sep_IBO_kernel_conv, lin_sep_IBO_sym_kernel_conv, GMO_sep_IBO_kern_input, oml_ensemble_avs_stddevs, gauss_sep_IBO_kernel_conv, gauss_sep_IBO_sym_kernel_conv
 
+################
+### TO-DO replace MSE with "error measure", allowing to choose between MSE and MAE?
+################
+
+# Procedures from Lambda_opt_step to MAE bisection_optimization were the old iteration for gradient-based optimization, but only limited to the lambda variable.
 class Lambda_opt_step:
     def __init__(self, lambda_val=None):
         self.lambda_val=lambda_val
@@ -149,98 +153,46 @@ def MAE_bisection_optimization(initial_lambda_opt_step, train_kernel, train_vals
         return middle_lambda, final_bisection_step_MAE
 
 
-
+#########
+# Procedures for general gradient-based optimization.
+#########
 class Gradient_optimization_obj:
-    def __init__(self, training_compounds, training_quants, check_compounds, check_quants):
-        self.training_compounds=GMO_sep_IBO_kern_input(training_compounds, pair_reps=is_pair_reps(training_compounds))
-        self.num_params=self.training_compounds.max_num_scalar_reps+1
-
-        self.check_compounds=GMO_sep_IBO_kern_input(check_compounds, pair_reps=is_pair_reps(training_compounds))
+    def __init__(self, training_compounds, training_quants, check_compounds, check_quants, use_Gauss=False):
+        self.training_compounds=GMO_sep_IBO_kern_input(training_compounds)
+        self.init_kern_funcs(self.training_compounds, use_Gauss=use_Gauss)
+        self.check_compounds=GMO_sep_IBO_kern_input(check_compounds)
 
         self.training_quants=training_quants
         self.check_quants=check_quants
-    def MSE(self, parameters):
-        self.reinitiate_matrices(parameters)
-        self.reinitiate_MSE(parameters)
-        print("# Current parameter values:", parameters)
-        print("# Current MAE:", np.mean(np.abs(self.predictions-self.check_quants)), "MSE:", self.cur_MSE)
-        return self.cur_MSE
 
-
-    def MSE_der(self, parameters):
-        self.reinitiate_mats_ders(parameters)
-        self.reinitiate_MSE_der(parameters)
-
-        print("# Current parameter values:", parameters)
-        print("# Current MSE derivatives:", self.cur_MSE_der)
-        return self.cur_MSE_der
-
-    def MSE_and_MSE_log_der(self, parameter_logs):
-        parameters=np.exp(parameter_logs)
-        self.reinitiate_mats_ders(parameters)
-        self.reinitiate_MSE_der(parameters)
-        self.reinitiate_MSE(parameters)
-        if self.train_kern_invertible:
-            return self.cur_MSE, self.cur_MSE_der/parameters
+    def init_kern_funcs(self, sample_coumpound_list, use_Gauss=False):
+        if use_Gauss:
+            self.sym_kern_func=gauss_sep_IBO_sym_kernel_conv
+            self.def_kern_func=gauss_sep_IBO_kernel_conv
+            self.num_params=sample_coumpound_list.max_num_scalar_reps+2
         else:
-            return None, None
-
-    def reinitiate_MSE(self, parameters):
-        if self.train_kern_invertible:
-            self.cur_MAE=np.mean(np.abs(self.predictions-self.check_quants))
-            self.cur_MSE=np.mean((self.predictions-self.check_quants)**2)
-        else:
-            self.cur_MAE=None
-            self.cur_MSE=None
-
-    def reinitiate_MSE_der(self, parameters):
-        if self.train_kern_invertible:
-            self.cur_MSE_der=np.empty((self.num_params,), float)
-            for param_id in range(self.num_params):
-                cur_train_der=self.train_kernel_ders[:, :, param_id]
-                cur_check_der=self.check_kernel_ders[:, :, param_id]
-                self.cur_MSE_der[param_id]=2*np.mean((self.predictions-self.check_quants)*self.der_predictions(cur_train_der, cur_check_der))   
-        else:
-            self.cur_MSE_der=None
-
-
-    def der_predictions(self, train_der, check_der):
-        output=np.matmul(train_der, self.alphas)
-        output=cho_solve(self.train_cho_decomp, output)
-        output=-np.matmul(self.check_kernel, output)
-        output+=np.matmul(check_der, self.alphas)
-        return output
+            self.sym_kern_func=lin_sep_IBO_sym_kernel_conv
+            self.def_kern_func=lin_sep_IBO_kernel_conv
+            self.num_params=sample_coumpound_list.max_num_scalar_reps+1
 
     def reinitiate_basic_params(self, parameters):
         self.lambda_val=parameters[0]
         self.inv_sq_width_params=parameters[1:]
         self.num_ders=len(parameters)
 
-    def reinitiate_basic_components(self, train_kernel):
-        train_kernel[np.diag_indices_from(train_kernel)]+=self.lambda_val
-        try:
-            self.train_cho_decomp=cho_factor(train_kernel)
-        except np.linalg.LinAlgError: # means mod_train_kernel is not invertible
-            self.train_cho_decomp=None
-        self.train_kern_invertible=(self.train_cho_decomp is not None)
-        if self.train_kern_invertible:
-            self.alphas=cho_solve(self.train_cho_decomp, self.training_quants)
-            self.predictions=np.matmul(self.check_kernel, self.alphas)
+    def recalculate_kernel_matrices(self):
+        self.train_kernel=self.sym_kern_func(self.training_compounds, self.inv_sq_width_params)
+        self.check_kernel=self.def_kern_func(self.check_compounds, self.training_compounds, self.inv_sq_width_params)
 
-    def reinitiate_matrices(self, parameters):
-        self.reinitiate_basic_params(parameters)
-        train_kernel=lin_sep_IBO_sym_kernel_conv(self.training_compounds, self.inv_sq_width_params)
-        self.check_kernel=lin_sep_IBO_kernel_conv(self.check_compounds, self.training_compounds, self.inv_sq_width_params)
-        self.reinitiate_basic_components(train_kernel)
+    def recalculate_kernel_mats_ders(self):
+        train_kernel_wders=self.sym_kern_func(self.training_compounds, self.inv_sq_width_params, with_ders=True)
+        check_kernel_wders=self.def_kern_func(self.check_compounds, self.training_compounds, self.inv_sq_width_params, with_ders=True)
 
-    def reinitiate_mats_ders(self, parameters):
-        self.reinitiate_basic_params(parameters)
-        train_kernel_wders=lin_sep_IBO_sym_kernel_conv(self.training_compounds, self.inv_sq_width_params, with_ders=True)
-        check_kernel_wders=lin_sep_IBO_kernel_conv(self.check_compounds, self.training_compounds, self.inv_sq_width_params, with_ders=True)
-
-        train_kernel=train_kernel_wders[:, :, 0]
+        self.train_kernel=train_kernel_wders[:, :, 0]
         self.check_kernel=check_kernel_wders[:, :, 0]
+
         num_train_compounds=self.training_compounds.num_mols
+
         self.train_kernel_ders=np.zeros((num_train_compounds, num_train_compounds, self.num_params))
         for mol_id in range(num_train_compounds):
             self.train_kernel_ders[mol_id, mol_id, 0]=1.0
@@ -249,125 +201,414 @@ class Gradient_optimization_obj:
         self.train_kernel_ders[:, :, 1:]=train_kernel_wders[:, :, 1:]
         self.check_kernel_ders[:, :, 1:]=check_kernel_wders[:, :, 1:]
 
-        self.reinitiate_basic_components(train_kernel)
-
-class GOO_MSE_standalone_log:
-    def __init__(self, GOO):
-        self.GOO=GOO
-    def call_wparams(self, parameters):
-        return self.GOO.MSE(parameters)
-    def __call__(self, parameter_logs):
-        return self.call_wparams(np.exp(parameter_logs))
-
-class GOO_MSE_der_standalone_log(GOO_MSE_standalone_log):
-    def call_wparams(self, parameters):
-        ders=self.GOO.MSE_der(parameters)
-        return ders/parameters
+    def reinitiate_basic_components(self):
         
+        modified_train_kernel=np.copy(self.train_kernel)
+        modified_train_kernel[np.diag_indices_from(modified_train_kernel)]+=self.lambda_val
+        try:
+            self.train_cho_decomp=cho_factor(modified_train_kernel)
+        except np.linalg.LinAlgError: # means mod_train_kernel is not invertible
+            self.train_cho_decomp=None
+        self.train_kern_invertible=(self.train_cho_decomp is not None)
+        if self.train_kern_invertible:
+            self.alphas=cho_solve(self.train_cho_decomp, self.training_quants)
+            self.predictions=np.matmul(self.check_kernel, self.alphas)
 
-def GOO_MSE_der_pair(*goo_args, **goo_kwargs):
-    return GOO_MSE_standalone(*goo_args, **goo_kwargs), GOO_MSE_der_standalone(*goo_args, **goo_kwargs)
-
-def min_sep_IBO_MSE_train_defined(training_compounds, training_quants, check_compounds, check_quants, init_lambda_guess, init_inv_sq_width_guess):
-    init_log_param_guess=np.zeros((init_inv_sq_width_guess.shape[0]+1,))
-    init_log_param_guess[0]=init_lambda_guess
-    init_log_param_guess[1:]=np.array(init_inv_sq_width_guess)
-    init_log_param_guess=np.log(init_log_param_guess)
-    GOO=Gradient_optimization_obj(training_compounds, training_quants, check_compounds, check_quants)
-    MSE_func=GOO_MSE_standalone_log(GOO)
-    MSE_der_func=GOO_MSE_der_standalone_log(GOO)
-
-    def callback_func(cur_x):
-        global GOO
-        parameters=np.exp(cur_x)
-        print("Current parameters:", "lambda:", parameters[0], "inv_sq_width_params:", parameters[1:])
-        print("MSE:", GOO.MSE, "MSE_der:", GOO.MSE_der)
-
-    result=minimize(MSE_func, init_log_param_guess, method='BFGS', jac=MSE_der_func, options={'disp': True}, callback=callback_func)
-    optimized_params=np.exp(result.x)
-    return {"lambda_val" : optimized_params[0], "inv_sq_width_params" : optimized_params[1:], "success" : result.success}
-
-def min_sep_IBO_MSE(compound_list, quant_list, init_lambda_guess=0.001, training_set_ratio=0.5, initial_guess_sigma_rescale=1.0):
-    print("Calculating standard deviations.")
-    avs, stddevs=oml_ensemble_avs_stddevs(compound_list)
-    print("Found stddevs:", stddevs)
-    init_inv_sq_width_guess=0.25/(initial_guess_sigma_rescale*stddevs)**2
-
-    comp_list_copy=copy.deepcopy(compound_list)
-    quant_list_copy=copy.deepcopy(quant_list)
-    comp_quant_list=list(zip(comp_list_copy, quant_list_copy))
-    divisor=int(len(compound_list)*training_set_ratio)
-    random.shuffle(comp_quant_list)
-    comp_list_shuffled, quant_list_shuffled = zip(*comp_quant_list)
-
-    return min_sep_IBO_MSE_train_defined(comp_list_shuffled[:divisor], quant_list_shuffled[:divisor], comp_list_shuffled[divisor:], quant_list_shuffled[divisor:], init_lambda_guess, init_inv_sq_width_guess)
-
-def min_sep_IBO_MSE_random_walk(compound_list, quant_list, init_lambda_guess=0.001, training_set_ratio=0.5, initial_guess_sigma_rescale=1.0, num_iters=25, step_magnitude=0.5,
-                                    keep_init_lambda=False, negligible_below_default=None, negligible_below_lambda=None, exclusion_permanent=True):
-    print("Calculating standard deviations.")
-    avs, stddevs=oml_ensemble_avs_stddevs(compound_list)
-    print("Found stddevs:", stddevs)
-    init_inv_sq_width_guess=0.25/(initial_guess_sigma_rescale*stddevs)**2
-
-    comp_list_copy=copy.deepcopy(compound_list)
-    quant_list_copy=copy.deepcopy(quant_list)
-    comp_quant_list=list(zip(comp_list_copy, quant_list_copy))
-    divisor=int(len(compound_list)*training_set_ratio)
-    random.shuffle(comp_quant_list)
-    comp_list_shuffled, quant_list_shuffled = zip(*comp_quant_list)
-
-    tot_num_params=init_inv_sq_width_guess.shape[0]+1
-    init_param_guess=np.zeros((tot_num_params,))
-    init_param_guess[0]=init_lambda_guess
-    init_param_guess[1:]=np.array(init_inv_sq_width_guess)
-    GOO=Gradient_optimization_obj(comp_list_shuffled[:divisor], quant_list_shuffled[:divisor],
-                                    comp_list_shuffled[divisor:], quant_list_shuffled[divisor:])
-
-    old_MSE_log_params=np.log(init_param_guess)
-    old_MSE_val, old_MSE_log_grad=GOO.MSE_and_MSE_log_der(old_MSE_log_params)
-
-    noise_magnitude=0.0
-
-    print("Starting point:", old_MSE_log_params, "MSE:", old_MSE_val, "MAE:", GOO.cur_MAE)
-
-    parameters_changed=[True for i in range(tot_num_params)]
-
-    negligible_below_vals=[negligible_below_default for i in range(tot_num_params)]
-    if negligible_below_lambda is not None:
-        negligible_below_vals[0]=negligible_below_lambda
-
-    for iter_id in range(num_iters):
-        for param_id, negligible_below in enumerate(negligible_below_vals):
-            if (negligible_below is not None):
-                if exclusion_permanent:
-                    if parameters_changed[param_id]:
-                        parameters_changed[param_id]=(old_MSE_log_params[param_id]>negligible_below)
-                else:
-                    parameters_changed[param_id]=((old_MSE_log_params[param_id]>negligible_below) or (old_MSE_log_grad[param_id] < 0.0))
-            if (keep_init_lambda and (param_id==0)):
-                parameters_changed[param_id]=False
-            if not parameters_changed[param_id]:
-                old_MSE_log_grad[param_id]=0.0
-
-        normalized_gradient=old_MSE_log_grad/np.sqrt(np.sum(old_MSE_log_grad**2))
-        print("Normalized and filtered gradient:", normalized_gradient)
-        new_MSE_log_params=old_MSE_log_params-normalized_gradient*step_magnitude
-        for param_id in range(tot_num_params):
-            if not (keep_init_lambda and (param_id==0)):
-                new_MSE_log_params[param_id]+=np.random.normal()*noise_magnitude
-        MSE_val, MSE_log_grad=GOO.MSE_and_MSE_log_der(new_MSE_log_params)
-        print("Trial:", new_MSE_log_params, "MSE:", MSE_val, "MAE:", GOO.cur_MAE)
-        print("Logarithmic derivatives:", MSE_log_grad)
-        replace=False
-        if MSE_val is not None:
-            replace=(MSE_val < old_MSE_val)
-        if replace:
-            old_MSE_val=MSE_val
-            old_MSE_log_grad=MSE_log_grad
-            old_MSE_log_params=new_MSE_log_params
-            noise_magnitude=0.0
+    def reinitiate_MSE(self):
+        if self.train_kern_invertible:
+            self.cur_MAE=np.mean(np.abs(self.predictions-self.check_quants))
+            self.cur_MSE=np.mean((self.predictions-self.check_quants)**2)
         else:
-            noise_magnitude+=step_magnitude/np.sqrt(tot_num_params)
+            self.cur_MAE=None
+            self.cur_MSE=None
 
-    optimized_params=np.exp(old_MSE_log_params)
-    return {"lambda_val" : optimized_params[0], "inv_sq_width_params" : optimized_params[1:]}
+    def der_predictions(self, train_der, check_der):
+        output=np.matmul(train_der, self.alphas)
+        output=cho_solve(self.train_cho_decomp, output)
+        output=-np.matmul(self.check_kernel, output)
+        output+=np.matmul(check_der, self.alphas)
+        return output
+
+    def reinitiate_MSE_der(self, lambda_der_only=False):
+        if self.train_kern_invertible:
+            self.cur_MSE_der=np.zeros((self.num_params,))
+            if lambda_der_only:
+                upper_param_id=1
+            else:
+                upper_param_id=self.num_params
+            for param_id in range(upper_param_id):
+                cur_train_der=self.train_kernel_ders[:, :, param_id]
+                cur_check_der=self.check_kernel_ders[:, :, param_id]
+                self.cur_MSE_der[param_id]=2*np.mean((self.predictions-self.check_quants)*self.der_predictions(cur_train_der, cur_check_der))   
+        else:
+            self.cur_MSE_der=non_invertible_default_log_der(self.num_params)
+
+    def MSE(self, parameters):
+        self.reinitiate_basic_params(parameters)
+        self.recalculate_kernel_matrices()
+        self.reinitiate_basic_components()
+        self.reinitiate_MSE()
+        print("# Current parameter vales:", parameters)
+        print("# Current MAE:", self.cur_MAE, "MSE:", self.cur_MSE)
+        return self.cur_MSE
+
+    def MSE_der(self, parameters, lambda_der_only=False):
+        self.reinitiate_basic_params(parameters)
+        self.recalculate_kernel_mats_ders()
+        self.reinitiate_basic_components()
+        self.reinitiate_MSE_der(lambda_der_only=lambda_der_only)
+
+        print("# Current parameter values:", parameters)
+        print("# Current MSE derivatives:", self.cur_MSE_der)
+        return self.cur_MSE_der
+
+    def MSE_and_MSE_der(self, parameters, lambda_der_only=False):
+        self.reinitiate_basic_params(parameters)
+        self.recalculate_kernel_mats_ders()
+        self.reinitiate_basic_components()
+        self.reinitiate_MSE_der(lambda_der_only=lambda_der_only)
+        self.reinitiate_MSE()
+        return self.cur_MSE, self.cur_MSE_der
+
+
+def non_invertible_default_log_der(param_vec_length):
+    return np.repeat(-1.0, param_vec_length)
+
+class GOO_ensemble_subset(Gradient_optimization_obj):
+    def __init__(self, training_indices, check_indices, all_quantities, num_params):
+        self.training_indices=training_indices
+        self.check_indices=check_indices
+
+        self.num_params=num_params
+
+        self.training_quants=all_quantities[self.training_indices]
+        self.check_quants=all_quantities[self.check_indices]
+    def recalculate_kernel_matrices(self, global_matrix=None, global_matrix_ders=None):
+        if global_matrix is not None:
+            self.train_kernel=global_matrix[self.training_indices, :][:, self.training_indices]
+            self.check_kernel=global_matrix[self.check_indices, :][:, self.training_indices]
+    def recalculate_kernel_mats_ders(self, global_matrix=None, global_matrix_ders=None):
+        self.recalculate_kernel_matrices(global_matrix=global_matrix)
+        if global_matrix_ders is not None:
+            num_train=len(self.training_indices)
+            self.train_kernel_ders=np.zeros((num_train, num_train, self.num_params))
+            self.check_kernel_ders=np.zeros((len(self.check_indices), num_train, self.num_params))
+            for mol_id in range(num_train):
+                self.train_kernel_ders[mol_id, mol_id, 0]=1.0
+
+            self.train_kernel_ders[:, :, 1:]=global_matrix_ders[self.training_indices, :][:, self.training_indices][:]
+            self.check_kernel_ders[:, :, 1:]=global_matrix_ders[self.check_indices, :][:, self.training_indices][:]
+
+# This class was introduced to enable multiple cross-validation.
+class GOO_ensemble(Gradient_optimization_obj):
+    def __init__(self, all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=False):
+        self.all_compounds=GMO_sep_IBO_kern_input(all_compounds)
+
+        self.init_kern_funcs(self.all_compounds, use_Gauss=use_Gauss)
+
+        self.goo_ensemble_subsets=[]
+        for train_id_list, check_id_list in zip(train_id_lists, check_id_lists):
+            self.goo_ensemble_subsets.append(GOO_ensemble_subset(train_id_list, check_id_list, all_quantities, self.num_params))
+        self.num_subsets=len(self.goo_ensemble_subsets)
+
+    def MSE_and_MSE_der(self, parameters, recalc_global_matrices=True, lambda_der_only=False):
+        if recalc_global_matrices:
+            self.recalculate_global_matrices(parameters)
+        MSE_mean=0.0
+        MSE_mean_log_der=np.zeros((len(parameters),))
+        for subset_id in range(self.num_subsets):
+            cur_MSE, cur_MSE_log_der=self.goo_ensemble_subsets[subset_id].MSE_and_MSE_der(parameters, lambda_der_only=lambda_der_only)
+            if cur_MSE is None:
+                MSE_mean=0.0
+                MSE_mean_log_der=non_invertible_default_log_der(len(parameters))
+                break
+            else:
+                MSE_mean+=cur_MSE
+                MSE_mean_log_der+=cur_MSE_log_der
+        MSE_mean/=self.num_subsets
+        MSE_mean_log_der/=self.num_subsets
+        return MSE_mean, MSE_mean_log_der
+
+    def recalculate_global_matrices(self, parameters):
+        global_kernel_wders=self.sym_kern_func(self.all_compounds, parameters[1:], with_ders=True)
+        self.global_matrix=global_kernel_wders[:, :, 0]
+        self.global_matrix_ders=global_kernel_wders[:, :, 1:]
+        for subset_id in range(self.num_subsets):
+            self.goo_ensemble_subsets[subset_id].recalculate_kernel_mats_ders(global_matrix=self.global_matrix, global_matrix_ders=self.global_matrix_ders)
+
+def generate_random_GOO_ensemble(all_compounds, all_quantities, num_kfolds=8, training_set_ratio=0.5, use_Gauss=False):
+    num_points=len(all_quantities)
+    divisor=int(num_points*training_set_ratio)
+
+    all_indices=list(range(num_points))
+
+    train_id_lists=[]
+    check_id_lists=[]
+
+    for kfold_id in range(num_kfolds):
+        random.shuffle(all_indices)
+        train_id_lists.append(all_indices[:divisor])
+        check_id_lists.append(all_indices[divisor:])
+
+    return GOO_ensemble(all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=use_Gauss)
+    
+
+#   For going between the full hyperparameter set (lambda, global sigma, and other sigmas)
+#   and a reduced hyperparameter set. The default class uses no reduction, just rescaling to logarithms.
+class Reduced_hyperparam_func:
+    def __init__(self, base_inv_sqwidth_params, use_Gauss=False):
+        self.base_inv_sqwidth_params=base_inv_sqwidth_params
+        self.num_full_params=len(self.base_inv_sqwidth_params)+1
+        if use_Gauss:
+            self.num_full_params+=1
+        self.num_reduced_params=self.num_full_params
+    def reduced_params_to_full(self, reduced_parameters):
+        return np.exp(reduced_parameters)
+    def full_derivatives_to_reduced(self, full_derivatives, full_parameters):
+        return full_derivatives*full_parameters
+    def full_params_to_reduced(self, full_parameters):
+        return np.log(full_parameters)
+    def initial_reduced_parameter_guess(self, init_lambda, *other_args):
+        output=np.zeros((self.num_full_params,))
+        output[0]=np.log(init_lambda)
+        output[-len(self.base_inv_sqwidth_params):]=np.log(self.base_inv_sqwidth_params)
+        return output
+
+# For using a simple rescaling coefficient for sigmas.
+class Single_rescaling_rhf(Reduced_hyperparam_func):
+    def __init__(self, base_inv_sqwidth_params, use_Gauss=False):
+        self.base_inv_sqwidth_params=base_inv_sqwidth_params
+        self.num_full_params=len(base_inv_sqwidth_params)+1
+        self.num_reduced_params=2
+        self.use_Gauss=use_Gauss
+        self.sigmas_start_id=1
+        if self.use_Gauss:
+            self.num_full_params+=1
+            self.num_reduced_params+=1
+            self.sigmas_start_id+=1
+    def reduced_params_to_full(self, reduced_parameters):
+        output=np.zeros((self.num_full_params,))
+        output[:self.sigmas_start_id]=np.exp(reduced_parameters[:self.sigmas_start_id])
+        output[self.sigmas_start_id:]=self.base_inv_sqwidth_params*np.exp(reduced_parameters[-1])
+        return output
+    def full_derivatives_to_reduced(self, full_derivatives, full_parameters):
+        output=np.zeros((self.num_reduced_params,))
+        output[:self.sigmas_start_id]=full_derivatives[:self.sigmas_start_id]*full_parameters[:self.sigmas_start_id]
+        for sigma_id in range(self.sigmas_start_id, self.num_full_params):
+            output[-1]+=full_derivatives[sigma_id]*full_parameters[sigma_id]
+        return output
+    def full_params_to_reduced(self, full_parameters):
+        output=np.zeros((self.num_reduced_params,))
+        output[:self.sigmas_start_id]=np.log(full_parameters[:self.sigmas_start_id])
+        est_counter=0
+        for sigma_id in range(self.sigmas_start_id, self.num_full_params):
+            output[-1]+=np.log(full_parameters[sigma_id]/self.base_inv_sqwidth_params[sigma_id])
+            est_counter+=1
+        output[-1]/=est_counter
+        return
+    def initial_reduced_parameter_guess(self, init_lambda, *other_args):
+        if use_Gauss:
+            return np.array([np.log(init_lambda), 1.0, 1.0])
+        else:
+            return np.array([np.log(init_lambda), 1.0])
+
+
+class Optimizer_state:
+    def __init__(self, MSE, MSE_ders, MSE_red_ders, parameters, red_parameters):
+        self.MSE=MSE
+        self.MSE_ders=MSE_ders
+        self.MSE_red_ders=MSE_red_ders
+        self.parameters=parameters
+        self.red_parameters=red_parameters
+    def extended_greater(self, other_state):
+        if self.MSE is None:
+            return True
+        else:
+            if other_state.MSE is None:
+                return False
+            else:
+                return self.MSE>other_state.MSE
+    def __gt__(self, other_state):
+        return self.extended_greater(other_state)
+    def __lt__(self, other_state):
+        return (not self.extended_greater(other_state))
+    def lambda_der(self):
+        return self.MSE_ders[0]
+    def lambda_val(self):
+        return self.red_parameters[0]
+
+class Optimizer_state_generator:
+    def __init__(self, goo_ensemble, reduced_hyperparam_func):
+        self.goo_ensemble=goo_ensemble
+        self.reduced_hyperparam_func=reduced_hyperparam_func
+    def __call__(self, reduced_parameters, recalc_global_matrices=True, lambda_der_only=False):
+        parameters=self.reduced_hyperparam_func.reduced_params_to_full(reduced_parameters)
+        MSE, MSE_ders=self.goo_ensemble.MSE_and_MSE_der(parameters, recalc_global_matrices=True, lambda_der_only=False)
+        MSE_red_ders=self.reduced_hyperparam_func.full_derivatives_to_reduced(MSE_ders, parameters)
+        return Optimizer_state(MSE, MSE_ders, MSE_red_ders, parameters, reduced_parameters)
+
+class GOO_randomized_iterator:
+    def __init__(self, opt_GOO_ensemble, red_hyperparam_func, initial_reduced_parameter_vals, lambda_opt_tolerance=0.1, step_magnitudes=None, noise_level_prop_coeffs=None,
+                        lambda_max_num_scan_steps=10, default_step_magnitude=1.0, keep_init_lambda=False, bisec_lambda_opt=False):
+        self.optimizer_state_generator=Optimizer_state_generator(opt_GOO_ensemble, red_hyperparam_func)
+
+        self.cur_optimizer_state=self.optimizer_state_generator(initial_reduced_parameter_vals)
+
+        print("Start params:", self.cur_optimizer_state.red_parameters, "starting MSE:", self.cur_optimizer_state.MSE)
+
+        self.lambda_opt_tolerance=lambda_opt_tolerance
+        self.keep_init_lambda=keep_init_lambda
+
+        self.num_reduced_params=self.optimizer_state_generator.reduced_hyperparam_func.num_reduced_params
+
+        if step_magnitudes is None:
+            self.step_magnitudes=np.repeat(default_step_magnitude, self.num_reduced_params)
+        else:
+            self.step_magnitudes=step_magnitudes
+
+        if noise_level_prop_coeffs is None:
+            self.noise_level_prop_coeffs=self.step_magnitudes
+        else:
+            self.noise_level_prop_coeffs=noise_level_prop_coeffs
+
+        if (keep_init_lambda or bisec_lambda_opt):
+            self.noise_level_prop_coeffs[0]=0.0
+
+        self.noise_levels=np.zeros((self.num_reduced_params,))
+
+        self.lambda_max_num_scan_steps=lambda_max_num_scan_steps
+        self.lambda_opt_tolerance=lambda_opt_tolerance
+
+        self.lambda_max_num_scan_steps=lambda_max_num_scan_steps
+
+        self.bisec_lambda_opt=bisec_lambda_opt
+
+        self.change_successful=None
+
+    def iterate(self):
+        cur_red_ders=self.cur_optimizer_state.MSE_red_ders
+
+        normalized_red_ders=np.copy(self.cur_optimizer_state.MSE_red_ders)
+        if (self.bisec_lambda_opt or self.keep_init_lambda):
+            normalized_red_ders[0]=0.0
+        normalized_red_ders=normalized_red_ders/np.sqrt(sum((normalized_red_ders/self.step_magnitudes)**2))
+
+        print("Normalized reduced derivatives:", normalized_red_ders)
+
+        trial_red_params=np.copy(self.cur_optimizer_state.red_parameters)
+        for param_id in range(self.num_reduced_params):
+            trial_red_params[param_id]+=np.random.normal()*self.noise_levels[param_id]-normalized_red_ders[param_id]
+
+        trial_optimizer_state=self.optimizer_state_generator(trial_red_params)
+
+        print("Trial params:", trial_red_params, ", trial MSE:", trial_optimizer_state.MSE)
+
+        self.change_successful=(self.cur_optimizer_state>trial_optimizer_state)
+
+        if self.change_successful:
+            self.cur_optimizer_state=copy.deepcopy(trial_optimizer_state)
+            if ((not self.keep_init_lambda) and self.bisec_lambda_opt):
+                self.bisection_lambda_optimization()
+            self.noise_levels[:]=0.0
+        else:
+            self.noise_levels+=self.noise_level_prop_coeffs/np.sqrt(self.num_reduced_params)
+    def bisection_lambda_optimization(self):
+        print("Bisection optimization of lambda.")
+
+        # Perform a scan to approximately locate the minimum.
+        prev_iteration=self.cur_optimizer_state
+        prev_lambda_der=prev_iteration.lambda_der()
+        prev_iteration=copy.deepcopy(self.cur_optimizer_state)
+
+        scan_additive=math.copysign(self.step_magnitudes[0], -prev_lambda_der)
+
+        bisection_interval=None
+
+        for init_scan_step in range(self.lambda_max_num_scan_steps):
+            trial_red_params=np.copy(prev_iteration.red_parameters)
+            trial_red_params[0]+=scan_multiplier
+
+            trial_iteration=self.optimizer_state_generator(trial_red_params, recalc_global_matrices=False, lambda_der_only=True)
+            trial_lambda_der=trial_iteration.lambda_der()
+
+            print("Initial lambda scan:", trial_red_params[0], trial_lambda_der, trial_iteration.MSE)
+
+            if ((trial_lambda_der*prev_lambda_der)<0.0):
+                bisection_interval=[trial_iteration, prev_iteration]
+                bisection_interval.sort(key=lambda x: x.lambda_val())
+            else:
+                if trial_iteration>prev_iteration: # something is wrong, we were supposed to be going down in MSE.
+                    print("WARNING: Weird behavior during lambda value scan.")
+                    self.cur_optimizer_state=self.optimizer_state_generator(prev_iteration.red_parameters, recalc_global_matrices=False)
+                    return
+                else:
+                    prev_iteration=trial_iteration
+
+        if bisection_interval is None:
+            self.cur_optimizer_state=self.optimizer_state_generator(trial_iteration.red_parameters, recalc_global_matrices=False)
+            return
+
+        # Finalize locating the minumum via bisection.
+        # Use bisection search to find the minimum. Note that we do not need to recalculate the kernel matrices.
+        while (bisection_interval[1].lambda_val()>bisection_interval[0].lambda_val()+self.lambda_opt_tolerance):
+            cur_lambda=(bisection_interval[0].lambda_val()+bisection_interval[1].lambda_val())/2
+
+            middle_params=np.copy(self.cur_optimizer_state.red_parameters)
+            middle_params[0]=cur_lambda
+
+            middle_iteration=self.optimizer_state_generator(middle_params, recalc_global_matrices=False, lambda_der_only=True)
+
+            middle_der=middle_iteration.lambda_der()
+
+            print("Bisection lambda optimization, lambda:", cur_lambda, "derivative:", middle_der, "MSE:", middle_iteration.MSE)
+
+            for bisec_int_id in range(2):
+                if (middle_der*bisection_interval[bisec_int_id].lambda_der()<0.0):
+                    bisection_interval[bisec_int_id]=middle_iteration
+
+        self.cur_optimizer_state=self.optimizer_state_generator(min(bisection_interval).red_parameters, recalc_global_matrices=False)
+
+
+hyperparam_red_funcs={"default": Reduced_hyperparam_func, "single_rescaling" : Single_rescaling_rhf}
+
+def min_sep_IBO_MSE_random_walk(compound_list, quant_list, use_Gauss=False, init_lambda=1e-3, max_iterations=None, init_param_guess=None, hyperparam_red_type="default", max_stagnating_iterations=1,
+                                    other_opt_goo_ensemble_kwargs={}, randomized_iterator_kwargs={}):
+
+    opt_GOO_ensemble=generate_random_GOO_ensemble(compound_list, quant_list, use_Gauss=use_Gauss, **other_opt_goo_ensemble_kwargs)
+
+    avs, stddevs=oml_ensemble_avs_stddevs(compound_list)
+    print("Found stddevs:", stddevs)
+    base_inv_sqwidth_params=0.25/stddevs**2
+
+    red_hyperparam_func=hyperparam_red_funcs[hyperparam_red_type](base_inv_sqwidth_params, use_Gauss=use_Gauss)
+
+    if init_param_guess is None:
+        initial_reduced_parameter_vals=red_hyperparam_func.initial_reduced_parameter_guess(init_lambda)
+    else:
+        initial_reduced_parameter_vals=red_hyperparam_func.full_params_to_reduced(init_param_guess)
+
+
+    randomized_iterator=GOO_randomized_iterator(opt_GOO_ensemble, red_hyperparam_func, initial_reduced_parameter_vals, **randomized_iterator_kwargs)
+    num_stagnating_iterations=0
+    num_iterations=0
+
+    iterate_more=True
+
+    while iterate_more:
+        randomized_iterator.iterate()
+        cur_opt_state=randomized_iterator.cur_optimizer_state
+        print("Parameters:", cur_opt_state.parameters, "MSE:", cur_opt_state.MSE)
+        if max_iterations is not None:
+            num_iterations+=1
+            if num_iterations>=max_iterations:
+                iterate_more=False
+        if max_stagnating_iterations is not None:
+            if randomized_iterator.change_successful:
+                num_stagnating_iterations=0
+            else:
+                num_stagnating_iterations+=1
+                if num_stagnating_iterations>=max_stagnating_iterations:
+                    iterate_more=False
+
+    return {"inv_sq_width_params" : cur_opt_state.parameters[1:], "lambda_val" : cur_opt_state.parameters[0], "MSE" :  cur_opt_state.MSE}
+    

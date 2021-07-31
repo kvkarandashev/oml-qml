@@ -25,8 +25,8 @@ max_angular_momentum=1
 # Replace with path to QM9 directory
 QM7bT_dir=os.environ["DATA"]+"/QM7bT_reformatted"
 
-train_num=100
-check_num=200
+train_num=800
+check_num=2000
 
 delta_learning_params=Delta_learning_parameters(use_delta_learning=True)
 
@@ -50,7 +50,7 @@ def get_quants_comps(xyz_list, quantity, dl_params, oml_representation_parameter
 quant=Quantity(quant_name)
 training_comps, training_quants=get_quants_comps(xyz_list[:train_num], quant, delta_learning_params, oml_representation_parameters)
 
-optimized_hyperparams=min_sep_IBO_MSE_random_walk(training_comps, training_quants, init_lambda_guess=1e-6, training_set_ratio=0.5, initial_guess_sigma_rescale=1.0, step_magnitude=2.0, num_iters=10, negligible_below_default=-9.21034, negligible_below_lambda=-16.1181, exclusion_permanent=True)
+optimized_hyperparams=min_sep_IBO_MSE_random_walk(training_comps, training_quants, init_lambda_guess=1e-6, training_set_ratio=0.5, initial_guess_sigma_rescale=1.0, step_magnitude=2.0, num_iters=40, negligible_below_default=-9.21034, negligible_below_lambda=-16.1181, exclusion_permanent=True)
 
 inv_sq_width_params=optimized_hyperparams["inv_sq_width_params"]
 lambda_val=optimized_hyperparams["lambda_val"]

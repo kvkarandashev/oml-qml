@@ -26,7 +26,7 @@ import jax.numpy as jnp
 from jax import jit
 import math
 
-from .foml_representations import fgen_ibo_atom_scalar_rep, fgen_ft_coup_mats, fang_mom_descr
+from .foml_representations import fgen_ibo_atom_scalar_rep, fgen_ft_coup_mats, fang_mom_descr, fgen_ibo_global_couplings
 
 
 class OML_rep_params:
@@ -37,7 +37,7 @@ class OML_rep_params:
 #   l_max               - maximal value of angular momentum.
     def __init__(self, tol_orb_cutoff=0.0,  ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
                     fock_based_coup_mat=False, num_prop_times=1, prop_delta_t=1.0, fbcm_exclude_Fock=False,
-                    fbcm_pseudo_orbs=False, ibo_fidelity_rep=False):
+                    fbcm_pseudo_orbs=False, ibo_fidelity_rep=False, add_global_ibo_couplings=False):
         self.tol_orb_cutoff=tol_orb_cutoff
         self.ibo_atom_rho_comp=ibo_atom_rho_comp
         self.max_angular_momentum=max_angular_momentum
@@ -47,6 +47,7 @@ class OML_rep_params:
         self.prop_delta_t=prop_delta_t
         self.fbcm_pseudo_orbs=fbcm_pseudo_orbs
         self.fbcm_exclude_Fock=fbcm_exclude_Fock
+        self.add_global_ibo_couplings=add_global_ibo_couplings
 
         self.ibo_fidelity_rep=ibo_fidelity_rep
     def __str__(self):
@@ -197,8 +198,12 @@ def generate_ibo_rep_array(ibo_mat, rep_params, aos, atom_ao_ranges, ovlp_mat, *
         return [placeholder_ibo_rep(rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coupling_mats)]
     # It's important that ovlp_mat appears first in this array.
     ibo_tmat=ibo_mat.T
-    return [OML_ibo_rep(ibo_coeffs, rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coupling_mats) for ibo_coeffs in ibo_tmat]
-    
+    output=[OML_ibo_rep(ibo_coeffs, rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coupling_mats) for ibo_coeffs in ibo_tmat]
+    if rep_params.add_global_ibo_couplings:
+        for ibo_id in range(len(output)):
+            output[ibo_id].add_global_couplings(ibo_tmat, ibo_id, rep_params, atom_ids, angular_momenta, coupling_mats)
+    return output
+
 #   Representation of an IBO from atomic contributions.
 class OML_ibo_rep:
     def __init__(self, ibo_coeffs, rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coup_mats):
@@ -221,6 +226,14 @@ class OML_ibo_rep:
         self.ibo_atom_reps.cutoff_minor_weights(remaining_rho=rep_params.ibo_atom_rho_comp)
         for ibo_arep_counter in range(len(self.ibo_atom_reps)):
             self.ibo_atom_reps[ibo_arep_counter].completed_scalar_reps(self.full_coeffs, rep_params, angular_momenta, coup_mats)
+    def add_global_ibo_couplings(self, all_ibo_coeffs, ibo_id, rep_params, atom_ids, angular_momenta, coup_mats):
+        global_ibo_couplings=np.zeros(len(coup_mats)*((max_angular_momentum+1)*(3*max_angular_momentum+4))/2)
+        fgen_ibo_global_couplings(all_ibo_coeffs, ibo_id, angular_momenta, rep_params.max_angular_momentum,
+                    len(angular_momenta), coup_mats, coup_mats.shape[2], global_ibo_coupling)
+        # TO-DO recheck????
+        for ibo_arep_counter in range(len(self.ibo_atom_reps)):
+            self.ibo_atom_reps[ibo_arep_counter].scalar_reps=np.append(self.ibo_atom_reps[ibo_arep_counter].scalar_reps,
+                                        global_ibo_couplings)
 
 class weighted_array(list):
     def normalize_rhos(self, normalization_constant=None):

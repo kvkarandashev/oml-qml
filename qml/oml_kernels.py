@@ -471,6 +471,12 @@ def orb_orb_cov_wders(orb_areps_A, orb_areps_B, arep_rhos_A, arep_rhos_B, num_ib
             output[1:]-=orb_orb_cov_comp*sqdiffs
     return output
 
+@njit(fastmath=True)
+def orb_orb_cov_wders_log_incl(orb_areps_A, orb_areps_B, arep_rhos_A, arep_rhos_B, num_ibo_areps_A, num_ibo_areps_B, inv_sq_width_params, orb_comp_dim, A_sp_log_ders, B_sp_log_ders):
+    output=orb_orb_cov_wders(orb_areps_A, orb_areps_B, arep_rhos_A, arep_rhos_B, num_ibo_areps_A, num_ibo_areps_B, inv_sq_width_params, orb_comp_dim)
+    output[1:]-=output[0]*(A_sp_log_ders+B_sp_log_ders)/2
+    return output
+
 
 # Self-covariance (used for normalizing the orbitals).
 @njit(fastmath=True)
@@ -526,9 +532,9 @@ def numba_lin_sep_IBO_kernel_row_wders(A_orb_areps, A_arep_rhos, A_orb_rhos,
             rho_A=A_orb_rhos[A_ibo_id]
             for B_ibo_id in range(B_ibo_nums[B_mol_id]):
                 rho_B=B_orb_rhos[B_mol_id, B_ibo_id]
-                cur_ibo_contribution=orb_orb_cov_wders(A_orb_areps[A_ibo_id, :, :], B_orb_areps[B_mol_id, B_ibo_id, :, :], A_arep_rhos[A_ibo_id, :], B_arep_rhos[B_mol_id, B_ibo_id, :],
-                                                A_ibo_atom_nums[A_ibo_id], B_ibo_atom_nums[B_mol_id, B_ibo_id], inv_sq_width_params, kern_comp_dim)
-                cur_ibo_contribution[1:]-=cur_ibo_contribution[0]*(A_sp_log_ders[A_ibo_id, :]+B_sp_log_ders[B_mol_id, B_ibo_id, :])/2
+                cur_ibo_contribution=orb_orb_cov_wders_log_incl(A_orb_areps[A_ibo_id, :, :], B_orb_areps[B_mol_id, B_ibo_id, :, :], A_arep_rhos[A_ibo_id, :], B_arep_rhos[B_mol_id, B_ibo_id, :],
+                                                A_ibo_atom_nums[A_ibo_id], B_ibo_atom_nums[B_mol_id, B_ibo_id], inv_sq_width_params, kern_comp_dim,
+                                                A_sp_log_ders[A_ibo_id, :], B_sp_log_ders[B_mol_id, B_ibo_id, :])
                 kernel_row[B_mol_id,:]+=rho_A*rho_B*cur_ibo_contribution
 
     return kernel_row
@@ -610,7 +616,7 @@ def numba_lin_sep_IBO_sym_kernel_wders(A_orb_areps, A_arep_rhos, A_orb_rhos,
 
     for A_mol_id in prange(A_num_mols):
         Kernel[A_mol_id, :, :]=numba_lin_sep_IBO_kernel_row_wders(A_orb_areps[A_mol_id, :, :, :], A_arep_rhos[A_mol_id, :, :], A_orb_rhos[A_mol_id, :],
-                                A_ibo_nums[A_mol_id], A_ibo_atom_nums[A_mol_id, :], A_num_mols, A_num_mols,
+                                A_ibo_nums[A_mol_id], A_ibo_atom_nums[A_mol_id, :], A_mol_id+1, A_num_mols,
                                 A_orb_areps, A_arep_rhos, A_orb_rhos,
                                 A_ibo_nums, A_ibo_atom_nums, inv_sq_width_params,
                                 kern_comp_dim, A_sp_log_ders[A_mol_id, :, :], A_sp_log_ders)
@@ -652,6 +658,7 @@ def lin_sep_IBO_kernel_conv(Ac, Bc, inv_sq_width_params, preserve_converted_arra
                                 Bc_renormed.ibo_atom_sreps, Bc_renormed.ibo_arep_rhos, Bc_renormed.ibo_rhos,
                                 Bc_renormed.ibo_nums, Bc_renormed.ibo_atom_nums,
                                 inv_sq_width_params)
+
 
 def is_pair_reps(comp_arr):
     return (hasattr(comp_arr[0], 'comps'))
@@ -719,8 +726,208 @@ def oml_ensemble_avs_stddevs(compound_list):
     stddevs=np.sqrt(avs2-avs**2)
     return avs, stddevs
 
+
+############
+# For the Gaussian "sep IBO" kernel.
+
+@njit(fastmath=True)
+def lin2gauss_kern_el(lin_cov, inv_sq_width_param):
+    return np.exp(-inv_sq_width_param*(1-lin_cov))
+
+@njit(fastmath=True)
+def orb_orb_cov_gauss(orb_areps_A, orb_areps_B, arep_rhos_A, arep_rhos_B, num_ibo_areps_A, num_ibo_areps_B, inv_sq_width_params):
+    lin_cov=orb_orb_cov(orb_areps_A, orb_areps_B, arep_rhos_A, arep_rhos_B, num_ibo_areps_A, num_ibo_areps_B, inv_sq_width_params[1:])
+    return lin2gauss_kern_el(lin_cov, inv_sq_width_params[0])
+
+@njit(fastmath=True)
+def orb_orb_cov_gauss_wders(orb_areps_A, orb_areps_B, arep_rhos_A, arep_rhos_B, num_ibo_areps_A, num_ibo_areps_B, inv_sq_width_params, orb_comp_dim, A_log_ders, B_log_ders):
+    lin_cov_wders=orb_orb_cov_wders_log_incl(orb_areps_A, orb_areps_B, arep_rhos_A, arep_rhos_B, num_ibo_areps_A, num_ibo_areps_B, inv_sq_width_params[1:], orb_comp_dim-1, A_log_ders, B_log_ders)
+    
+    output=np.zeros((orb_comp_dim,))
+    inv_sq_global_sigma=inv_sq_width_params[0]
+    output[0]=lin2gauss_kern_el(lin_cov_wders[0], inv_sq_global_sigma)
+    output[1]=-output[0]*(1-lin_cov_wders[0])
+    output[2:]=output[0]*inv_sq_global_sigma*lin_cov_wders[1:]
+    return output
+
+@njit(fastmath=True)
+def numba_gauss_sep_IBO_kernel_row(A_orb_areps, A_arep_rhos, A_orb_rhos,
+                                A_ibo_num, A_ibo_atom_nums, upper_B_mol_id, B_num_mols,
+                                B_orb_areps, B_arep_rhos, B_orb_rhos, B_ibo_nums, B_ibo_atom_nums,
+                                inv_sq_width_params):
+
+
+    kernel_row=np.zeros((B_num_mols,))
+
+    for B_mol_id in range(upper_B_mol_id):
+        for A_ibo_id in range(A_ibo_num):
+            rho_A=A_orb_rhos[A_ibo_id]
+            for B_ibo_id in range(B_ibo_nums[B_mol_id]):
+                rho_B=B_orb_rhos[B_mol_id, B_ibo_id]
+                cur_ibo_contribution=orb_orb_cov_gauss(A_orb_areps[A_ibo_id, :, :], B_orb_areps[B_mol_id, B_ibo_id, :, :], A_arep_rhos[A_ibo_id, :], B_arep_rhos[B_mol_id, B_ibo_id, :],
+                                                A_ibo_atom_nums[A_ibo_id], B_ibo_atom_nums[B_mol_id, B_ibo_id], inv_sq_width_params)
+                kernel_row[B_mol_id]+=rho_A*rho_B*cur_ibo_contribution
+    return kernel_row
+
+@njit(fastmath=True)
+def numba_gauss_sep_IBO_kernel_row_wders(A_orb_areps, A_arep_rhos, A_orb_rhos,
+                                A_ibo_num, A_ibo_atom_nums, upper_B_mol_id, B_num_mols,
+                                B_orb_areps, B_arep_rhos, B_orb_rhos,
+                                B_ibo_nums, B_ibo_atom_nums, inv_sq_width_params,
+                                kern_comp_dim, A_sp_log_ders, B_sp_log_ders):
+
+    cur_ibo_contribution=np.zeros((kern_comp_dim,))
+
+    kernel_row=np.zeros((B_num_mols,kern_comp_dim))
+
+    for B_mol_id in range(upper_B_mol_id):
+        for A_ibo_id in range(A_ibo_num):
+            rho_A=A_orb_rhos[A_ibo_id]
+            for B_ibo_id in range(B_ibo_nums[B_mol_id]):
+                rho_B=B_orb_rhos[B_mol_id, B_ibo_id]
+                cur_ibo_contribution=orb_orb_cov_gauss_wders(A_orb_areps[A_ibo_id, :, :], B_orb_areps[B_mol_id, B_ibo_id, :, :], A_arep_rhos[A_ibo_id, :], B_arep_rhos[B_mol_id, B_ibo_id, :],
+                                                A_ibo_atom_nums[A_ibo_id], B_ibo_atom_nums[B_mol_id, B_ibo_id], inv_sq_width_params, kern_comp_dim,
+                                                A_sp_log_ders[A_ibo_id, :], B_sp_log_ders[B_mol_id, B_ibo_id, :])
+                kernel_row[B_mol_id,:]+=rho_A*rho_B*cur_ibo_contribution
+
+    return kernel_row
+
+
+
+
+@njit(fastmath=True, parallel=True)
+def numba_gauss_sep_IBO_kernel(A_orb_areps, A_arep_rhos, A_orb_rhos,
+                                A_ibo_nums, A_ibo_atom_nums,
+                                B_orb_areps, B_arep_rhos, B_orb_rhos,
+                                B_ibo_nums, B_ibo_atom_nums,
+                                inv_sq_width_params):
+
+    A_num_mols=A_orb_areps.shape[0]
+
+    B_num_mols=B_orb_areps.shape[0]
+
+    Kernel=np.zeros((A_num_mols, B_num_mols))
+
+    for A_mol_id in prange(A_num_mols):
+        Kernel[A_mol_id, :]=numba_gauss_sep_IBO_kernel_row(A_orb_areps[A_mol_id, :, :, :], A_arep_rhos[A_mol_id,:, :],
+                                A_orb_rhos[A_mol_id, :], A_ibo_nums[A_mol_id], A_ibo_atom_nums[A_mol_id, :], B_num_mols, B_num_mols,
+                                B_orb_areps, B_arep_rhos, B_orb_rhos, B_ibo_nums, B_ibo_atom_nums, inv_sq_width_params)
+    return Kernel
+
+@njit(fastmath=True, parallel=True)
+def numba_gauss_sep_IBO_sym_kernel(A_orb_areps, A_arep_rhos, A_orb_rhos,
+                                A_ibo_nums, A_ibo_atom_nums,
+                                inv_sq_width_params):
+
+    A_num_mols=A_orb_areps.shape[0]
+    Kernel=np.zeros((A_num_mols, A_num_mols))
+
+    for A_mol_id in prange(A_num_mols):
+        Kernel[A_mol_id, :]=numba_gauss_sep_IBO_kernel_row(A_orb_areps[A_mol_id, :, :, :], A_arep_rhos[A_mol_id,:, :],
+                                A_orb_rhos[A_mol_id, :], A_ibo_nums[A_mol_id], A_ibo_atom_nums[A_mol_id, :], A_mol_id+1, A_num_mols,
+                                A_orb_areps, A_arep_rhos, A_orb_rhos, A_ibo_nums, A_ibo_atom_nums, inv_sq_width_params)
+
+    for A_mol_id in range(A_num_mols):
+        for A_mol_id2 in range(A_mol_id):
+            Kernel[A_mol_id2, A_mol_id]=Kernel[A_mol_id, A_mol_id2]
+    return Kernel
+
+@njit(fastmath=True, parallel=True)
+def numba_gauss_sep_IBO_kernel_wders(A_orb_areps, A_arep_rhos, A_orb_rhos,
+                                A_ibo_nums, A_ibo_atom_nums,
+                                B_orb_areps, B_arep_rhos, B_orb_rhos,
+                                B_ibo_nums, B_ibo_atom_nums,
+                                inv_sq_width_params):
+
+    A_num_mols=A_orb_areps.shape[0]
+
+    B_num_mols=B_orb_areps.shape[0]
+
+    A_sp_log_ders=self_product_log_ders(A_orb_areps, A_arep_rhos, A_orb_rhos, A_ibo_nums, A_ibo_atom_nums, inv_sq_width_params[1:])
+    B_sp_log_ders=self_product_log_ders(B_orb_areps, B_arep_rhos, B_orb_rhos, B_ibo_nums, B_ibo_atom_nums, inv_sq_width_params[1:])
+
+    kern_comp_dim=inv_sq_width_params.shape[0]+1
+    Kernel=np.zeros((A_num_mols, B_num_mols, kern_comp_dim))
+
+    for A_mol_id in prange(A_num_mols):
+        Kernel[A_mol_id, :, :]=numba_gauss_sep_IBO_kernel_row_wders(A_orb_areps[A_mol_id, :, :, :], A_arep_rhos[A_mol_id, :, :], A_orb_rhos[A_mol_id, :],
+                                A_ibo_nums[A_mol_id], A_ibo_atom_nums[A_mol_id, :], B_num_mols, B_num_mols,
+                                B_orb_areps, B_arep_rhos, B_orb_rhos,
+                                B_ibo_nums, B_ibo_atom_nums, inv_sq_width_params,
+                                kern_comp_dim, A_sp_log_ders[A_mol_id, :, :], B_sp_log_ders)
+    return Kernel
+
+
+@njit(fastmath=True, parallel=True)
+def numba_gauss_sep_IBO_sym_kernel_wders(A_orb_areps, A_arep_rhos, A_orb_rhos,
+                                A_ibo_nums, A_ibo_atom_nums, inv_sq_width_params):
+
+    A_num_mols=A_orb_areps.shape[0]
+
+    A_sp_log_ders=self_product_log_ders(A_orb_areps, A_arep_rhos, A_orb_rhos, A_ibo_nums, A_ibo_atom_nums, inv_sq_width_params[1:])
+
+    kern_comp_dim=inv_sq_width_params.shape[0]+1
+    Kernel=np.zeros((A_num_mols, A_num_mols, kern_comp_dim))
+
+    for A_mol_id in prange(A_num_mols):
+        Kernel[A_mol_id, :, :]=numba_gauss_sep_IBO_kernel_row_wders(A_orb_areps[A_mol_id, :, :, :], A_arep_rhos[A_mol_id, :, :], A_orb_rhos[A_mol_id, :],
+                                A_ibo_nums[A_mol_id], A_ibo_atom_nums[A_mol_id, :], A_mol_id+1, A_num_mols,
+                                A_orb_areps, A_arep_rhos, A_orb_rhos,
+                                A_ibo_nums, A_ibo_atom_nums, inv_sq_width_params,
+                                kern_comp_dim, A_sp_log_ders[A_mol_id, :, :], A_sp_log_ders)
+    for A_mol_id in range(A_num_mols):
+        for A_mol_id2 in range(A_mol_id):
+            Kernel[A_mol_id2, A_mol_id, :]=Kernel[A_mol_id, A_mol_id2, :]
+
+    return Kernel
+
+def gauss_sep_IBO_kernel_conv(Ac, Bc, inv_sq_width_params, preserve_converted_arrays=True, with_ders=False):
+    if preserve_converted_arrays:
+        Ac_renormed=copy.deepcopy(Ac)
+        Bc_renormed=copy.deepcopy(Bc)
+    else:
+        Ac_renormed=Ac
+        Bc_renormed=Bc
+    Ac_renormed.lin_sep_kern_renormalize_arep_rhos(inv_sq_width_params[1:])
+    sym_kernel=(Bc is None)
+    if not sym_kernel:
+        Bc_renormed.lin_sep_kern_renormalize_arep_rhos(inv_sq_width_params[1:])
+    if with_ders:
+        if sym_kernel:
+            return numba_gauss_sep_IBO_sym_kernel_wders(Ac_renormed.ibo_atom_sreps, Ac_renormed.ibo_arep_rhos, Ac_renormed.ibo_rhos,
+                                Ac_renormed.ibo_nums, Ac_renormed.ibo_atom_nums, inv_sq_width_params)
+        else:
+            return numba_gauss_sep_IBO_kernel_wders(Ac_renormed.ibo_atom_sreps, Ac_renormed.ibo_arep_rhos, Ac_renormed.ibo_rhos,
+                                Ac_renormed.ibo_nums, Ac_renormed.ibo_atom_nums,
+                                Bc_renormed.ibo_atom_sreps, Bc_renormed.ibo_arep_rhos, Bc_renormed.ibo_rhos,
+                                Bc_renormed.ibo_nums, Bc_renormed.ibo_atom_nums,
+                                inv_sq_width_params)
+    else:
+        if sym_kernel:
+            return numba_gauss_sep_IBO_sym_kernel(Ac_renormed.ibo_atom_sreps, Ac_renormed.ibo_arep_rhos, Ac_renormed.ibo_rhos,
+                                Ac_renormed.ibo_nums, Ac_renormed.ibo_atom_nums, inv_sq_width_params)
+        else:
+            return numba_gauss_sep_IBO_kernel(Ac_renormed.ibo_atom_sreps, Ac_renormed.ibo_arep_rhos, Ac_renormed.ibo_rhos,
+                                Ac_renormed.ibo_nums, Ac_renormed.ibo_atom_nums,
+                                Bc_renormed.ibo_atom_sreps, Bc_renormed.ibo_arep_rhos, Bc_renormed.ibo_rhos,
+                                Bc_renormed.ibo_nums, Bc_renormed.ibo_atom_nums,
+                                inv_sq_width_params)
+
+
+def gauss_sep_IBO_kernel(A, B, inv_sq_width_params, with_ders=False):
+    Ac=GMO_sep_IBO_kern_input(oml_compound_array=A)
+    Bc=GMO_sep_IBO_kern_input(oml_compound_array=B)
+    return gauss_sep_IBO_kernel_conv(Ac, Bc, inv_sq_width_params, preserve_converted_arrays=False, with_ders=with_ders)
+
+def gauss_sep_IBO_sym_kernel_conv(Ac, inv_sq_width_params, preserve_converted_arrays=True, with_ders=False):
+    return gauss_sep_IBO_kernel_conv(Ac, None, inv_sq_width_params, preserve_converted_arrays=preserve_converted_arrays, with_ders=with_ders)
+
+def gauss_sep_IBO_sym_kernel(A, inv_sq_width_params, with_ders=False):
+    Ac=GMO_sep_IBO_kern_input(oml_compound_array=A)
+    return gauss_sep_IBO_sym_kernel_conv(Ac, inv_sq_width_params, preserve_converted_arrays=False, with_ders=with_ders)
+
 #### For random Fourier decomposition of the kernel.
-###### STUPID, SHOULD BE REWRITTEN OR DELETED.
+###### STUPID, SHOULD BE REWRITTEN!!!
 def generate_random_frequencies_origins(num_freqs, num_samples):
     return np.random.normal(size=(num_samples, num_freqs)), np.random.random(size=(num_samples, num_freqs))*2*np.pi
 
