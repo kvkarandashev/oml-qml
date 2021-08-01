@@ -8,12 +8,13 @@ import numpy as np
 from qml.hyperparameter_optimization import Gradient_optimization_obj
 from learning_curve_building import np_cho_solve
 
-def model_MSE(K_train, K_check, train_quant, check_quant, lambda_val):
+def model_MSE_MAE(K_train, K_check, train_quant, check_quant, lambda_val):
     K_train_mod=copy.deepcopy(K_train)
     K_train_mod[np.diag_indices_from(K_train_mod)]+=lambda_val
     alphas=np_cho_solve(K_train_mod, train_quant)
     predictions=np.matmul(K_check, alphas)
-    return np.mean((check_quant-predictions)**2)
+    error_vals=check_quant-predictions
+    return np.mean(error_vals**2), np.mean(np.abs(error_vals))
 
 xyz_list=glob.glob("../../tests/qm7/*.xyz")
 
@@ -49,8 +50,12 @@ K_check=lin_sep_IBO_kernel(B, A, inv_sq_width_params)
 
 K_train_fd_der=np.zeros((num_A_mols, num_A_mols))
 K_check_fd_der=np.zeros((num_B_mols, num_A_mols))
+
 MSE_der=0.0
 MSE_der_lambda=0.0
+
+MAE_der=0.0
+MAE_der_lambda=0.0
 
 der_id=2
 
@@ -60,15 +65,27 @@ for fd_grid_step in [-1, 1]:
     cur_inv_sq_width_params[der_id]+=fd_step*fd_grid_step
     cur_K_train=lin_sep_IBO_sym_kernel(A, cur_inv_sq_width_params)
     cur_K_check=lin_sep_IBO_kernel(B, A, cur_inv_sq_width_params)
-    MSE_der+=model_MSE(cur_K_train, cur_K_check, train_quant, check_quant, lambda_val)*fd_grid_step
-    MSE_der_lambda+=model_MSE(K_train, K_check, train_quant, check_quant, lambda_val+fd_step*fd_grid_step)*fd_grid_step
+
+    MSE_fd, MAE_fd=model_MSE_MAE(cur_K_train, cur_K_check, train_quant, check_quant, lambda_val)
+
+    MSE_fd_lambda, MAE_fd_lambda=model_MSE_MAE(K_train, K_check, train_quant, check_quant, lambda_val+fd_step*fd_grid_step)
+
+    MSE_der+=MSE_fd*fd_grid_step
+    MSE_der_lambda+=MSE_fd_lambda*fd_grid_step
+
+    MAE_der+=MAE_fd*fd_grid_step
+    MAE_der_lambda+=MAE_fd_lambda*fd_grid_step
 
     K_train_fd_der+=fd_grid_step*cur_K_train
     K_check_fd_der+=fd_grid_step*cur_K_check
+
 K_train_fd_der/=2*fd_step
-MSE_der/=2*fd_step
 K_check_fd_der/=2*fd_step
+MSE_der/=2*fd_step
 MSE_der_lambda/=2*fd_step
+MAE_der/=2*fd_step
+MAE_der_lambda/=2*fd_step
+
 
 K_train_wders=lin_sep_IBO_sym_kernel(A, inv_sq_width_params, with_ders=True)
 K_check_wders=lin_sep_IBO_kernel(B, A, inv_sq_width_params, with_ders=True)
@@ -93,16 +110,18 @@ print(K_check_fd_der)
 print(K_check_wders[:,:,der_id+1])
 print(K_check_fd_der-K_check_wders[:,:,der_id+1])
 
-GOO=Gradient_optimization_obj(A, train_quant, B, check_quant)
+MSE_ref, MAE_ref=model_MSE_MAE(K_train, K_check, train_quant, check_quant, lambda_val)
+
+# For MSE.
+GOO=Gradient_optimization_obj(A, train_quant, B, check_quant, use_MAE=False)
 params0=np.array([lambda_val, *inv_sq_width_params])
 print("MSE")
-MSE_ref=model_MSE(K_train, K_check, train_quant, check_quant, lambda_val)
-MSE_GOO=GOO.MSE(params0)
+MSE_GOO=GOO.error_measure(params0)
 print(MSE_ref)
-print(GOO.MSE(params0))
+print(MSE_GOO)
 print(MSE_ref-MSE_GOO)
 
-MSE_der_GOO_all=GOO.MSE_der(params0)
+MSE_der_GOO_all=GOO.error_measure_der(params0)
 
 print("MSE_der")
 MSE_der_GOO=MSE_der_GOO_all[der_id+1]
@@ -116,3 +135,27 @@ print("MSE_der_lambda")
 print(MSE_der_lambda)
 print(MSE_der_lambda_GOO)
 print(MSE_der_lambda-MSE_der_lambda_GOO)
+
+# For MAE.
+GOO=Gradient_optimization_obj(A, train_quant, B, check_quant)
+params0=np.array([lambda_val, *inv_sq_width_params])
+print("MAE")
+MAE_GOO=GOO.error_measure(params0)
+print(MAE_ref)
+print(MAE_GOO)
+print(MAE_ref-MAE_GOO)
+
+MSE_der_GOO_all=GOO.error_measure_wders(params0)
+
+print("MAE_der")
+MAE_der_GOO=MAE_der_GOO_all[der_id+1]
+print(MAE_der)
+print(MAE_der_GOO)
+print(MAE_der_GOO-MAE_der)
+
+MAE_der_lambda_GOO=MAE_der_GOO_all[0]
+
+print("MAE_der_lambda")
+print(MAE_der_lambda)
+print(MAE_der_lambda_GOO)
+print(MAE_der_lambda-MAE_der_lambda_GOO)
