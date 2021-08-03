@@ -97,7 +97,7 @@ class OML_ibo_atom_rep:
             fgen_ibo_atom_scalar_rep(self.atom_ao_range, coeffs, angular_momenta, np.transpose(coup_mats),
                                         len(coup_mats), rep_params.max_angular_momentum, len(coeffs), couplings)
         else:
-        #   TO-DO rewrite in JAX???
+        #   TO-DO rewrite in JAX??? Or Numba???
             couplings=[]
             for coup_id, mat in enumerate(coup_mats):
                 for same_atom in [True, False]:
@@ -149,6 +149,23 @@ def ibo_atom_atom_coupling(atom_id1, atom_id2, ang_mom1, ang_mom2, atom_ao_range
                 if angular_momenta[aid2]==ang_mom2:
                     coupling+=coeffs[aid1]*coeffs[aid2]*matrix[aid1, aid2]
     return coupling
+
+
+# Generates a representation of what different components of atomic components of IBOs correspond to.
+# TO-DO check whether it's the same for Fortran and Python implementations?
+def component_id_ang_mom_map(rep_params):
+    num_coup_matrices=3 # update if other representations are available.
+    output=[]
+    # Components corresponding to the angular momentum distribution.
+    for ang_mom in range(1, num_ang_mom(rep_params)):
+        output.append([ang_mom, ang_mom, -1, True])
+    for coup_mat_id in range(num_coup_matrices):
+        for same_atom in [True, False]:
+            for ang_mom1 in range(num_ang_mom(rep_params)):
+                for ang_mom2 in range(num_ang_mom(rep_params)):
+                    if not (same_atom and (ang_mom1>ang_mom2)):
+                        output.append([ang_mom1, ang_mom2, coup_mat_id, same_atom])
+    return output
 
 
 # Internal format for processing AOs created by pySCF.
@@ -289,3 +306,6 @@ def generate_ibo_fidelity_rep(oml_compound, rep_params):
                 orb_reps[cur_orb_id, prop_time_id]=np.dot(orb_coeffs,np.matmul(prop_mat,orb_coeffs))
             cur_orb_id+=1
     return orb_reps
+
+
+

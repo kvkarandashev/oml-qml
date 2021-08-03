@@ -2,11 +2,9 @@ import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 import math, random, copy
 from .oml_kernels import lin_sep_IBO_kernel_conv, lin_sep_IBO_sym_kernel_conv, GMO_sep_IBO_kern_input, oml_ensemble_avs_stddevs, gauss_sep_IBO_kernel_conv, gauss_sep_IBO_sym_kernel_conv
+from .oml_representations import component_id_ang_mom_map
 from .utils import dump2pkl
-
-################
-### TO-DO replace MSE with "error measure", allowing to choose between MSE and MAE?
-################
+from scipy.optimize import minimize
 
 # Procedures from Lambda_opt_step to MAE bisection_optimization were the old iteration for gradient-based optimization, but only limited to the lambda variable.
 class Lambda_opt_step:
@@ -332,9 +330,18 @@ class GOO_ensemble(Gradient_optimization_obj):
                                                                     self.num_params, use_MAE=use_MAE))
         self.num_subsets=len(self.goo_ensemble_subsets)
 
-    def error_measure_wders(self, parameters, recalc_global_matrices=True, lambda_der_only=False):
+        self.presaved_parameters=None
+
+    def error_measure_wders(self, parameters, recalc_global_matrices=True, lambda_der_only=False, negligible_red_param_distance=None):
         if recalc_global_matrices:
-            self.recalculate_global_matrices(parameters)
+            need_recalc=True
+            if negligible_red_param_distance is not None:
+                if self.presaved_parameters is not None:
+                    need_recalc=(np.sqrt(np.sum((parameters-self.presaved_parameters)**2))>negligible_red_param_distance)
+                if need_recalc:
+                    self.presaved_parameters=np.copy(parameters)
+            if need_recalc:
+                self.recalculate_global_matrices(parameters)
         error_mean=0.0
         error_mean_ders=np.zeros((len(parameters),))
         for subset_id in range(self.num_subsets):
@@ -357,7 +364,7 @@ class GOO_ensemble(Gradient_optimization_obj):
         for subset_id in range(self.num_subsets):
             self.goo_ensemble_subsets[subset_id].recalculate_kernel_mats_ders(global_matrix=self.global_matrix, global_matrix_ders=self.global_matrix_ders)
 
-def generate_random_GOO_ensemble(all_compounds, all_quantities, num_kfolds=8, training_set_ratio=0.5, use_Gauss=False, use_MAE=True):
+def generate_random_GOO_ensemble(all_compounds, all_quantities, num_kfolds=16, training_set_ratio=0.5, use_Gauss=False, use_MAE=True):
     num_points=len(all_quantities)
     divisor=int(num_points*training_set_ratio)
 
@@ -433,6 +440,106 @@ class Single_rescaling_rhf(Reduced_hyperparam_func):
         else:
             return np.array([np.log(init_lambda), 1.0])
 
+class Ang_mom_classified_rhf(Reduced_hyperparam_func):
+    def __init__(self, rep_params, stddevs, use_Gauss=False):
+        ang_mom_map=component_id_ang_mom_map(rep_params)
+        self.num_simple_log_params=1
+        if use_Gauss:
+            self.num_simple_log_params+=1
+        self.num_full_params=self.num_simple_log_params+len(ang_mom_map)
+
+        prop_coeff_id_dict={}
+        red_param_id_dict={}
+
+        last_prop_coeff=0
+        last_red_param=self.num_simple_log_params-1
+
+        self.reduced_param_id_lists=[]
+        self.sym_multipliers=[]
+        self.prop_coeff_id=[]
+
+        for simple_log_param_id in range(self.num_simple_log_params):
+            self.reduced_param_id_lists.append([simple_log_param_id])
+            self.prop_coeff_id.append(last_prop_coeff)
+            self.sym_multipliers.append(1.0)
+
+        for sigma_id, ang_mom_classifier in enumerate(ang_mom_map):
+            ang_mom1=ang_mom_classifier[0]
+            ang_mom2=ang_mom_classifier[1]
+            coup_mat_id=ang_mom_classifier[2]
+            same_atom=ang_mom_classifier[3]
+
+            if (same_atom and (ang_mom1 != ang_mom2)):
+                cur_sym_mult=2.0
+            else:
+                cur_sym_mult=1.0
+            self.sym_multipliers.append(cur_sym_mult)
+
+            coup_mat_tuple=(coup_mat_id, same_atom)
+            if coup_mat_tuple in prop_coeff_id_dict:
+                cur_prop_coeff_id=prop_coeff_id_dict[coup_mat_tuple]
+            else:
+                last_prop_coeff+=1
+                cur_prop_coeff_id=last_prop_coeff
+                prop_coeff_id_dict[coup_mat_tuple]=cur_prop_coeff_id
+
+            self.prop_coeff_id.append(cur_prop_coeff_id)
+
+            self.reduced_param_id_lists.append([])
+            for cur_ang_mom in [ang_mom1, ang_mom2]:
+                ang_mom_tuple=(cur_ang_mom, same_atom)
+                if ang_mom_tuple in red_param_id_dict:
+                    cur_red_param_id=red_param_id_dict[ang_mom_tuple]
+                else:
+                    last_red_param+=1
+                    cur_red_param_id=last_red_param
+                    red_param_id_dict[ang_mom_tuple]=cur_red_param_id
+                self.reduced_param_id_lists[-1].append(cur_red_param_id)
+
+        self.num_reduced_params=last_red_param+1
+
+        self.coup_mat_prop_coeffs=np.zeros((last_prop_coeff+1,))
+        self.coup_mat_prop_coeffs[:self.num_simple_log_params]=1.0
+        for sigma_id, stddev in enumerate(stddevs):
+            self.coup_mat_prop_coeffs[self.prop_coeff_id[sigma_id+self.num_simple_log_params]]+=stddev**2
+
+        self.coup_mat_prop_coeffs=self.coup_mat_prop_coeffs**(-1)
+
+    def reduced_params_to_full(self, reduced_parameters):
+        output=np.repeat(1.0, self.num_full_params)
+        for param_id in range(self.num_full_params):
+            for red_param_id in self.reduced_param_id_lists[param_id]:
+                output[param_id]*=np.sqrt(self.coup_mat_prop_coeffs[self.prop_coeff_id[param_id]]*self.sym_multipliers[param_id])
+                for red_param_id in self.reduced_param_id_lists[param_id]:
+                    output[param_id]*=np.exp(reduced_parameters[red_param_id])
+        return output
+
+    def full_derivatives_to_reduced(self, full_derivatives, full_parameters):
+        output=np.zeros((self.num_reduced_params,))
+        for param_id, (param_der, param_val) in enumerate(zip(full_derivatives, full_parameters)):
+            for red_param_id in self.reduced_param_id_lists[param_id]:
+                output[red_param_id]+=param_der*param_val*self.sym_multipliers[param_id]
+        return output
+
+    def full_params_to_reduced(self, full_parameters):
+        output=np.zeros((self.num_reduced_params,))
+        for param_id, param_val in enumerate(full_parameters):
+            red_param_id_list=self.reduced_param_id_lists[param_id]
+            if (len(red_param_id_list)==2):
+                if red_param_id_list[0] != red_param_id_list[1]:
+                    continue
+            output[red_param_id_list[0]]=np.log(param_val/self.sym_multipliers[param_id]/self.coup_mat_prop_coeffs[self.prop_coeff_id[param_id]])/2.0
+        return output
+
+    def initial_reduced_parameter_guess(self, init_lambda, *other_args):
+        output=np.zeros((self.num_reduced_params,))
+        output[0]=np.log(init_lambda)
+        return output
+
+
+###
+# End of reduced hyperparameter states.
+###
 
 class Optimizer_state:
     def __init__(self, error_measure, error_measure_ders, error_measure_red_ders, parameters, red_parameters):
@@ -453,17 +560,21 @@ class Optimizer_state:
         return self.extended_greater(other_state)
     def __lt__(self, other_state):
         return (not self.extended_greater(other_state))
-    def lambda_der(self):
-        return self.error_measure_ders[0]
-    def lambda_val(self):
+    def log_lambda_der(self):
+        return self.error_measure_red_ders[0]
+    def lambda_log_val(self):
         return self.red_parameters[0]
+    def __repr__(self):
+        return str(self)
+    def __str__(self):
+        return "Optimizer_state object: Parameters: "+str(self.parameters)+", reduced parameters: "+str(self.red_parameters)+", error measure: "+str(self.error_measure)
 
 class Optimizer_state_generator:
     def __init__(self, goo_ensemble, reduced_hyperparam_func):
         self.goo_ensemble=goo_ensemble
         self.reduced_hyperparam_func=reduced_hyperparam_func
     def __call__(self, red_parameters, recalc_global_matrices=True, lambda_der_only=False):
-        parameters=self.reduced_hyperparam_func.reduced_params_to_full(reduced_parameters)
+        parameters=self.reduced_hyperparam_func.reduced_params_to_full(red_parameters)
         error_measure, error_measure_ders=self.goo_ensemble.error_measure_wders(parameters,
                                 recalc_global_matrices=recalc_global_matrices, lambda_der_only=lambda_der_only)
         error_measure_red_ders=self.reduced_hyperparam_func.full_derivatives_to_reduced(error_measure_ders, parameters)
@@ -471,7 +582,7 @@ class Optimizer_state_generator:
 
 class GOO_randomized_iterator:
     def __init__(self, opt_GOO_ensemble, red_hyperparam_func, initial_reduced_parameter_vals, lambda_opt_tolerance=0.1, step_magnitudes=None, noise_level_prop_coeffs=None,
-                        lambda_max_num_scan_steps=10, default_step_magnitude=1.0, keep_init_lambda=False, bisec_lambda_opt=False):
+                        lambda_max_num_scan_steps=10, default_step_magnitude=1.0, keep_init_lambda=False, bisec_lambda_opt=True):
         self.optimizer_state_generator=Optimizer_state_generator(opt_GOO_ensemble, red_hyperparam_func)
 
         self.cur_optimizer_state=self.optimizer_state_generator(initial_reduced_parameter_vals)
@@ -493,7 +604,7 @@ class GOO_randomized_iterator:
         else:
             self.noise_level_prop_coeffs=noise_level_prop_coeffs
 
-        if (keep_init_lambda or bisec_lambda_opt):
+        if keep_init_lambda:
             self.noise_level_prop_coeffs[0]=0.0
 
         self.noise_levels=np.zeros((self.num_reduced_params,))
@@ -511,7 +622,7 @@ class GOO_randomized_iterator:
         cur_red_ders=self.cur_optimizer_state.error_measure_red_ders
 
         normalized_red_ders=np.copy(self.cur_optimizer_state.error_measure_red_ders)
-        if (self.bisec_lambda_opt or self.keep_init_lambda):
+        if self.keep_init_lambda:
             normalized_red_ders[0]=0.0
         normalized_red_ders=normalized_red_ders/np.sqrt(sum((normalized_red_ders/self.step_magnitudes)**2))
 
@@ -535,11 +646,11 @@ class GOO_randomized_iterator:
         else:
             self.noise_levels+=self.noise_level_prop_coeffs/np.sqrt(self.num_reduced_params)
     def bisection_lambda_optimization(self):
-        print("Bisection optimization of lambda.")
+        print("Bisection optimization of lambda, starting position:", self.cur_optimizer_state.lambda_log_val(), self.cur_optimizer_state.error_measure)
 
         # Perform a scan to approximately locate the minimum.
         prev_iteration=self.cur_optimizer_state
-        prev_lambda_der=prev_iteration.lambda_der()
+        prev_lambda_der=prev_iteration.log_lambda_der()
         prev_iteration=copy.deepcopy(self.cur_optimizer_state)
 
         scan_additive=math.copysign(self.step_magnitudes[0], -prev_lambda_der)
@@ -548,16 +659,17 @@ class GOO_randomized_iterator:
 
         for init_scan_step in range(self.lambda_max_num_scan_steps):
             trial_red_params=np.copy(prev_iteration.red_parameters)
-            trial_red_params[0]+=scan_multiplier
+            trial_red_params[0]+=scan_additive
 
             trial_iteration=self.optimizer_state_generator(trial_red_params, recalc_global_matrices=False, lambda_der_only=True)
-            trial_lambda_der=trial_iteration.lambda_der()
+            trial_lambda_der=trial_iteration.log_lambda_der()
 
-            print("Initial lambda scan:", trial_red_params[0], trial_lambda_der, trial_iteration.MSE)
+            print("Initial lambda scan:", trial_red_params[0], trial_lambda_der, trial_iteration.error_measure)
 
             if ((trial_lambda_der*prev_lambda_der)<0.0):
                 bisection_interval=[trial_iteration, prev_iteration]
-                bisection_interval.sort(key=lambda x: x.lambda_val())
+                bisection_interval.sort(key=lambda x: x.lambda_log_val())
+                break
             else:
                 if trial_iteration>prev_iteration: # something is wrong, we were supposed to be going down in MSE.
                     print("WARNING: Weird behavior during lambda value scan.")
@@ -572,21 +684,22 @@ class GOO_randomized_iterator:
 
         # Finalize locating the minumum via bisection.
         # Use bisection search to find the minimum. Note that we do not need to recalculate the kernel matrices.
-        while (bisection_interval[1].lambda_val()>bisection_interval[0].lambda_val()+self.lambda_opt_tolerance):
-            cur_lambda=(bisection_interval[0].lambda_val()+bisection_interval[1].lambda_val())/2
+        while (bisection_interval[1].lambda_log_val()>bisection_interval[0].lambda_log_val()+self.lambda_opt_tolerance):
+            cur_log_lambda=(bisection_interval[0].lambda_log_val()+bisection_interval[1].lambda_log_val())/2
 
             middle_params=np.copy(self.cur_optimizer_state.red_parameters)
-            middle_params[0]=cur_lambda
+            middle_params[0]=cur_log_lambda
 
             middle_iteration=self.optimizer_state_generator(middle_params, recalc_global_matrices=False, lambda_der_only=True)
 
-            middle_der=middle_iteration.lambda_der()
+            middle_der=middle_iteration.log_lambda_der()
 
-            print("Bisection lambda optimization, lambda:", cur_lambda, "derivative:", middle_der, "error measure:", middle_iteration.error_measure)
+            print("Bisection lambda optimization, lambda logarithm:", cur_log_lambda, "derivative:", middle_der, "error measure:", middle_iteration.error_measure)
 
             for bisec_int_id in range(2):
-                if (middle_der*bisection_interval[bisec_int_id].lambda_der()<0.0):
+                if (middle_der*bisection_interval[bisec_int_id].log_lambda_der()>0.0):
                     bisection_interval[bisec_int_id]=middle_iteration
+            bisection_interval.sort(key=lambda x: x.lambda_log_val())
 
         self.cur_optimizer_state=self.optimizer_state_generator(min(bisection_interval).red_parameters, recalc_global_matrices=False)
 
@@ -595,15 +708,19 @@ hyperparam_red_funcs={"default": Reduced_hyperparam_func, "single_rescaling" : S
 
 def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=False, init_lambda=1e-3, max_iterations=None,
                                     init_param_guess=None, hyperparam_red_type="default", max_stagnating_iterations=1,
-                                    use_MAE=True, other_opt_goo_ensemble_kwargs={}, randomized_iterator_kwargs={}, iter_dump_name_add=None):
+                                    use_MAE=True, rep_params=None, num_kfolds=16, other_opt_goo_ensemble_kwargs={}, randomized_iterator_kwargs={}, iter_dump_name_add=None,
+                                    additional_BFGS_iters=None, iter_dump_name_add_BFGS=None, negligible_red_param_distance=1e-9):
 
-    opt_GOO_ensemble=generate_random_GOO_ensemble(compound_list, quant_list, use_Gauss=use_Gauss, use_MAE=use_MAE, **other_opt_goo_ensemble_kwargs)
+    opt_GOO_ensemble=generate_random_GOO_ensemble(compound_list, quant_list, use_Gauss=use_Gauss, use_MAE=use_MAE, num_kfolds=num_kfolds, **other_opt_goo_ensemble_kwargs)
 
     avs, stddevs=oml_ensemble_avs_stddevs(compound_list)
     print("Found stddevs:", stddevs)
-    base_inv_sqwidth_params=0.25/stddevs**2
 
-    red_hyperparam_func=hyperparam_red_funcs[hyperparam_red_type](base_inv_sqwidth_params, use_Gauss=use_Gauss)
+    if hyperparam_red_type == "ang_mom_classified":
+        red_hyperparam_func=Ang_mom_classified_rhf(rep_params, stddevs, use_Gauss=use_Gauss)
+    else:
+        base_inv_sqwidth_params=0.25/stddevs**2
+        red_hyperparam_func=hyperparam_red_funcs[hyperparam_red_type](base_inv_sqwidth_params, use_Gauss=use_Gauss)
 
     if init_param_guess is None:
         initial_reduced_parameter_vals=red_hyperparam_func.initial_reduced_parameter_guess(init_lambda)
@@ -638,5 +755,45 @@ def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=Fa
                 if num_stagnating_iterations>=max_stagnating_iterations:
                     iterate_more=False
 
+    if additional_BFGS_iters is not None:
+        error_measure_func=GOO_standalone_error_measure(opt_GOO_ensemble, red_hyperparam_func, negligible_red_param_distance, iter_dump_name_add=iter_dump_name_add_BFGS)
+        if iter_dump_name_add_BFGS is None:
+            iter_dump_name_add_BFGS_grad=None
+        else:
+            iter_dump_name_add_BFGS_grad=iter_dump_name_add_BFGS+"_grad"
+        error_measure_ders_func=GOO_standalone_error_measure_ders(opt_GOO_ensemble, red_hyperparam_func, negligible_red_param_distance, iter_dump_name_add=iter_dump_name_add_BFGS_grad)
+        finalized_result=minimize(error_measure_func, cur_opt_state.parameters, method='BFGS', jac=error_measure_ders_func, options={'disp': True, 'maxiter' : additional_BFGS_iters})
+        if finalized_result.fun < cur_opt_state.error_measure:
+            return {"inv_sq_width_params" : finalized_result.x[1:], "lambda_val" : finalized_result.x[0], "error_measure" : finalized_result.fun}
     return {"inv_sq_width_params" : cur_opt_state.parameters[1:], "lambda_val" : cur_opt_state.parameters[0], "error_measure" :  cur_opt_state.error_measure}
+
+
+######
+#   Functions introduced to facilitate coupling with standard minimization protocols from scipy.
+#####
+
+class GOO_standalone_error_measure:
+    def __init__(self, GOO_ensemble, reduced_hyperparam_func, negligible_red_param_distance, iter_dump_name_add=None):
+        self.GOO=GOO_ensemble
+        self.reduced_hyperparam_func=reduced_hyperparam_func
+        self.iter_dump_name_add=iter_dump_name_add
+        self.num_calls=0
+        self.negligible_red_param_distance=negligible_red_param_distance
+    def __call__(self, red_parameters):
+        self.parameters=self.reduced_hyperparam_func.reduced_params_to_full(red_parameters)
+        self.reinit_quants()
+        self.dump_intermediate_result()
+        return self.result()
+    def reinit_quants(self):
+        self.error_measure, self.error_measure_ders=self.GOO.error_measure_wders(self.parameters, negligible_red_param_distance=self.negligible_red_param_distance)
+    def dump_intermediate_result(self):
+        self.num_calls+=1
+        cur_dump_name=self.iter_dump_name_add+"_"+str(self.num_calls)+".pkl"
+        dump2pkl([self.parameters, self.result()], cur_dump_name)
+    def result(self):
+        return self.error_measure
+
+class GOO_standalone_error_measure_ders(GOO_standalone_error_measure):
+    def result(self):
+        return self.error_measure_ders
     
