@@ -121,7 +121,7 @@ print(MSE_ref)
 print(MSE_GOO)
 print(MSE_ref-MSE_GOO)
 
-MSE_der_GOO_all=GOO.error_measure_der(params0)
+MSE_der_GOO_all=GOO.error_measure_ders(params0)
 
 print("MSE_der")
 MSE_der_GOO=MSE_der_GOO_all[der_id+1]
@@ -145,7 +145,7 @@ print(MAE_ref)
 print(MAE_GOO)
 print(MAE_ref-MAE_GOO)
 
-MSE_der_GOO_all=GOO.error_measure_wders(params0)
+MAE_der_GOO_all=GOO.error_measure_ders(params0)
 
 print("MAE_der")
 MAE_der_GOO=MAE_der_GOO_all[der_id+1]

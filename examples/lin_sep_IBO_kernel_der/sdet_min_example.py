@@ -25,7 +25,7 @@ max_angular_momentum=1
 # Replace with path to QM9 directory
 QM7bT_dir=os.environ["DATA"]+"/QM7bT_reformatted"
 
-train_num=500
+train_num=20
 check_num=2000
 
 use_Gauss=True
@@ -53,7 +53,7 @@ def get_quants_comps(xyz_list, quantity, dl_params, oml_representation_parameter
 quant=Quantity(quant_name)
 training_comps, training_quants=get_quants_comps(xyz_list[:train_num], quant, delta_learning_params, oml_representation_parameters)
 
-optimized_hyperparams=min_sep_IBO_random_walk_optimization(training_comps, training_quants, init_lambda=1e-6, use_Gauss=use_Gauss, max_stagnating_iterations=16, num_kfolds=32,
+optimized_hyperparams=min_sep_IBO_random_walk_optimization(training_comps, training_quants, init_lambda=1e-6, use_Gauss=use_Gauss, max_stagnating_iterations=8, num_kfolds=32,
                                     hyperparam_red_type="ang_mom_classified", randomized_iterator_kwargs={"keep_init_lambda" : keep_init_lambda, "default_step_magnitude" : 0.25}, iter_dump_name_add="test_min",
                                     rep_params=oml_representation_parameters)
 

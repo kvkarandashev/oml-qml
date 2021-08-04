@@ -156,9 +156,9 @@ def MAE_bisection_optimization(initial_lambda_opt_step, train_kernel, train_vals
 # Procedures for general gradient-based optimization.
 #########
 class Gradient_optimization_obj:
-    def __init__(self, training_compounds, training_quants, check_compounds, check_quants, use_Gauss=False, use_MAE=True):
+    def __init__(self, training_compounds, training_quants, check_compounds, check_quants, use_Gauss=False, use_MAE=True, reduced_hyperparam_func=None):
         self.training_compounds=GMO_sep_IBO_kern_input(training_compounds)
-        self.init_kern_funcs(self.training_compounds, use_Gauss=use_Gauss)
+        self.init_kern_funcs(self.training_compounds, use_Gauss=use_Gauss, reduced_hyperparam_func=reduced_hyperparam_func)
         self.check_compounds=GMO_sep_IBO_kern_input(check_compounds)
 
         self.training_quants=training_quants
@@ -166,7 +166,10 @@ class Gradient_optimization_obj:
 
         self.use_MAE=use_MAE
 
-    def init_kern_funcs(self, sample_coumpound_list, use_Gauss=False):
+    def init_kern_funcs(self, sample_coumpound_list, use_Gauss=False, reduced_hyperparam_func=None):
+
+        self.reduced_hyperparam_func=reduced_hyperparam_func
+
         if use_Gauss:
             self.sym_kern_func=gauss_sep_IBO_sym_kernel_conv
             self.def_kern_func=gauss_sep_IBO_kernel_conv
@@ -176,7 +179,13 @@ class Gradient_optimization_obj:
             self.def_kern_func=lin_sep_IBO_kernel_conv
             self.num_params=sample_coumpound_list.max_num_scalar_reps+1
 
+        if self.reduced_hyperparam_func is None:
+            self.num_red_params=self.num_params
+        else:
+            self.num_red_params=self.reduced_hyperparam_func.num_reduced_params
+
     def reinitiate_basic_params(self, parameters):
+        self.all_parameters=parameters
         self.lambda_val=parameters[0]
         self.inv_sq_width_params=parameters[1:]
         self.num_ders=len(parameters)
@@ -194,13 +203,14 @@ class Gradient_optimization_obj:
 
         num_train_compounds=self.training_compounds.num_mols
 
-        self.train_kernel_ders=np.zeros((num_train_compounds, num_train_compounds, self.num_params))
-        for mol_id in range(num_train_compounds):
-            self.train_kernel_ders[mol_id, mol_id, 0]=1.0
+        self.train_kernel_ders=one_diag_unity_tensor(num_train_compounds, self.num_params)
         self.check_kernel_ders=np.zeros((self.check_compounds.num_mols, num_train_compounds, self.num_params))
 
         self.train_kernel_ders[:, :, 1:]=train_kernel_wders[:, :, 1:]
         self.check_kernel_ders[:, :, 1:]=check_kernel_wders[:, :, 1:]
+        if self.reduced_hyperparam_func is not None:
+            self.train_kernel_ders=self.reduced_hyperparam_func.transform_der_array_to_reduced(self.train_kernel_ders, self.all_parameters)
+            self.check_kernel_ders=self.reduced_hyperparam_func.transform_der_array_to_reduced(self.check_kernel_ders, self.all_parameters)
 
     def reinitiate_basic_components(self):
         
@@ -233,12 +243,12 @@ class Gradient_optimization_obj:
 
     def reinitiate_error_measure_ders(self, lambda_der_only=False):
         if self.train_kern_invertible:
-            self.cur_MSE_der=np.zeros((self.num_params,))
-            self.cur_MAE_der=np.zeros((self.num_params,))
+            self.cur_MSE_der=np.zeros((self.num_red_params,))
+            self.cur_MAE_der=np.zeros((self.num_red_params,))
             if lambda_der_only:
                 upper_param_id=1
             else:
-                upper_param_id=self.num_params
+                upper_param_id=self.num_red_params
             for param_id in range(upper_param_id):
                 cur_train_der=self.train_kernel_ders[:, :, param_id]
                 cur_check_der=self.check_kernel_ders[:, :, param_id]
@@ -246,8 +256,8 @@ class Gradient_optimization_obj:
                 self.cur_MSE_der[param_id]=2*np.mean(self.prediction_errors*cur_der_predictions)   
                 self.cur_MAE_der[param_id]=np.mean(cur_der_predictions*np.sign(self.prediction_errors))
         else:
-            self.cur_MSE_der=non_invertible_default_log_der(self.num_params)
-            self.cur_MAE_der=non_invertible_default_log_der(self.num_params)
+            self.cur_MSE_der=non_invertible_default_log_der(reduced_hyperparam_func, self.num_params)
+            self.cur_MAE_der=non_invertible_default_log_der(reduced_hyperparam_func, self.num_params)
 
     def error_measure(self, parameters):
         self.reinitiate_basic_params(parameters)
@@ -287,15 +297,20 @@ class Gradient_optimization_obj:
             return self.cur_MSE, self.cur_MSE_der
 
 
-def non_invertible_default_log_der(param_vec_length):
-    return np.repeat(-1.0, param_vec_length)
+def non_invertible_default_log_der(reduced_hyperparam_func, num_params):
+    if reduced_hyperparam_func is None:
+        vec_length=num_params
+    else:
+        vec_length=reduced_hyperparam_func.num_reduced_params
+    return np.repeat(-1.0, vec_length)
 
 class GOO_ensemble_subset(Gradient_optimization_obj):
-    def __init__(self, training_indices, check_indices, all_quantities, num_params, use_MAE=True):
+    def __init__(self, training_indices, check_indices, all_quantities, num_params, num_red_params, use_MAE=True):
         self.training_indices=training_indices
         self.check_indices=check_indices
 
         self.num_params=num_params
+        self.num_red_params=num_red_params
 
         self.training_quants=all_quantities[self.training_indices]
         self.check_quants=all_quantities[self.check_indices]
@@ -308,26 +323,22 @@ class GOO_ensemble_subset(Gradient_optimization_obj):
     def recalculate_kernel_mats_ders(self, global_matrix=None, global_matrix_ders=None):
         self.recalculate_kernel_matrices(global_matrix=global_matrix)
         if global_matrix_ders is not None:
-            num_train=len(self.training_indices)
-            self.train_kernel_ders=np.zeros((num_train, num_train, self.num_params))
-            self.check_kernel_ders=np.zeros((len(self.check_indices), num_train, self.num_params))
-            for mol_id in range(num_train):
-                self.train_kernel_ders[mol_id, mol_id, 0]=1.0
-
-            self.train_kernel_ders[:, :, 1:]=global_matrix_ders[self.training_indices, :][:, self.training_indices][:]
-            self.check_kernel_ders[:, :, 1:]=global_matrix_ders[self.check_indices, :][:, self.training_indices][:]
+            self.train_kernel_ders=global_matrix_ders[self.training_indices, :][:, self.training_indices][:]
+            self.check_kernel_ders=global_matrix_ders[self.check_indices, :][:, self.training_indices][:]
 
 # This class was introduced to enable multiple cross-validation.
 class GOO_ensemble(Gradient_optimization_obj):
-    def __init__(self, all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=False, use_MAE=True):
+    def __init__(self, all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=False, use_MAE=True, reduced_hyperparam_func=None):
         self.all_compounds=GMO_sep_IBO_kern_input(all_compounds)
 
-        self.init_kern_funcs(self.all_compounds, use_Gauss=use_Gauss)
+        self.tot_num_points=len(all_compounds)
+
+        self.init_kern_funcs(self.all_compounds, use_Gauss=use_Gauss, reduced_hyperparam_func=reduced_hyperparam_func)
 
         self.goo_ensemble_subsets=[]
         for train_id_list, check_id_list in zip(train_id_lists, check_id_lists):
             self.goo_ensemble_subsets.append(GOO_ensemble_subset(train_id_list, check_id_list, all_quantities,
-                                                                    self.num_params, use_MAE=use_MAE))
+                                                                    self.num_params, self.num_red_params, use_MAE=use_MAE))
         self.num_subsets=len(self.goo_ensemble_subsets)
 
         self.presaved_parameters=None
@@ -343,12 +354,12 @@ class GOO_ensemble(Gradient_optimization_obj):
             if need_recalc:
                 self.recalculate_global_matrices(parameters)
         error_mean=0.0
-        error_mean_ders=np.zeros((len(parameters),))
+        error_mean_ders=np.zeros((self.num_red_params,))
         for subset_id in range(self.num_subsets):
             cur_error, cur_error_ders=self.goo_ensemble_subsets[subset_id].error_measure_wders(parameters, lambda_der_only=lambda_der_only)
             if cur_error is None:
                 error_mean=0.0
-                error_mean_ders=non_invertible_default_log_der(len(parameters))
+                error_mean_ders=non_invertible_default_log_der(self.reduced_hyperparam_func, self.num_params)
                 break
             else:
                 error_mean+=cur_error
@@ -360,13 +371,18 @@ class GOO_ensemble(Gradient_optimization_obj):
     def recalculate_global_matrices(self, parameters):
         global_kernel_wders=self.sym_kern_func(self.all_compounds, parameters[1:], with_ders=True)
         self.global_matrix=global_kernel_wders[:, :, 0]
-        self.global_matrix_ders=global_kernel_wders[:, :, 1:]
+        self.global_matrix_ders=one_diag_unity_tensor(self.tot_num_points, self.num_params)
+        self.global_matrix_ders[:, :, 1:]=global_kernel_wders[:, :, 1:]
+
+        if self.reduced_hyperparam_func is not None:
+            self.global_matrix_ders=self.reduced_hyperparam_func.transform_der_array_to_reduced(self.global_matrix_ders, parameters)
+
         for subset_id in range(self.num_subsets):
             self.goo_ensemble_subsets[subset_id].recalculate_kernel_mats_ders(global_matrix=self.global_matrix, global_matrix_ders=self.global_matrix_ders)
 
-def generate_random_GOO_ensemble(all_compounds, all_quantities, num_kfolds=16, training_set_ratio=0.5, use_Gauss=False, use_MAE=True):
+def generate_random_GOO_ensemble(all_compounds, all_quantities, num_kfolds=16, training_set_ratio=0.5, use_Gauss=False, use_MAE=True, reduced_hyperparam_func=None):
     num_points=len(all_quantities)
-    divisor=int(num_points*training_set_ratio)
+    train_point_num=int(num_points*training_set_ratio)
 
     all_indices=list(range(num_points))
 
@@ -374,11 +390,24 @@ def generate_random_GOO_ensemble(all_compounds, all_quantities, num_kfolds=16, t
     check_id_lists=[]
 
     for kfold_id in range(num_kfolds):
-        random.shuffle(all_indices)
-        train_id_lists.append(all_indices[:divisor])
-        check_id_lists.append(all_indices[divisor:])
+        train_id_list=random.sample(all_indices, train_point_num)
+        train_id_list.sort()
+        check_id_list=[]
+        for train_interval_id in range(train_point_num+1):
+            if train_interval_id==0:
+                lower_bound=0
+            else:
+                lower_bound=train_id_list[train_interval_id-1]+1
+            if train_interval_id==train_point_num:
+                upper_bound=num_points
+            else:
+                upper_bound=train_id_list[train_interval_id]
+            for index in range(lower_bound, upper_bound):
+                check_id_list.append(index)
+        train_id_lists.append(train_id_list)
+        check_id_lists.append(check_id_list)
 
-    return GOO_ensemble(all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=use_Gauss, use_MAE=use_MAE)
+    return GOO_ensemble(all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=use_Gauss, use_MAE=use_MAE, reduced_hyperparam_func=reduced_hyperparam_func)
     
 
 #   For going between the full hyperparameter set (lambda, global sigma, and other sigmas)
@@ -401,6 +430,16 @@ class Reduced_hyperparam_func:
         output[0]=np.log(init_lambda)
         output[-len(self.base_inv_sqwidth_params):]=np.log(self.base_inv_sqwidth_params)
         return output
+    def jacobian(self, parameters):
+        output=np.zeros((self.num_full_params, self.num_reduced_params))
+        for param_id in range(self.num_full_params):
+            cur_unity_vector=np.zeros((self.num_full_params,))
+            cur_unity_vector[param_id]=1.0
+            output[param_id, :]=self.full_derivatives_to_reduced(cur_unity_vector, parameters)[:]
+        return output
+    def transform_der_array_to_reduced(self, input_array, parameters):
+        jacobian=self.jacobian(parameters)
+        return np.matmul(input_array, jacobian)
 
 # For using a simple rescaling coefficient for sigmas.
 class Single_rescaling_rhf(Reduced_hyperparam_func):
@@ -509,16 +548,14 @@ class Ang_mom_classified_rhf(Reduced_hyperparam_func):
         output=np.repeat(1.0, self.num_full_params)
         for param_id in range(self.num_full_params):
             for red_param_id in self.reduced_param_id_lists[param_id]:
-                output[param_id]*=np.sqrt(self.coup_mat_prop_coeffs[self.prop_coeff_id[param_id]]*self.sym_multipliers[param_id])
-                for red_param_id in self.reduced_param_id_lists[param_id]:
-                    output[param_id]*=np.exp(reduced_parameters[red_param_id])
+                output[param_id]*=np.sqrt(self.coup_mat_prop_coeffs[self.prop_coeff_id[param_id]]*self.sym_multipliers[param_id])*np.exp(reduced_parameters[red_param_id])
         return output
 
     def full_derivatives_to_reduced(self, full_derivatives, full_parameters):
         output=np.zeros((self.num_reduced_params,))
         for param_id, (param_der, param_val) in enumerate(zip(full_derivatives, full_parameters)):
             for red_param_id in self.reduced_param_id_lists[param_id]:
-                output[red_param_id]+=param_der*param_val*self.sym_multipliers[param_id]
+                output[red_param_id]+=param_der*param_val
         return output
 
     def full_params_to_reduced(self, full_parameters):
@@ -528,7 +565,7 @@ class Ang_mom_classified_rhf(Reduced_hyperparam_func):
             if (len(red_param_id_list)==2):
                 if red_param_id_list[0] != red_param_id_list[1]:
                     continue
-            output[red_param_id_list[0]]=np.log(param_val/self.sym_multipliers[param_id]/self.coup_mat_prop_coeffs[self.prop_coeff_id[param_id]])/2.0
+            output[red_param_id_list[0]]=np.log(param_val/self.sym_multipliers[param_id]/self.coup_mat_prop_coeffs[self.prop_coeff_id[param_id]])/len(red_param_id_list)
         return output
 
     def initial_reduced_parameter_guess(self, init_lambda, *other_args):
@@ -542,9 +579,8 @@ class Ang_mom_classified_rhf(Reduced_hyperparam_func):
 ###
 
 class Optimizer_state:
-    def __init__(self, error_measure, error_measure_ders, error_measure_red_ders, parameters, red_parameters):
+    def __init__(self, error_measure, error_measure_red_ders, parameters, red_parameters):
         self.error_measure=error_measure
-        self.error_measure_ders=error_measure_ders
         self.error_measure_red_ders=error_measure_red_ders
         self.parameters=parameters
         self.red_parameters=red_parameters
@@ -569,21 +605,21 @@ class Optimizer_state:
     def __str__(self):
         return "Optimizer_state object: Parameters: "+str(self.parameters)+", reduced parameters: "+str(self.red_parameters)+", error measure: "+str(self.error_measure)
 
+######## TO-DO just measure RED ders? Optimizer_state class too?
+
 class Optimizer_state_generator:
-    def __init__(self, goo_ensemble, reduced_hyperparam_func):
+    def __init__(self, goo_ensemble):
         self.goo_ensemble=goo_ensemble
-        self.reduced_hyperparam_func=reduced_hyperparam_func
     def __call__(self, red_parameters, recalc_global_matrices=True, lambda_der_only=False):
-        parameters=self.reduced_hyperparam_func.reduced_params_to_full(red_parameters)
-        error_measure, error_measure_ders=self.goo_ensemble.error_measure_wders(parameters,
+        parameters=self.goo_ensemble.reduced_hyperparam_func.reduced_params_to_full(red_parameters)
+        error_measure, error_measure_red_ders=self.goo_ensemble.error_measure_wders(parameters,
                                 recalc_global_matrices=recalc_global_matrices, lambda_der_only=lambda_der_only)
-        error_measure_red_ders=self.reduced_hyperparam_func.full_derivatives_to_reduced(error_measure_ders, parameters)
-        return Optimizer_state(error_measure, error_measure_ders, error_measure_red_ders, parameters, red_parameters)
+        return Optimizer_state(error_measure, error_measure_red_ders, parameters, red_parameters)
 
 class GOO_randomized_iterator:
-    def __init__(self, opt_GOO_ensemble, red_hyperparam_func, initial_reduced_parameter_vals, lambda_opt_tolerance=0.1, step_magnitudes=None, noise_level_prop_coeffs=None,
+    def __init__(self, opt_GOO_ensemble, initial_reduced_parameter_vals, lambda_opt_tolerance=0.1, step_magnitudes=None, noise_level_prop_coeffs=None,
                         lambda_max_num_scan_steps=10, default_step_magnitude=1.0, keep_init_lambda=False, bisec_lambda_opt=True):
-        self.optimizer_state_generator=Optimizer_state_generator(opt_GOO_ensemble, red_hyperparam_func)
+        self.optimizer_state_generator=Optimizer_state_generator(opt_GOO_ensemble)
 
         self.cur_optimizer_state=self.optimizer_state_generator(initial_reduced_parameter_vals)
 
@@ -592,7 +628,7 @@ class GOO_randomized_iterator:
         self.lambda_opt_tolerance=lambda_opt_tolerance
         self.keep_init_lambda=keep_init_lambda
 
-        self.num_reduced_params=self.optimizer_state_generator.reduced_hyperparam_func.num_reduced_params
+        self.num_reduced_params=self.optimizer_state_generator.goo_ensemble.reduced_hyperparam_func.num_reduced_params
 
         if step_magnitudes is None:
             self.step_magnitudes=np.repeat(default_step_magnitude, self.num_reduced_params)
@@ -645,6 +681,7 @@ class GOO_randomized_iterator:
             self.noise_levels[:]=0.0
         else:
             self.noise_levels+=self.noise_level_prop_coeffs/np.sqrt(self.num_reduced_params)
+
     def bisection_lambda_optimization(self):
         print("Bisection optimization of lambda, starting position:", self.cur_optimizer_state.lambda_log_val(), self.cur_optimizer_state.error_measure)
 
@@ -711,7 +748,6 @@ def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=Fa
                                     use_MAE=True, rep_params=None, num_kfolds=16, other_opt_goo_ensemble_kwargs={}, randomized_iterator_kwargs={}, iter_dump_name_add=None,
                                     additional_BFGS_iters=None, iter_dump_name_add_BFGS=None, negligible_red_param_distance=1e-9):
 
-    opt_GOO_ensemble=generate_random_GOO_ensemble(compound_list, quant_list, use_Gauss=use_Gauss, use_MAE=use_MAE, num_kfolds=num_kfolds, **other_opt_goo_ensemble_kwargs)
 
     avs, stddevs=oml_ensemble_avs_stddevs(compound_list)
     print("Found stddevs:", stddevs)
@@ -727,8 +763,10 @@ def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=Fa
     else:
         initial_reduced_parameter_vals=red_hyperparam_func.full_params_to_reduced(init_param_guess)
 
+    opt_GOO_ensemble=generate_random_GOO_ensemble(compound_list, quant_list, use_Gauss=use_Gauss, use_MAE=use_MAE, num_kfolds=num_kfolds,
+                                                  reduced_hyperparam_func=red_hyperparam_func, **other_opt_goo_ensemble_kwargs)
 
-    randomized_iterator=GOO_randomized_iterator(opt_GOO_ensemble, red_hyperparam_func, initial_reduced_parameter_vals, **randomized_iterator_kwargs)
+    randomized_iterator=GOO_randomized_iterator(opt_GOO_ensemble, initial_reduced_parameter_vals, **randomized_iterator_kwargs)
     num_stagnating_iterations=0
     num_iterations=0
 
@@ -797,3 +835,13 @@ class GOO_standalone_error_measure_ders(GOO_standalone_error_measure):
     def result(self):
         return self.error_measure_ders
     
+
+#####
+# Minor auxiliary functions.
+#####
+
+def one_diag_unity_tensor(dim12, dim3):
+    output=np.zeros((dim12, dim12, dim3))
+    for mol_id in range(dim12):
+        output[mol_id, mol_id, 0]=1.0
+    return output
