@@ -324,3 +324,191 @@ enddo
 if (sym_kernel_mat) call symmetrize_matrix(kernel_mat, A_num_mols)
 
 END SUBROUTINE fibo_fr_kernel
+
+
+!!!!!!
+!!! For Gaussian kernels with derivatives.
+!!!!!!
+SUBROUTINE fgmo_sep_ibo_sym_kernel_wders(num_scalar_reps,&
+                    A_ibo_atom_reps, A_ibo_arep_rhos, A_ibo_rhos,&
+                    A_ibo_atom_nums, A_ibo_nums,&
+                    A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols,&
+                    inv_sq_width_params, kernel_mat, num_kern_comps)
+use foml_module, only : scalar_rep_resc_ibo_sep, arep_rho_renorm_gen_log_ders,&
+        fgmo_sep_ibo_kernel_element_wders
+implicit none
+integer, intent(in):: num_scalar_reps
+integer, intent(in):: A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols
+double precision, dimension(:,:,:,:), intent(in):: A_ibo_atom_reps
+double precision, dimension(:,:,:), intent(in):: A_ibo_arep_rhos
+double precision, dimension(:, :), intent(in):: A_ibo_rhos
+double precision, dimension(:), intent(in):: inv_sq_width_params
+integer, intent(in), dimension(:, :):: A_ibo_atom_nums
+integer, intent(in), dimension(:):: A_ibo_nums
+integer, intent(in):: num_kern_comps
+double precision, dimension(:, :, :), intent(inout):: kernel_mat
+double precision, dimension(:, :, :), allocatable:: A_ibo_arep_renorm_rhos,&
+                                             A_ibo_self_cov_log_ders
+double precision, dimension(:, :, :, :), allocatable:: A_ibo_atom_sreps
+integer:: A_mol_counter1, A_mol_counter2
+double precision, dimension(:), allocatable:: width_params, sq_width_params
+double precision:: inv_sq_sigma
+
+inv_sq_sigma=inv_sq_width_params(1)
+
+allocate(A_ibo_arep_renorm_rhos(A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols),&
+            A_ibo_atom_sreps(num_scalar_reps, A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols))
+
+A_ibo_arep_renorm_rhos=A_ibo_arep_rhos
+
+allocate(width_params(num_scalar_reps), sq_width_params(num_scalar_reps))
+sq_width_params=1.0/inv_sq_width_params(2:num_scalar_reps+1)
+width_params=sqrt(sq_width_params)
+
+call scalar_rep_resc_ibo_sep(A_ibo_atom_reps, width_params, num_scalar_reps, A_max_num_ibo_atom_reps,&
+        A_max_num_ibos, A_num_mols, A_ibo_atom_sreps)
+
+if (num_kern_comps == 1) then
+    call arep_rho_renorm_gen_log_ders(num_scalar_reps, A_ibo_atom_sreps, A_ibo_arep_renorm_rhos, A_ibo_atom_nums, A_ibo_nums,&
+                        A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols)
+else
+    allocate(A_ibo_self_cov_log_ders(num_scalar_reps, A_max_num_ibos, A_num_mols))
+    call arep_rho_renorm_gen_log_ders(num_scalar_reps, A_ibo_atom_sreps, A_ibo_arep_renorm_rhos, A_ibo_atom_nums, A_ibo_nums,&
+                        A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols, A_ibo_self_cov_log_ders)
+endif
+
+!$OMP PARALLEL DO PRIVATE(A_mol_counter1, A_mol_counter2) SCHEDULE(DYNAMIC)
+do A_mol_counter1=1, A_num_mols
+    do A_mol_counter2=1, A_mol_counter1
+        if (num_kern_comps == 1) then
+            call fgmo_sep_ibo_kernel_element_wders(num_scalar_reps, A_ibo_atom_sreps(:,:,:,A_mol_counter2),&
+                A_ibo_arep_renorm_rhos(:,:,A_mol_counter2), A_ibo_rhos(:,A_mol_counter2),&
+                A_ibo_atom_nums(:, A_mol_counter2),A_ibo_nums(A_mol_counter2),&
+                A_max_num_ibo_atom_reps, A_max_num_ibos,&
+                A_ibo_atom_sreps(:,:,:,A_mol_counter1), A_ibo_arep_renorm_rhos(:,:,A_mol_counter1),&
+                A_ibo_rhos(:,A_mol_counter1),&
+                A_ibo_atom_nums(:, A_mol_counter1), A_ibo_nums(A_mol_counter1),&
+                A_max_num_ibo_atom_reps, A_max_num_ibos, inv_sq_sigma,&
+                kernel_mat(:, A_mol_counter2, A_mol_counter1), num_kern_comps)
+        else
+            call fgmo_sep_ibo_kernel_element_wders(num_scalar_reps, A_ibo_atom_sreps(:,:,:, A_mol_counter2),&
+                A_ibo_arep_renorm_rhos(:,:,A_mol_counter2), A_ibo_rhos(:, A_mol_counter2),&
+                A_ibo_atom_nums(:, A_mol_counter2), A_ibo_nums(A_mol_counter2),&
+                A_max_num_ibo_atom_reps, A_max_num_ibos,&
+                A_ibo_atom_sreps(:,:,:, A_mol_counter1), A_ibo_arep_renorm_rhos(:,:, A_mol_counter1),&
+                A_ibo_rhos(:, A_mol_counter1),&
+                A_ibo_atom_nums(:, A_mol_counter1), A_ibo_nums(A_mol_counter1),&
+                A_max_num_ibo_atom_reps, A_max_num_ibos, inv_sq_sigma,&
+                kernel_mat(:, A_mol_counter2, A_mol_counter1), num_kern_comps,&
+                A_ibo_self_cov_log_ders(:, :, A_mol_counter2), A_ibo_self_cov_log_ders(:, :, A_mol_counter1))
+                kernel_mat(3:num_kern_comps, A_mol_counter2, A_mol_counter1)=&
+                  kernel_mat(3:num_kern_comps, A_mol_counter2, A_mol_counter1)*sq_width_params
+        endif
+    enddo
+enddo
+!$OMP END PARALLEL DO
+
+do A_mol_counter1=1, A_num_mols
+    do A_mol_counter2=1, A_mol_counter1
+        kernel_mat(:, A_mol_counter1, A_mol_counter2)=kernel_mat(:, A_mol_counter2, A_mol_counter1)
+    enddo
+enddo
+
+END SUBROUTINE fgmo_sep_ibo_sym_kernel_wders
+
+
+SUBROUTINE fgmo_sep_ibo_kernel_wders(num_scalar_reps,&
+                    A_ibo_atom_reps, A_ibo_arep_rhos, A_ibo_rhos,&
+                    A_ibo_atom_nums, A_ibo_nums,&
+                    A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols,&
+                    B_ibo_atom_reps, B_ibo_arep_rhos, B_ibo_rhos,&
+                    B_ibo_atom_nums, B_ibo_nums,&
+                    B_max_num_ibo_atom_reps, B_max_num_ibos, B_num_mols,&
+                    inv_sq_width_params, kernel_mat, num_kern_comps)
+use foml_module, only : scalar_rep_resc_ibo_sep, arep_rho_renorm_gen_log_ders,&
+        fgmo_sep_ibo_kernel_element_wders
+implicit none
+integer, intent(in):: num_scalar_reps
+integer, intent(in):: A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols,&
+                      B_max_num_ibo_atom_reps, B_max_num_ibos, B_num_mols
+double precision, dimension(:,:,:,:), intent(in):: A_ibo_atom_reps, B_ibo_atom_reps
+double precision, dimension(:,:,:), intent(in):: A_ibo_arep_rhos, B_ibo_arep_rhos
+double precision, dimension(:, :), intent(in):: A_ibo_rhos, B_ibo_rhos
+double precision, dimension(:), intent(in):: inv_sq_width_params
+integer, intent(in), dimension(:, :):: A_ibo_atom_nums, B_ibo_atom_nums
+integer, intent(in), dimension(:):: A_ibo_nums, B_ibo_nums
+integer, intent(in):: num_kern_comps
+double precision, dimension(:, :, :), intent(inout):: kernel_mat
+double precision, dimension(:, :, :), allocatable:: A_ibo_arep_renorm_rhos,&
+        A_ibo_self_cov_log_ders, B_ibo_arep_renorm_rhos, B_ibo_self_cov_log_ders
+double precision, dimension(:, :, :, :), allocatable:: A_ibo_atom_sreps, B_ibo_atom_sreps
+integer:: A_mol_counter, B_mol_counter
+double precision, dimension(:), allocatable:: width_params, sq_width_params
+double precision:: inv_sq_sigma
+
+inv_sq_sigma=inv_sq_width_params(1)
+
+allocate(A_ibo_arep_renorm_rhos(A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols),&
+            A_ibo_atom_sreps(num_scalar_reps, A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols),&
+            B_ibo_arep_renorm_rhos(B_max_num_ibo_atom_reps, B_max_num_ibos, B_num_mols),&
+            B_ibo_atom_sreps(num_scalar_reps, B_max_num_ibo_atom_reps, B_max_num_ibos, B_num_mols))
+
+A_ibo_arep_renorm_rhos=A_ibo_arep_rhos
+B_ibo_arep_renorm_rhos=B_ibo_arep_rhos
+
+allocate(width_params(num_scalar_reps), sq_width_params(num_scalar_reps))
+sq_width_params=1.0/inv_sq_width_params(2:num_scalar_reps+1)
+width_params=sqrt(sq_width_params)
+
+call scalar_rep_resc_ibo_sep(A_ibo_atom_reps, width_params, num_scalar_reps, A_max_num_ibo_atom_reps,&
+        A_max_num_ibos, A_num_mols, A_ibo_atom_sreps)
+call scalar_rep_resc_ibo_sep(B_ibo_atom_reps, width_params, num_scalar_reps, B_max_num_ibo_atom_reps,&
+        B_max_num_ibos, B_num_mols, B_ibo_atom_sreps)
+
+if (num_kern_comps == 1) then
+    call arep_rho_renorm_gen_log_ders(num_scalar_reps, A_ibo_atom_sreps, A_ibo_arep_renorm_rhos, A_ibo_atom_nums, A_ibo_nums,&
+                        A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols)
+    call arep_rho_renorm_gen_log_ders(num_scalar_reps, B_ibo_atom_sreps, B_ibo_arep_renorm_rhos, B_ibo_atom_nums, B_ibo_nums,&
+                        B_max_num_ibo_atom_reps, B_max_num_ibos, B_num_mols)
+else
+    allocate(A_ibo_self_cov_log_ders(num_scalar_reps, A_max_num_ibos, A_num_mols),&
+                B_ibo_self_cov_log_ders(num_scalar_reps, B_max_num_ibos, B_num_mols))
+    call arep_rho_renorm_gen_log_ders(num_scalar_reps, A_ibo_atom_sreps, A_ibo_arep_renorm_rhos, A_ibo_atom_nums, A_ibo_nums,&
+                        A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols, A_ibo_self_cov_log_ders)
+    call arep_rho_renorm_gen_log_ders(num_scalar_reps, B_ibo_atom_sreps, B_ibo_arep_renorm_rhos, B_ibo_atom_nums, B_ibo_nums,&
+                        B_max_num_ibo_atom_reps, B_max_num_ibos, B_num_mols, B_ibo_self_cov_log_ders)
+endif
+
+!$OMP PARALLEL DO PRIVATE(A_mol_counter, B_mol_counter) SCHEDULE(DYNAMIC)
+do A_mol_counter=1, A_num_mols
+    do B_mol_counter=1, B_num_mols
+        if (num_kern_comps == 1) then
+            call fgmo_sep_ibo_kernel_element_wders(num_scalar_reps, A_ibo_atom_sreps(:,:,:,A_mol_counter),&
+                A_ibo_arep_renorm_rhos(:,:,A_mol_counter), A_ibo_rhos(:,A_mol_counter),&
+                A_ibo_atom_nums(:, A_mol_counter), A_ibo_nums(A_mol_counter),&
+                A_max_num_ibo_atom_reps, A_max_num_ibos,&
+                B_ibo_atom_sreps(:,:,:,B_mol_counter), B_ibo_arep_renorm_rhos(:,:,B_mol_counter),&
+                B_ibo_rhos(:,B_mol_counter),&
+                B_ibo_atom_nums(:, B_mol_counter), B_ibo_nums(B_mol_counter),&
+                B_max_num_ibo_atom_reps, B_max_num_ibos, inv_sq_sigma,&
+                kernel_mat(:, B_mol_counter, A_mol_counter), num_kern_comps)
+        else
+            call fgmo_sep_ibo_kernel_element_wders(num_scalar_reps, A_ibo_atom_sreps(:,:,:,A_mol_counter),&
+                A_ibo_arep_renorm_rhos(:,:,A_mol_counter), A_ibo_rhos(:,A_mol_counter),&
+                A_ibo_atom_nums(:, A_mol_counter), A_ibo_nums(A_mol_counter),&
+                A_max_num_ibo_atom_reps, A_max_num_ibos,&
+                B_ibo_atom_sreps(:,:,:,B_mol_counter), B_ibo_arep_renorm_rhos(:,:,B_mol_counter),&
+                B_ibo_rhos(:,B_mol_counter),&
+                B_ibo_atom_nums(:, B_mol_counter), B_ibo_nums(B_mol_counter),&
+                B_max_num_ibo_atom_reps, B_max_num_ibos, inv_sq_sigma,&
+                kernel_mat(:, B_mol_counter, A_mol_counter), num_kern_comps,&
+                A_ibo_self_cov_log_ders(:, :, A_mol_counter), B_ibo_self_cov_log_ders(:, :, B_mol_counter))
+                kernel_mat(3:num_kern_comps, B_mol_counter, A_mol_counter)=&
+                  kernel_mat(3:num_kern_comps, B_mol_counter, A_mol_counter)*sq_width_params
+        endif
+    enddo
+enddo
+!$OMP END PARALLEL DO
+
+END SUBROUTINE fgmo_sep_ibo_kernel_wders
+

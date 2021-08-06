@@ -437,4 +437,199 @@ endif
 
 END FUNCTION
 
+
+!!!!!!!!!!!!!
+!!! For GMO implementation with derivatives.
+!!!!!!!!!!!!
+
+PURE SUBROUTINE orb_orb_cov_lin_wders(num_scalar_reps,&
+            A_ibo_atom_sreps, A_ibo_arep_renorm_rhos, A_ibo_atom_num,&
+            A_max_num_ibo_atom_reps,&
+            B_ibo_atom_sreps, B_ibo_arep_renorm_rhos, B_ibo_atom_num,&
+            B_max_num_ibo_atom_reps,&
+            lin_orb_components, num_kern_comps,&
+            A_self_cov_log_ders, B_self_cov_log_ders)
+implicit none
+integer, intent(in):: num_scalar_reps, A_max_num_ibo_atom_reps,&
+                B_max_num_ibo_atom_reps, A_ibo_atom_num, B_ibo_atom_num,&
+                num_kern_comps
+double precision, dimension(num_scalar_reps, A_max_num_ibo_atom_reps),&
+        intent(in):: A_ibo_atom_sreps
+double precision, dimension(num_scalar_reps, B_max_num_ibo_atom_reps),&
+        intent(in):: B_ibo_atom_sreps
+double precision, dimension(A_max_num_ibo_atom_reps), intent(in):: A_ibo_arep_renorm_rhos
+double precision, dimension(B_max_num_ibo_atom_reps), intent(in):: B_ibo_arep_renorm_rhos
+double precision, dimension(num_scalar_reps), intent(in), optional::&
+            A_self_cov_log_ders, B_self_cov_log_ders
+double precision, dimension(num_kern_comps), intent(inout):: lin_orb_components
+integer:: A_arep_id, B_arep_id
+double precision, dimension(num_scalar_reps):: sqdiff_vec
+double precision:: exp_fac
+
+lin_orb_components=0.0
+do A_arep_id=1, A_ibo_atom_num
+    do B_arep_id=1, B_ibo_atom_num
+        sqdiff_vec=(A_ibo_atom_sreps(:, A_arep_id)-B_ibo_atom_sreps(:, B_arep_id))**2
+        exp_fac=exp(-sum(sqdiff_vec))*A_ibo_arep_renorm_rhos(A_arep_id)&
+                            *B_ibo_arep_renorm_rhos(B_arep_id)
+        lin_orb_components(1)=lin_orb_components(1)+exp_fac
+        if (num_kern_comps/=1) then
+            lin_orb_components(2:num_kern_comps)=lin_orb_components(2:num_kern_comps)&
+                    -exp_fac*sqdiff_vec
+        endif
+    enddo
+enddo
+
+if (present(A_self_cov_log_ders)) then
+    lin_orb_components(2:num_kern_comps)=lin_orb_components(2:num_kern_comps)&
+                    -lin_orb_components(1)*(A_self_cov_log_ders+B_self_cov_log_ders)/2.0
+endif
+
+
+END SUBROUTINE
+
+PURE SUBROUTINE orb_orb_cov_gauss_wders(num_scalar_reps,&
+            A_ibo_atom_sreps, A_ibo_arep_renorm_rhos, A_ibo_atom_num,&
+            A_max_num_ibo_atom_reps,&
+            B_ibo_atom_sreps, B_ibo_arep_renorm_rhos, B_ibo_atom_num,&
+            B_max_num_ibo_atom_reps, inv_sq_sigma,&
+            gauss_orb_components, num_kern_comps,&
+            A_self_cov_log_ders, B_self_cov_log_ders)
+implicit none
+integer, intent(in):: num_scalar_reps, A_max_num_ibo_atom_reps,&
+                B_max_num_ibo_atom_reps, A_ibo_atom_num, B_ibo_atom_num,&
+                num_kern_comps
+double precision, dimension(num_scalar_reps, A_max_num_ibo_atom_reps),&
+        intent(in):: A_ibo_atom_sreps
+double precision, dimension(num_scalar_reps, B_max_num_ibo_atom_reps),&
+        intent(in):: B_ibo_atom_sreps
+double precision, intent(in):: inv_sq_sigma
+double precision, dimension(A_max_num_ibo_atom_reps), intent(in):: A_ibo_arep_renorm_rhos
+double precision, dimension(B_max_num_ibo_atom_reps), intent(in):: B_ibo_arep_renorm_rhos
+double precision, dimension(num_scalar_reps), intent(in), optional::&
+            A_self_cov_log_ders, B_self_cov_log_ders
+double precision, dimension(num_kern_comps), intent(inout):: gauss_orb_components
+
+    if (num_kern_comps==1) then
+        call orb_orb_cov_lin_wders(num_scalar_reps,&
+            A_ibo_atom_sreps, A_ibo_arep_renorm_rhos, A_ibo_atom_num,&
+            A_max_num_ibo_atom_reps,&
+            B_ibo_atom_sreps, B_ibo_arep_renorm_rhos, B_ibo_atom_num,&
+            B_max_num_ibo_atom_reps,&
+            gauss_orb_components, num_kern_comps)
+        gauss_orb_components(1)=exp(-inv_sq_sigma*(1.0-gauss_orb_components(1)))
+    else
+        call orb_orb_cov_lin_wders(num_scalar_reps,&
+            A_ibo_atom_sreps, A_ibo_arep_renorm_rhos, A_ibo_atom_num,&
+            A_max_num_ibo_atom_reps,&
+            B_ibo_atom_sreps, B_ibo_arep_renorm_rhos, B_ibo_atom_num,&
+            B_max_num_ibo_atom_reps,&
+            gauss_orb_components(2:num_kern_comps), num_kern_comps-1,&
+            A_self_cov_log_ders, B_self_cov_log_ders)
+
+        gauss_orb_components(3:num_kern_comps)=gauss_orb_components(3:num_kern_comps)*inv_sq_sigma
+        gauss_orb_components(2)=gauss_orb_components(2)-1.0
+        gauss_orb_components(1)=exp(inv_sq_sigma*gauss_orb_components(2))
+        gauss_orb_components(2:num_kern_comps)=gauss_orb_components(2:num_kern_comps)*gauss_orb_components(1)
+    endif
+
+END SUBROUTINE
+
+PURE SUBROUTINE fgmo_sep_ibo_kernel_element_wders(num_scalar_reps,&
+            A_ibo_atom_sreps, A_ibo_arep_renorm_rhos, A_ibo_rhos, A_ibo_atom_nums, A_ibo_num,&
+            A_max_num_ibo_atom_reps, A_max_num_ibos,&
+            B_ibo_atom_sreps, B_ibo_arep_renorm_rhos,&
+            B_ibo_rhos, B_ibo_atom_nums, B_ibo_num,&
+            B_max_num_ibo_atom_reps, B_max_num_ibos, inv_sq_sigma,&
+            kernel_elements, num_kern_comps, A_self_cov_log_ders, B_self_cov_log_ders)
+implicit none
+integer, intent(in):: num_scalar_reps, A_max_num_ibo_atom_reps, A_max_num_ibos,&
+                        num_kern_comps, B_max_num_ibo_atom_reps, B_max_num_ibos
+integer, intent(in):: A_ibo_num, B_ibo_num
+double precision, intent(in), dimension(num_scalar_reps, A_max_num_ibo_atom_reps,&
+                A_max_num_ibos):: A_ibo_atom_sreps
+double precision, intent(in), dimension(num_scalar_reps, B_max_num_ibo_atom_reps,&
+                B_max_num_ibos):: B_ibo_atom_sreps
+double precision, intent(in), dimension(A_max_num_ibo_atom_reps,&
+            A_max_num_ibos):: A_ibo_arep_renorm_rhos
+double precision, intent(in), dimension(B_max_num_ibo_atom_reps,&
+            B_max_num_ibos):: B_ibo_arep_renorm_rhos
+double precision, intent(in), dimension(A_max_num_ibos):: A_ibo_rhos
+double precision, intent(in), dimension(B_max_num_ibos):: B_ibo_rhos
+integer, dimension(A_max_num_ibos), intent(in):: A_ibo_atom_nums
+integer, dimension(B_max_num_ibos), intent(in):: B_ibo_atom_nums
+double precision, intent(in):: inv_sq_sigma
+double precision, dimension(num_kern_comps), intent(inout):: kernel_elements
+double precision, dimension(num_scalar_reps, A_max_num_ibos), intent(in), optional:: A_self_cov_log_ders
+double precision, dimension(num_scalar_reps, B_max_num_ibos), intent(in), optional:: B_self_cov_log_ders
+double precision, dimension(num_kern_comps):: gauss_orb_components
+integer:: A_ibo_id, B_ibo_id
+
+
+kernel_elements=0.0
+do A_ibo_id = 1, A_ibo_num
+    do B_ibo_id = 1, B_ibo_num
+        if (present(A_self_cov_log_ders)) then
+            call orb_orb_cov_gauss_wders(num_scalar_reps,&
+            A_ibo_atom_sreps(:, :, A_ibo_id), A_ibo_arep_renorm_rhos(:, A_ibo_id),&
+            A_ibo_atom_nums(A_ibo_id), A_max_num_ibo_atom_reps,&
+            B_ibo_atom_sreps(:, :, B_ibo_id), B_ibo_arep_renorm_rhos(:, B_ibo_id),&
+            B_ibo_atom_nums(B_ibo_id), B_max_num_ibo_atom_reps, inv_sq_sigma,&
+            gauss_orb_components, num_kern_comps,&
+            A_self_cov_log_ders(:, A_ibo_id), B_self_cov_log_ders(:, B_ibo_id))
+        else
+            call orb_orb_cov_gauss_wders(num_scalar_reps,&
+            A_ibo_atom_sreps(:, :, A_ibo_id), A_ibo_arep_renorm_rhos(:, A_ibo_id),&
+            A_ibo_atom_nums(A_ibo_id), A_max_num_ibo_atom_reps,&
+            B_ibo_atom_sreps(:, :, B_ibo_id), B_ibo_arep_renorm_rhos(:, B_ibo_id),&
+            B_ibo_atom_nums(B_ibo_id), B_max_num_ibo_atom_reps, inv_sq_sigma,&
+            gauss_orb_components, num_kern_comps)
+        endif
+        kernel_elements=kernel_elements+gauss_orb_components*A_ibo_rhos(A_ibo_id)*B_ibo_rhos(B_ibo_id)
+    enddo
+enddo
+
+END SUBROUTINE
+
+SUBROUTINE arep_rho_renorm_gen_log_ders(num_scalar_reps, A_ibo_atom_sreps,&
+                    A_ibo_arep_renorm_rhos, A_ibo_atom_nums, A_ibo_nums,&
+                    A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols, A_ibo_self_cov_log_ders)
+implicit none
+integer, intent(in):: num_scalar_reps, A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols
+double precision, dimension(num_scalar_reps, A_max_num_ibo_atom_reps,&
+                                A_max_num_ibos, A_num_mols), intent(in):: A_ibo_atom_sreps
+double precision, dimension(A_max_num_ibo_atom_reps,&
+                    A_max_num_ibos, A_num_mols), intent(inout):: A_ibo_arep_renorm_rhos
+integer, dimension(A_max_num_ibos, A_num_mols), intent(in):: A_ibo_atom_nums
+integer, dimension(A_num_mols), intent(in):: A_ibo_nums
+double precision, dimension(num_scalar_reps, A_max_num_ibos, A_num_mols),&
+                                            intent(inout), optional:: A_ibo_self_cov_log_ders
+integer:: mol_id, ibo_id
+double precision, dimension(:), allocatable:: lin_orb_orb_cov
+integer:: num_lin_kern_comps
+
+    if (present(A_ibo_self_cov_log_ders)) then
+        num_lin_kern_comps=num_scalar_reps+1
+    else
+        num_lin_kern_comps=1
+    endif
+    allocate(lin_orb_orb_cov(num_lin_kern_comps))
+
+!$OMP PARALLEL DO PRIVATE(mol_id, ibo_id, lin_orb_orb_cov) SCHEDULE(DYNAMIC)
+    do mol_id=1, A_num_mols
+        do ibo_id=1, A_ibo_nums(mol_id)
+            call orb_orb_cov_lin_wders(num_scalar_reps,&
+            A_ibo_atom_sreps(:, :, ibo_id, mol_id), A_ibo_arep_renorm_rhos(:, ibo_id, mol_id),&
+            A_ibo_atom_nums(ibo_id, mol_id), A_max_num_ibo_atom_reps,&
+            A_ibo_atom_sreps(:, :, ibo_id, mol_id), A_ibo_arep_renorm_rhos(:, ibo_id, mol_id),&
+            A_ibo_atom_nums(ibo_id, mol_id), A_max_num_ibo_atom_reps, lin_orb_orb_cov, num_lin_kern_comps)
+            A_ibo_arep_renorm_rhos(:, ibo_id, mol_id)=A_ibo_arep_renorm_rhos(:, ibo_id, mol_id)/sqrt(lin_orb_orb_cov(1))
+            if (present(A_ibo_self_cov_log_ders)) A_ibo_self_cov_log_ders(:, ibo_id, mol_id)&
+                                    =lin_orb_orb_cov(2:num_lin_kern_comps)/lin_orb_orb_cov(1)
+        enddo
+    enddo
+!$OMP END PARALLEL DO
+
+END SUBROUTINE
+
 END MODULE

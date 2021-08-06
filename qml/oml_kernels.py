@@ -30,7 +30,8 @@ import math, itertools, copy
 from numba import njit, prange
 
 
-from .foml_kernels import fgmo_kernel, flinear_base_kernel_mat, fgmo_sq_dist, fgmo_sep_ibo_kernel, fibo_fr_kernel, fgmo_sep_ibo_sym_kernel, fgmo_sep_ibo_sqdist_sums_nums
+from .foml_kernels import fgmo_kernel, flinear_base_kernel_mat, fgmo_sq_dist, fgmo_sep_ibo_kernel, fibo_fr_kernel,\
+        fgmo_sep_ibo_sym_kernel, fgmo_sep_ibo_sqdist_sums_nums, fgmo_sep_ibo_sym_kernel_wders, fgmo_sep_ibo_kernel_wders
 
 
 
@@ -881,7 +882,27 @@ def numba_gauss_sep_IBO_sym_kernel_wders(A_orb_areps, A_arep_rhos, A_orb_rhos,
 
     return Kernel
 
-def gauss_sep_IBO_kernel_conv(Ac, Bc, inv_sq_width_params, preserve_converted_arrays=True, with_ders=False):
+def gauss_sep_IBO_kernel_conv(Ac, Bc, inv_sq_width_params, preserve_converted_arrays=True, with_ders=False, use_Fortran=True):
+    if use_Fortran:
+        if with_ders:
+            num_kern_comps=1+len(inv_sq_width_params)
+        else:
+            num_kern_comps=1
+        kernel_mat = np.zeros((Ac.num_mols, Bc.num_mols, num_kern_comps))
+        fgmo_sep_ibo_kernel_wders(Ac.max_num_scalar_reps,
+                    Ac.ibo_atom_sreps.T, Ac.ibo_arep_rhos.T, Ac.ibo_rhos.T,
+                    Ac.ibo_atom_nums.T, Ac.ibo_nums,
+                    Ac.max_num_ibo_atom_reps, Ac.max_num_ibos, Ac.num_mols,
+                    Bc.ibo_atom_sreps.T, Bc.ibo_arep_rhos.T, Bc.ibo_rhos.T,
+                    Bc.ibo_atom_nums.T, Bc.ibo_nums,
+                    Bc.max_num_ibo_atom_reps, Bc.max_num_ibos, Bc.num_mols,
+                    inv_sq_width_params, kernel_mat.T, num_kern_comps)
+
+        if with_ders:
+            return kernel_mat
+        else:
+            return kernel_mat[:, :, 0]
+
     if preserve_converted_arrays:
         Ac_renormed=copy.deepcopy(Ac)
         Bc_renormed=copy.deepcopy(Bc)
@@ -914,17 +935,33 @@ def gauss_sep_IBO_kernel_conv(Ac, Bc, inv_sq_width_params, preserve_converted_ar
                                 inv_sq_width_params)
 
 
-def gauss_sep_IBO_kernel(A, B, inv_sq_width_params, with_ders=False):
+def gauss_sep_IBO_kernel(A, B, inv_sq_width_params, with_ders=False, use_Fortran=True):
     Ac=GMO_sep_IBO_kern_input(oml_compound_array=A)
     Bc=GMO_sep_IBO_kern_input(oml_compound_array=B)
-    return gauss_sep_IBO_kernel_conv(Ac, Bc, inv_sq_width_params, preserve_converted_arrays=False, with_ders=with_ders)
+    return gauss_sep_IBO_kernel_conv(Ac, Bc, inv_sq_width_params, preserve_converted_arrays=False, with_ders=with_ders, use_Fortran=use_Fortran)
 
-def gauss_sep_IBO_sym_kernel_conv(Ac, inv_sq_width_params, preserve_converted_arrays=True, with_ders=False):
-    return gauss_sep_IBO_kernel_conv(Ac, None, inv_sq_width_params, preserve_converted_arrays=preserve_converted_arrays, with_ders=with_ders)
+def gauss_sep_IBO_sym_kernel_conv(Ac, inv_sq_width_params, preserve_converted_arrays=True, with_ders=False, use_Fortran=True):
+    if use_Fortran:
+        if with_ders:
+            num_kern_comps=1+len(inv_sq_width_params)
+        else:
+            num_kern_comps=1
+        kernel_mat = np.zeros((Ac.num_mols, Ac.num_mols, num_kern_comps))
+        fgmo_sep_ibo_sym_kernel_wders(Ac.max_num_scalar_reps,
+                    Ac.ibo_atom_sreps.T, Ac.ibo_arep_rhos.T, Ac.ibo_rhos.T,
+                    Ac.ibo_atom_nums.T, Ac.ibo_nums,
+                    Ac.max_num_ibo_atom_reps, Ac.max_num_ibos, Ac.num_mols,
+                    inv_sq_width_params, kernel_mat.T, num_kern_comps)
+        if with_ders:
+            return kernel_mat
+        else:
+            return kernel_mat[:, :, 0]
+    else:
+        return gauss_sep_IBO_kernel_conv(Ac, None, inv_sq_width_params, preserve_converted_arrays=preserve_converted_arrays, with_ders=with_ders)
 
-def gauss_sep_IBO_sym_kernel(A, inv_sq_width_params, with_ders=False):
+def gauss_sep_IBO_sym_kernel(A, inv_sq_width_params, with_ders=False, use_Fortran=True):
     Ac=GMO_sep_IBO_kern_input(oml_compound_array=A)
-    return gauss_sep_IBO_sym_kernel_conv(Ac, inv_sq_width_params, preserve_converted_arrays=False, with_ders=with_ders)
+    return gauss_sep_IBO_sym_kernel_conv(Ac, inv_sq_width_params, preserve_converted_arrays=False, with_ders=with_ders, use_Fortran=use_Fortran)
 
 #### For random Fourier decomposition of the kernel.
 ###### STUPID, SHOULD BE REWRITTEN!!!

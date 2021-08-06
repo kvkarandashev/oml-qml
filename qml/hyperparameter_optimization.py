@@ -5,6 +5,7 @@ from .oml_kernels import lin_sep_IBO_kernel_conv, lin_sep_IBO_sym_kernel_conv, G
 from .oml_representations import component_id_ang_mom_map
 from .utils import dump2pkl
 from scipy.optimize import minimize
+from .python_parallelization import embarassingly_parallel
 
 # Procedures from Lambda_opt_step to MAE bisection_optimization were the old iteration for gradient-based optimization, but only limited to the lambda variable.
 class Lambda_opt_step:
@@ -328,7 +329,8 @@ class GOO_ensemble_subset(Gradient_optimization_obj):
 
 # This class was introduced to enable multiple cross-validation.
 class GOO_ensemble(Gradient_optimization_obj):
-    def __init__(self, all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=False, use_MAE=True, reduced_hyperparam_func=None):
+    def __init__(self, all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=False, use_MAE=True,
+                        reduced_hyperparam_func=None, num_procs=None, num_threads=None):
         self.all_compounds=GMO_sep_IBO_kern_input(all_compounds)
 
         self.tot_num_points=len(all_compounds)
@@ -343,6 +345,10 @@ class GOO_ensemble(Gradient_optimization_obj):
 
         self.presaved_parameters=None
 
+        self.num_procs=num_procs
+
+        self.num_threads=num_threads
+
     def error_measure_wders(self, parameters, recalc_global_matrices=True, lambda_der_only=False, negligible_red_param_distance=None):
         if recalc_global_matrices:
             need_recalc=True
@@ -353,10 +359,13 @@ class GOO_ensemble(Gradient_optimization_obj):
                     self.presaved_parameters=np.copy(parameters)
             if need_recalc:
                 self.recalculate_global_matrices(parameters)
+
         error_mean=0.0
         error_mean_ders=np.zeros((self.num_red_params,))
-        for subset_id in range(self.num_subsets):
-            cur_error, cur_error_ders=self.goo_ensemble_subsets[subset_id].error_measure_wders(parameters, lambda_der_only=lambda_der_only)
+
+        error_erders_list=self.subset_error_measures_wders(parameters, lambda_der_only=lambda_der_only)
+
+        for cur_error, cur_error_ders in error_erders_list:
             if cur_error is None:
                 error_mean=0.0
                 error_mean_ders=non_invertible_default_log_der(self.reduced_hyperparam_func, self.num_params)
@@ -367,6 +376,12 @@ class GOO_ensemble(Gradient_optimization_obj):
         error_mean/=self.num_subsets
         error_mean_ders/=self.num_subsets
         return error_mean, error_mean_ders
+
+    def subset_error_measures_wders(self, parameters, lambda_der_only=False):
+        if self.num_procs is None:
+            return [goo_ensemble_subset.error_measure_wders(parameters, lambda_der_only=lambda_der_only) for goo_ensemble_subset in self.goo_ensemble_subsets]
+        else:
+            return embarassingly_parallel(single_subset_error_measure_wders, self.goo_ensemble_subsets, (parameters, lambda_der_only), num_threads=self.num_threads, num_procs=self.num_procs)
 
     def recalculate_global_matrices(self, parameters):
         global_kernel_wders=self.sym_kern_func(self.all_compounds, parameters[1:], with_ders=True)
@@ -380,7 +395,11 @@ class GOO_ensemble(Gradient_optimization_obj):
         for subset_id in range(self.num_subsets):
             self.goo_ensemble_subsets[subset_id].recalculate_kernel_mats_ders(global_matrix=self.global_matrix, global_matrix_ders=self.global_matrix_ders)
 
-def generate_random_GOO_ensemble(all_compounds, all_quantities, num_kfolds=16, training_set_ratio=0.5, use_Gauss=False, use_MAE=True, reduced_hyperparam_func=None):
+# Auxiliary function for joblib parallelization.
+def single_subset_error_measure_wders(subset, parameters, lambda_der_only):
+    return subset.error_measure_wders(parameters, lambda_der_only=lambda_der_only)
+
+def generate_random_GOO_ensemble(all_compounds, all_quantities, num_kfolds=16, training_set_ratio=0.5, use_Gauss=False, use_MAE=True, reduced_hyperparam_func=None, num_procs=None, num_threads=None):
     num_points=len(all_quantities)
     train_point_num=int(num_points*training_set_ratio)
 
@@ -407,7 +426,7 @@ def generate_random_GOO_ensemble(all_compounds, all_quantities, num_kfolds=16, t
         train_id_lists.append(train_id_list)
         check_id_lists.append(check_id_list)
 
-    return GOO_ensemble(all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=use_Gauss, use_MAE=use_MAE, reduced_hyperparam_func=reduced_hyperparam_func)
+    return GOO_ensemble(all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=use_Gauss, use_MAE=use_MAE, reduced_hyperparam_func=reduced_hyperparam_func, num_procs=num_procs, num_threads=num_threads)
     
 
 #   For going between the full hyperparameter set (lambda, global sigma, and other sigmas)
@@ -605,8 +624,6 @@ class Optimizer_state:
     def __str__(self):
         return "Optimizer_state object: Parameters: "+str(self.parameters)+", reduced parameters: "+str(self.red_parameters)+", error measure: "+str(self.error_measure)
 
-######## TO-DO just measure RED ders? Optimizer_state class too?
-
 class Optimizer_state_generator:
     def __init__(self, goo_ensemble):
         self.goo_ensemble=goo_ensemble
@@ -619,6 +636,7 @@ class Optimizer_state_generator:
 class GOO_randomized_iterator:
     def __init__(self, opt_GOO_ensemble, initial_reduced_parameter_vals, lambda_opt_tolerance=0.1, step_magnitudes=None, noise_level_prop_coeffs=None,
                         lambda_max_num_scan_steps=10, default_step_magnitude=1.0, keep_init_lambda=False, bisec_lambda_opt=True):
+
         self.optimizer_state_generator=Optimizer_state_generator(opt_GOO_ensemble)
 
         self.cur_optimizer_state=self.optimizer_state_generator(initial_reduced_parameter_vals)
@@ -746,7 +764,7 @@ hyperparam_red_funcs={"default": Reduced_hyperparam_func, "single_rescaling" : S
 def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=False, init_lambda=1e-3, max_iterations=None,
                                     init_param_guess=None, hyperparam_red_type="default", max_stagnating_iterations=1,
                                     use_MAE=True, rep_params=None, num_kfolds=16, other_opt_goo_ensemble_kwargs={}, randomized_iterator_kwargs={}, iter_dump_name_add=None,
-                                    additional_BFGS_iters=None, iter_dump_name_add_BFGS=None, negligible_red_param_distance=1e-9):
+                                    additional_BFGS_iters=None, iter_dump_name_add_BFGS=None, negligible_red_param_distance=1e-9, num_procs=None, num_threads=None):
 
 
     avs, stddevs=oml_ensemble_avs_stddevs(compound_list)
@@ -764,7 +782,8 @@ def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=Fa
         initial_reduced_parameter_vals=red_hyperparam_func.full_params_to_reduced(init_param_guess)
 
     opt_GOO_ensemble=generate_random_GOO_ensemble(compound_list, quant_list, use_Gauss=use_Gauss, use_MAE=use_MAE, num_kfolds=num_kfolds,
-                                                  reduced_hyperparam_func=red_hyperparam_func, **other_opt_goo_ensemble_kwargs)
+                                                  reduced_hyperparam_func=red_hyperparam_func, **other_opt_goo_ensemble_kwargs,
+                                                  num_procs=num_procs, num_threads=num_threads)
 
     randomized_iterator=GOO_randomized_iterator(opt_GOO_ensemble, initial_reduced_parameter_vals, **randomized_iterator_kwargs)
     num_stagnating_iterations=0
