@@ -16,9 +16,18 @@ def get_charge_spin(xyz_name):
                     spin=int(comp_split[1])-1
     return charge, spin
 
+def charge_spin_calc_type(xyz_file):
+    charge, spin=get_charge_spin(xyz_file)
+    if spin==0:
+        calc_type="HF"
+    else:
+        calc_type="UHF"
+    return charge, spin, calc_type
+
+
 def potential_energy(xyz_name, **oml_calc_kwargs):
-    charge, spin=get_charge_spin(xyz_name)
-    oml_comp=OML_compound(xyz = xyz_name, mats_savefile = xyz_name, charge=charge, spin=spin, **oml_calc_kwargs)
+    charge, spin, calc_type=charge_spin_calc_type(xyz_name)
+    oml_comp=OML_compound(xyz = xyz_name, mats_savefile = xyz_name, calc_type=calc_type, charge=charge, spin=spin, **oml_calc_kwargs)
     oml_comp.run_calcs()
     return oml_comp.e_tot
 
