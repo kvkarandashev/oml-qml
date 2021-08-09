@@ -31,7 +31,7 @@ check_num=2000
 use_Gauss=True
 keep_init_lambda=False
 
-delta_learning_params=Delta_learning_parameters(use_delta_learning=True)
+delta_learning_params=Delta_learning_parameters(use_delta_learning=True, basis=basis)
 
 xyz_list=dirs_xyz_list(QM7bT_dir)
 random.seed(seed)
