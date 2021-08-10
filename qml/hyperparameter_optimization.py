@@ -171,8 +171,7 @@ class Gradient_optimization_obj:
 
     def init_kern_funcs(self, use_Gauss=False, reduced_hyperparam_func=None, sym_kernel_func=None, kernel_func=None, kernel_input_converter=None):
 
-        if kernel_input_converter is None:
-            self.reduced_hyperparam_func=reduced_hyperparam_func
+        self.reduced_hyperparam_func=reduced_hyperparam_func
 
         if kernel_func is None:
             if use_Gauss:
@@ -407,7 +406,8 @@ class GOO_ensemble(Gradient_optimization_obj):
 def single_subset_error_measure_wders(subset, parameters, lambda_der_only):
     return subset.error_measure_wders(parameters, lambda_der_only=lambda_der_only)
 
-def generate_random_GOO_ensemble(all_compounds, all_quantities, num_kfolds=16, training_set_ratio=0.5, use_Gauss=False, use_MAE=True, reduced_hyperparam_func=None, num_procs=None, num_threads=None):
+def generate_random_GOO_ensemble(all_compounds, all_quantities, num_kfolds=16, training_set_ratio=0.5, use_Gauss=False, use_MAE=True, reduced_hyperparam_func=None, num_procs=None, num_threads=None,
+                                        kernel_input_converter=None, sym_kernel_func=None):
     num_points=len(all_quantities)
     train_point_num=int(num_points*training_set_ratio)
 
@@ -434,7 +434,8 @@ def generate_random_GOO_ensemble(all_compounds, all_quantities, num_kfolds=16, t
         train_id_lists.append(train_id_list)
         check_id_lists.append(check_id_list)
 
-    return GOO_ensemble(all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=use_Gauss, use_MAE=use_MAE, reduced_hyperparam_func=reduced_hyperparam_func, num_procs=num_procs, num_threads=num_threads)
+    return GOO_ensemble(all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=use_Gauss, use_MAE=use_MAE, reduced_hyperparam_func=reduced_hyperparam_func,
+                                num_procs=num_procs, num_threads=num_threads, kernel_input_converter=kernel_input_converter, sym_kernel_func=sym_kernel_func)
     
 
 #   For going between the full hyperparameter set (lambda, global sigma, and other sigmas)
@@ -456,6 +457,7 @@ class Reduced_hyperparam_func:
     def full_derivatives_to_reduced(self, full_derivatives, full_parameters):
         return full_derivatives*full_parameters
     def full_params_to_reduced(self, full_parameters):
+        self.initiate_param_nums(full_parameters)
         return np.log(full_parameters)
     def initial_reduced_parameter_guess(self, init_lambda, base_inv_sqwidth_params):
         num_full_params=len(base_inv_sqwidth_params)+1
@@ -781,12 +783,13 @@ hyperparam_red_funcs={"default": Reduced_hyperparam_func, "single_rescaling" : S
 def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=False, init_lambda=1e-3, max_iterations=None,
                                     init_param_guess=None, hyperparam_red_type="default", max_stagnating_iterations=1,
                                     use_MAE=True, rep_params=None, num_kfolds=16, other_opt_goo_ensemble_kwargs={}, randomized_iterator_kwargs={}, iter_dump_name_add=None,
-                                    additional_BFGS_iters=None, iter_dump_name_add_BFGS=None, negligible_red_param_distance=1e-9, num_procs=None, num_threads=None):
+                                    additional_BFGS_iters=None, iter_dump_name_add_BFGS=None, negligible_red_param_distance=1e-9, num_procs=None, num_threads=None,
+                                    kernel_input_converter=None, sym_kernel_func=None):
 
-
-    avs, stddevs=oml_ensemble_avs_stddevs(compound_list)
-    print("Found stddevs:", stddevs)
-    base_inv_sqwidth_params=0.25/stddevs**2
+    if hyperparam_red_type != "default":
+        avs, stddevs=oml_ensemble_avs_stddevs(compound_list)
+        print("Found stddevs:", stddevs)
+        base_inv_sqwidth_params=0.25/stddevs**2
 
     if hyperparam_red_type == "ang_mom_classified":
         red_hyperparam_func=Ang_mom_classified_rhf(rep_params, stddevs, use_Gauss=use_Gauss)
@@ -805,7 +808,8 @@ def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=Fa
 
     opt_GOO_ensemble=generate_random_GOO_ensemble(compound_list, quant_list, use_Gauss=use_Gauss, use_MAE=use_MAE, num_kfolds=num_kfolds,
                                                   reduced_hyperparam_func=red_hyperparam_func, **other_opt_goo_ensemble_kwargs,
-                                                  num_procs=num_procs, num_threads=num_threads)
+                                                  num_procs=num_procs, num_threads=num_threads, kernel_input_converter=kernel_input_converter,
+                                                  sym_kernel_func=sym_kernel_func)
 
     randomized_iterator=GOO_randomized_iterator(opt_GOO_ensemble, initial_reduced_parameter_vals, **randomized_iterator_kwargs)
     num_stagnating_iterations=0

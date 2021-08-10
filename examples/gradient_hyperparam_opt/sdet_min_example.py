@@ -20,7 +20,7 @@ quant_name='MP2/cc-pVTZ'
 seed=1
 
 basis='sto-3g'
-max_angular_momentum=2
+max_angular_momentum=1
 
 # Replace with path to QM9 directory
 QM7bT_dir=os.environ["DATA"]+"/QM7bT_reformatted"

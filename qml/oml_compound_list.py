@@ -52,8 +52,5 @@ def OML_compound_list_from_xyzs(xyz_files, **oml_comp_kwargs):
 def OML_Slater_pair_list_from_xyzs(xyz_files, **slater_pair_kwargs):
     return OML_compound_list([OML_Slater_pair(xyz = xyz_file, mats_savefile = xyz_file, **slater_pair_kwargs) for xyz_file in xyz_files])
 
-def OML_Slater_pair_list_from_xyz_pairs(xyz_files, **slater_pair_kwargs):
-    return OML_compound_list([OML_Slater_pair(xyz = xyz_file, mats_savefile = xyz_file, **slater_pair_kwargs) for xyz_file in xyz_files])
-
 def OML_Slater_pair_list_from_xyz_pairs(xyz_file_pairs, **slater_pair_kwargs):
     return OML_compound_list([OML_Slater_pair(xyz = xyz_file_pair[0], mats_savefile = xyz_file_pair[0], second_xyz=xyz_file_pair[1], second_mats_savefile=xyz_file_pair[1], **slater_pair_kwargs) for xyz_file in xyz_files])

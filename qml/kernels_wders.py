@@ -40,7 +40,10 @@ def merged_representation_arrays(total_compound_array, indices):
     output=[]
     for index_tuple in indices:
         output.append(np.array([total_compound_array[comp_id].representation for comp_id in range(*index_tuple)]))
-    return output
+    if len(output)==1:
+        return output[0]
+    else:
+        return output
 
 def SLATM_kernel_input(*compound_arrays):
     from .representations import get_slatm_mbtypes
@@ -57,7 +60,7 @@ def CM_kernel_input(*compound_arrays, sorting="row-norm"):
     combined_array, part_slices=merge_save_indices(*compound_arrays)
     max_size=0
     for compound_obj in combined_array:
-        max_size=max(max_size, len(compound_obj, len(compound_obj.atomtypes)))
+        max_size=max(max_size, len(compound_obj.atomtypes))
     for compound_id in range(len(combined_array)):
         combined_array[compound_id].generate_coulomb_matrix(size=max_size, sorting=sorting)
     return merged_representation_arrays(combined_array, part_slices)
@@ -68,7 +71,7 @@ def kernel_from_converted(A, B, sigma, use_Gauss=True, with_ders=False):
     else:
         kernel=laplacian_kernel(A, B, sigma)
     if with_ders:
-        output=np.array((*kernel.shape, 2))
+        output=np.empty((*kernel.shape, 2))
         output[:, :, 0]=kernel
         output[:, :, 1]=-np.log(kernel)/sigma
         if use_Gauss:
@@ -81,18 +84,18 @@ def CM_kernel(A, B, sigma, use_Gauss=True, with_ders=False):
     Ac, Bc=CM_kernel_input(A, B)
     return kernel_from_converted(Ac, Bc, sigma, use_Gauss=use_Gauss, with_ders=with_ders)
 
-def SLATM_kernel(A, B, sigma):
-    A, B=SLATM_kernel_input(A, B)
+def SLATM_kernel(A, B, sigma, use_Gauss=True, with_ders=False):
+    Ac, Bc=SLATM_kernel_input(A, B)
     return kernel_from_converted(Ac, Bc, sigma, use_Gauss=use_Gauss, with_ders=with_ders)
 
 
 # Some auxiliary functions for more convenient scripting in hyperparameter_optimization module.
 
 def gaussian_sym_kernel_conv_wders(A, sigma_arr, with_ders=False):
-    return  kernel_from_converted(A, A, sigma_arr[0], use_Gauss=True, with_ders=width_ders)
+    return  kernel_from_converted(A, A, sigma_arr[0], use_Gauss=True, with_ders=with_ders)
 
 def laplacian_sym_kernel_conv_wders(A, sigma_arr, with_ders=False):
-    return  kernel_from_converted(A, A, sigma_arr[0], use_Gauss=False, with_ders=width_ders)
+    return  kernel_from_converted(A, A, sigma_arr[0], use_Gauss=False, with_ders=with_ders)
 
 def gaussian_kernel_conv_wders(A, B, sigma_arr, with_ders=False):
     return  kernel_from_converted(A, B, sigma_arr[0], use_Gauss=True, with_ders=width_ders)
