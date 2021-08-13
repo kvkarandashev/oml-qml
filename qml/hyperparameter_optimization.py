@@ -690,6 +690,12 @@ class GOO_randomized_iterator:
 
         self.change_successful=None
 
+        # If initial lambda value is not large enough for the kernel matrix to be invertible,
+        # use bisection to optimize it.
+        while self.cur_optimizer_state.error_measure is None:
+            if not self.keep_init_lambda:
+                self.bisection_lambda_optimization()
+
     def iterate(self):
         cur_red_ders=self.cur_optimizer_state.error_measure_red_ders
 

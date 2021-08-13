@@ -1,17 +1,17 @@
 from qml.oml_compound import OML_compound
 
-def HOMO_en(xyz_name, calc_type="HF", basis="sto-3g", dft_xc='lda,vwn', dft_nlc=''):
-    oml_comp=OML_compound(xyz = xyz_name, mats_savefile = xyz_name, calc_type=calc_type, basis=basis, dft_xc=dft_xc, dft_nlc=dft_nlc)
+def HOMO_en(xyz_name, calc_type="HF", basis="sto-3g", dft_xc='lda,vwn', dft_nlc='', **other_kwargs):
+    oml_comp=OML_compound(xyz = xyz_name, mats_savefile = xyz_name, calc_type=calc_type, basis=basis, dft_xc=dft_xc, dft_nlc=dft_nlc, **other_kwargs)
     oml_comp.run_calcs()
     return oml_comp.HOMO_en()
     
-def LUMO_en(xyz_name, calc_type="HF", basis="sto-3g", dft_xc='lda,vwn', dft_nlc=''):
-    oml_comp=OML_compound(xyz = xyz_name, mats_savefile = xyz_name, calc_type=calc_type, basis=basis, dft_xc=dft_xc, dft_nlc=dft_nlc)
+def LUMO_en(xyz_name, calc_type="HF", basis="sto-3g", dft_xc='lda,vwn', dft_nlc='', **other_kwargs):
+    oml_comp=OML_compound(xyz = xyz_name, mats_savefile = xyz_name, calc_type=calc_type, basis=basis, dft_xc=dft_xc, dft_nlc=dft_nlc, **other_kwargs)
     oml_comp.run_calcs()
     return oml_comp.LUMO_en()
 
-def HOMO_LUMO_gap(xyz_name, calc_type="HF", basis="sto-3g", dft_xc='lda,vwn', dft_nlc=''):
-    return LUMO_en(xyz_name, calc_type=calc_type, basis=basis, dft_xc=dft_xc, dft_nlc=dft_nlc)-HOMO_en(xyz_name, calc_type=calc_type, basis=basis, dft_xc=dft_xc, dft_nlc=dft_nlc)
+def HOMO_LUMO_gap(xyz_name, calc_type="HF", basis="sto-3g", dft_xc='lda,vwn', dft_nlc='', **other_kwargs):
+    return LUMO_en(xyz_name, calc_type=calc_type, basis=basis, dft_xc=dft_xc, dft_nlc=dft_nlc, **other_kwargs)-HOMO_en(xyz_name, calc_type=calc_type, basis=basis, dft_xc=dft_xc, dft_nlc=dft_nlc, **other_kwargs)
 
 def potential_energy(xyz_name, calc_type="HF", basis="sto-3g", dft_xc='lda,vwn', dft_nlc=''):
     oml_comp=OML_compound(xyz = xyz_name, mats_savefile = xyz_name, calc_type=calc_type, basis=basis, dft_xc=dft_xc, dft_nlc=dft_nlc)
@@ -71,7 +71,7 @@ class Quantity:
                 break
         file.close()
         return output
-    def OML_calc_quant(self, xyz_name, calc_type="HF", basis="sto-3g", dft_xc='lda,vwn', dft_nlc=''):
-        return quant_properties[self.name][2](xyz_name, calc_type=calc_type, basis=basis, dft_xc=dft_xc, dft_nlc=dft_nlc)
+    def OML_calc_quant(self, xyz_name, calc_type="HF", basis="sto-3g", dft_xc='lda,vwn', dft_nlc='', **other_kwargs):
+        return quant_properties[self.name][2](xyz_name, calc_type=calc_type, basis=basis, dft_xc=dft_xc, dft_nlc=dft_nlc, **other_kwargs)
     def write_byprod_result(self, val, io_out):
         io_out.write(str(self.qm9_id)+" "+str(val)+"\n")

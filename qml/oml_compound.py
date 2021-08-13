@@ -40,6 +40,7 @@ is_KS={"HF" : False, "UHF" : False, "KS" : True, "UKS" : True}
 
 neglect_orb_occ=0.1
 
+available_IBO_types=["standard_IBO", "IBO_HOMO_removed", "IBO_LUMO_added", "IBO_first_excitation"]
 
 def pySCFNotConvergedErrorMessage(oml_comp=None):
     if oml_comp is None:
@@ -65,8 +66,11 @@ class OML_compound(Compound):
         calc_type       - type of the calculation (for now only HF with IBO localization and the default basis set are supported).
     """
     def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="sto-3g", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False,
-            charge=0, spin=None, dft_xc='lda,vwn', dft_nlc='', software="pySCF", pyscf_calc_params=None, use_pyscf_localization=True):
+            charge=0, spin=None, dft_xc='lda,vwn', dft_nlc='', software="pySCF", pyscf_calc_params=None, use_pyscf_localization=True, full_pyscf_chkfile=False):
         super().__init__(xyz=xyz)
+
+        if used_orb_type not in available_IBO_types:
+            raise Exception
 
         self.calc_type=calc_type
         self.charge=charge
@@ -84,6 +88,10 @@ class OML_compound(Compound):
         self.optimize_geometry=optimize_geometry
         self.software=software
         self.use_pyscf_localization=use_pyscf_localization
+
+        self.pyscf_chkfile=None
+        self.full_pyscf_chkfile=None
+
         if pyscf_calc_params is None:
             self.pyscf_calc_params=OML_pyscf_calc_params()
         else:
@@ -91,10 +99,7 @@ class OML_compound(Compound):
         if is_KS[self.calc_type]:
             self.dft_xc=dft_xc
             self.dft_nlc=dft_nlc
-        if self.mats_savefile is None:
-            self.mats_created=False
-            self.pyscf_chkfile_avail=False
-        else:
+        if self.mats_savefile is not None:
             if self.mats_savefile.endswith(".pkl"):
                 self.pyscf_chkfile=self.mats_savefile[:-3]+"chkfile"
             else:
@@ -113,8 +118,9 @@ class OML_compound(Compound):
                     savefile_prename+="."+self.software+".pySCF_loc_"+str(self.use_pyscf_localization)
                 self.pyscf_chkfile=savefile_prename+".chkfile"
                 self.mats_savefile=savefile_prename+"."+self.used_orb_type+".pkl"
-            self.mats_created=isfile(self.mats_savefile)
-            self.pyscf_chkfile_avail=isfile(self.pyscf_chkfile)
+            if full_pyscf_chkfile:
+                self.full_pyscf_chkfile=self.pyscf_chkfile+"_full"
+        self.mats_created=ext_isfile(self.mats_savefile)
         if self.mats_created:
             # Import ab initio results from the savefile.
             precalc_vals=loadpkl(self.mats_savefile)
@@ -174,13 +180,7 @@ class OML_compound(Compound):
                 return
             # Run the pySCF calculations.
             from qml.oml_representations import generate_ao_arr, generate_atom_ao_ranges
-            pyscf_mol=self.generate_pyscf_mol()
-            mf=self.generate_pyscf_mf(pyscf_mol)
-            if self.optimize_geometry:
-                from pyscf.geomopt.geometric_solver import optimize
-                pyscf_mol=optimize(mf)
-                self.opt_coords=pyscf_mol.atom_coords(unit='Ang')
-                mf=self.generate_pyscf_mf(pyscf_mol)
+            mf, pyscf_mol=self.generate_pyscf_mf_mol()
             ### Special operations.
             if self.used_orb_type != "standard_IBO":
                 self.mo_occ=self.alter_mo_occ(mf.mo_occ)
@@ -217,17 +217,17 @@ class OML_compound(Compound):
         return iao_mat, ibo_mat
 
     def create_mats_savefile(self):
-            self.mats_created=True
-            if self.mats_savefile is not None:
-                #TO-DO Check ways for doing it in a less ugly way.
-                saved_data={"mo_coeff" : self.mo_coeff, "mo_occ" : self.mo_occ, "mo_energy" : self.mo_energy, "aos" : self.aos,
+        self.mats_created=True
+        if self.mats_savefile is not None:
+            #TO-DO Check ways for doing it in a less ugly way.
+            saved_data={"mo_coeff" : self.mo_coeff, "mo_occ" : self.mo_occ, "mo_energy" : self.mo_energy, "aos" : self.aos,
                                     "ovlp_mat" : self.ovlp_mat, "iao_mat" : self.iao_mat, "ibo_mat" : self.ibo_mat, "atom_ao_ranges" : self.atom_ao_ranges,
                                     "e_tot" : self.e_tot}
-                if is_HF[self.calc_type]:
-                    saved_data={**saved_data, "j_mat" : self.j_mat, "k_mat" : self.k_mat, "fock_mat" : self.fock_mat}
-                if self.optimize_geometry:
-                    saved_data["opt_coords"]=self.opt_coords
-                dump2pkl(saved_data, self.mats_savefile)
+            if is_HF[self.calc_type]:
+                saved_data={**saved_data, "j_mat" : self.j_mat, "k_mat" : self.k_mat, "fock_mat" : self.fock_mat}
+            if self.optimize_geometry:
+                saved_data["opt_coords"]=self.opt_coords
+            dump2pkl(saved_data, self.mats_savefile)
     def generate_orb_reps(self, rep_params):
         """ Generates orbital representation.
 
@@ -288,9 +288,11 @@ class OML_compound(Compound):
         except KeyError as KE:
             if (str(KE)[1:-1]==mol.basis):
                 import basis_set_exchange as bse
-                # WARNING: was never used.
+                # WARNING: was never used, therefore not %100 sure it works.
                 mol.basis=bse.get_basis(mol.basis, fmt="nwchem")
                 mol.build()
+            else:
+                raise KE
         return mol
     def generate_pyscf_mf(self, pyscf_mol):
         mf=mf_creator[self.calc_type](pyscf_mol)
@@ -304,7 +306,7 @@ class OML_compound(Compound):
             mf.max_cycle=-1
         else:
             mf.max_cycle=self.pyscf_calc_params.scf_max_cycle
-            if self.pyscf_chkfile_avail:
+            if ext_isfile(self.pyscf_chkfile):
                 mf.init_guess='chkfile'
         mf.run()
         if not (mf.converged or self.use_Huckel):
@@ -316,6 +318,21 @@ class OML_compound(Compound):
                 raise pySCFNotConvergedError(pySCFNotConvergedErrorMessage(self))
 #        subprocess.run(["rm", '-f', chkfile])
         return mf
+
+    def generate_pyscf_mf_mol(self):
+        if ext_isfile(self.full_pyscf_chkfile):
+            return loadpkl(self.full_pyscf_chkfile)
+        pyscf_mol=self.generate_pyscf_mol()
+        mf=self.generate_pyscf_mf(pyscf_mol)
+        if self.optimize_geometry:
+            from pyscf.geomopt.geometric_solver import optimize
+            pyscf_mol=optimize(mf)
+            self.opt_coords=pyscf_mol.atom_coords(unit='Ang')
+            mf=self.generate_pyscf_mf(pyscf_mol)
+        output=(mf, pyscf_mol)
+        if self.full_pyscf_chkfile is not None:
+            dump2pkl(output, self.full_pyscf_chkfile)
+        return output
 
     def alter_mo_occ(self, mo_occ):
         if is_restricted[self.calc_type]:
@@ -396,6 +413,11 @@ def orb_occ_prop_coeff(comp):
     else:
         return 1.0
 
+def ext_isfile(filename):
+    if filename is None:
+        return False
+    else:
+        return isfile(filename)
 
 class OML_pyscf_calc_params:
 #   Parameters of pySCF calculations.

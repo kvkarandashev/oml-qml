@@ -649,3 +649,30 @@ def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, tr
     all_vals_output_file.close()
     mean_stderr_output_file.close()
 
+######
+# A procedure for building learning curve from optimal indexing order obtained from active learning.
+######
+def build_learning_curve_with_active_sampling(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes,
+                            optimal_order_indices=None, lambda_val=0.0, eigh_rcond=None):
+    if optimal_order_indices is None:
+        from qml.active_learning import metadynamics_active_learning_order
+        optimal_order_indices=metadynamics_active_learning_order(train_kernel, num_to_generate=max(training_set_sizes))
+    MAEs=[]
+    for training_set_size in training_set_sizes:
+        cur_train_indices=optimal_order_indices[:training_set_size]
+        cur_train_kernel=train_kernel[cur_train_indices][:, cur_train_indices]
+        cur_train_check_kernel=train_check_kernel[:, cur_train_indices]
+        cur_train_quantities=train_quantities[cur_train_indices]
+        MAEs.append(MAE_from_kernels(cur_train_kernel, cur_train_quantities, cur_train_check_kernel, check_quantities, lambda_val, eigh_rcond=eigh_rcond))
+    return MAEs
+
+
+
+
+
+
+
+
+
+
+

@@ -159,6 +159,15 @@ ext_foml_kernels = Extension(name = 'foml_kernels',
                           language = FORTRAN,
                           f2py_options=['--quiet'])
 
+ext_factive_learning = Extension(name = 'factive_learning',
+                          sources = ['qml/factive_learning.f90'],
+                          extra_f90_compile_args = COMPILER_FLAGS,
+                          extra_f77_compile_args = COMPILER_FLAGS,
+                          extra_compile_args = COMPILER_FLAGS,
+                          extra_link_args = LINKER_FLAGS+MATH_LINKER_FLAGS,
+                          language = FORTRAN,
+                          f2py_options=['--quiet'])
+
 
 
 # use README.md as long description
@@ -197,7 +206,8 @@ def setup_pepytools():
               ext_frepresentations,
               ext_foml_module,
               ext_foml_representations,
-              ext_foml_kernels, 
+              ext_foml_kernels,
+              ext_factive_learning
         ],
 )
 
