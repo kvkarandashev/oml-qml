@@ -157,7 +157,8 @@ def MAE_bisection_optimization(initial_lambda_opt_step, train_kernel, train_vals
 # Procedures for general gradient-based optimization.
 #########
 class Gradient_optimization_obj:
-    def __init__(self, training_compounds, training_quants, check_compounds, check_quants, use_Gauss=False, use_MAE=True, reduced_hyperparam_func=None, sym_kernel_func=None, kernel_func=None, kernel_input_converter=None):
+    def __init__(self, training_compounds, training_quants, check_compounds, check_quants, use_Gauss=False, use_MAE=True,
+                    reduced_hyperparam_func=None, sym_kernel_func=None, kernel_func=None, kernel_input_converter=None):
         self.init_kern_funcs(use_Gauss=use_Gauss, reduced_hyperparam_func=reduced_hyperparam_func, sym_kernel_func=sym_kernel_func,
                             kernel_func=kernel_func, kernel_input_converter=kernel_input_converter)
 
@@ -653,7 +654,7 @@ class Optimizer_state_generator:
 
 class GOO_randomized_iterator:
     def __init__(self, opt_GOO_ensemble, initial_reduced_parameter_vals, lambda_opt_tolerance=0.1, step_magnitudes=None, noise_level_prop_coeffs=None,
-                        lambda_max_num_scan_steps=10, default_step_magnitude=1.0, keep_init_lambda=False, bisec_lambda_opt=True):
+                        lambda_max_num_scan_steps=10, default_step_magnitude=1.0, keep_init_lambda=False, bisec_lambda_opt=True, max_lambda_diag_el_ratio=None):
 
         self.optimizer_state_generator=Optimizer_state_generator(opt_GOO_ensemble)
 
@@ -689,27 +690,22 @@ class GOO_randomized_iterator:
         self.bisec_lambda_opt=bisec_lambda_opt
 
         self.change_successful=None
+        
+        self.max_lambda_diag_el_ratio=max_lambda_diag_el_ratio
 
         # If initial lambda value is not large enough for the kernel matrix to be invertible,
         # use bisection to optimize it.
-        while self.cur_optimizer_state.error_measure is None:
-            if not self.keep_init_lambda:
-                self.bisection_lambda_optimization()
+        if (not self.keep_init_lambda) and (self.max_lambda_diag_el_ratio is not None):
+            while self.cur_optimizer_state.error_measure is None:
+                if not self.keep_init_lambda:
+                    self.bisection_lambda_optimization()
 
     def iterate(self):
-        cur_red_ders=self.cur_optimizer_state.error_measure_red_ders
 
-        normalized_red_ders=np.copy(self.cur_optimizer_state.error_measure_red_ders)
-        if self.keep_init_lambda:
-            normalized_red_ders[0]=0.0
+        trial_red_params=self.generate_trial_red_params(self.keep_init_lambda)
 
-        normalized_red_ders=normalized_red_ders/np.sqrt(sum((normalized_red_ders/self.step_magnitudes)**2))
-
-        print("Normalized reduced derivatives:", normalized_red_ders)
-
-        trial_red_params=np.copy(self.cur_optimizer_state.red_parameters)
-        for param_id in range(self.num_reduced_params):
-            trial_red_params[param_id]+=np.random.normal()*self.noise_levels[param_id]-normalized_red_ders[param_id]
+        if self.lambda_exceeded(trial_red_params[0]):
+            trial_red_params=self.generate_trial_red_params(True)
 
         trial_optimizer_state=self.optimizer_state_generator(trial_red_params)
 
@@ -724,6 +720,35 @@ class GOO_randomized_iterator:
             self.noise_levels[:]=0.0
         else:
             self.noise_levels+=self.noise_level_prop_coeffs/np.sqrt(self.num_reduced_params)
+
+    def generate_trial_red_params(self, keep_init_lambda):
+        normalized_red_ders=np.copy(self.cur_optimizer_state.error_measure_red_ders)
+        if keep_init_lambda:
+            normalized_red_ders[0]=0.0
+        normalized_red_ders=normalized_red_ders/np.sqrt(sum((normalized_red_ders/self.step_magnitudes)**2))
+
+        print("Normalized reduced derivatives:", normalized_red_ders)
+
+        trial_red_params=np.copy(self.cur_optimizer_state.red_parameters)
+
+        if keep_init_lambda:
+            param_range_start=1
+        else:
+            param_range_start=0
+
+        for param_id in range(param_range_start, self.num_reduced_params):
+            trial_red_params[param_id]+=np.random.normal()*self.noise_levels[param_id]-normalized_red_ders[param_id]
+
+        return trial_red_params
+
+    def lambda_exceeded(self, log_lambda_value):
+        if self.max_lambda_diag_el_ratio is None:
+            return False
+        else:
+            lambda_value=np.exp(log_lambda_value)
+            train_kernel_mat=self.optimizer_state_generator.goo_ensemble.global_matrix
+            av_kernel_diag_el=np.mean(train_kernel_mat[np.diag_indices_from(train_kernel_mat)])
+            return (lambda_value>av_kernel_diag_el*self.max_lambda_diag_el_ratio)
 
     def bisection_lambda_optimization(self):
         print("Bisection optimization of lambda, starting position:", self.cur_optimizer_state.lambda_log_val(), self.cur_optimizer_state.error_measure)
@@ -740,6 +765,10 @@ class GOO_randomized_iterator:
         for init_scan_step in range(self.lambda_max_num_scan_steps):
             trial_red_params=np.copy(prev_iteration.red_parameters)
             trial_red_params[0]+=scan_additive
+
+            if self.lambda_exceeded(trial_red_params[0]):
+                self.cur_optimizer_state=self.optimizer_state_generator(prev_iteration.red_parameters, recalc_global_matrices=False)
+                return
 
             trial_iteration=self.optimizer_state_generator(trial_red_params, recalc_global_matrices=False, lambda_der_only=True)
             trial_lambda_der=trial_iteration.log_lambda_der()
