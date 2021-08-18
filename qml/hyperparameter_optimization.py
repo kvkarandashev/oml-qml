@@ -718,6 +718,8 @@ class GOO_randomized_iterator:
             if ((not self.keep_init_lambda) and self.bisec_lambda_opt):
                 self.bisection_lambda_optimization()
             self.noise_levels[:]=0.0
+            if self.lambda_exceeded():
+                self.decrease_lambda_until_normal()
         else:
             self.noise_levels+=self.noise_level_prop_coeffs/np.sqrt(self.num_reduced_params)
 
@@ -741,10 +743,35 @@ class GOO_randomized_iterator:
 
         return trial_red_params
 
-    def lambda_exceeded(self, log_lambda_value):
+    def decrease_lambda_until_normal(self):
+        scan_additive=np.abs(self.step_magnitudes[0])
+        new_red_params=np.copy(self.cur_optimizer_state.red_parameters)
+
+        while self.lambda_exceeded(new_red_params[0]):
+            trial_red_params=np.copy(new_red_params)
+            trial_red_params[0]-=scan_additive
+            trial_iteration=self.optimizer_state_generator(trial_red_params, recalc_global_matrices=False, lambda_der_only=True)
+
+            trial_error_measure=trial_iteration.error_measure
+            print("Scanning lambda to decrease:", trial_red_params[0], trial_error_measure)
+
+            if trial_error_measure is None:
+                break
+            else:
+                new_red_params=np.copy(trial_red_params)
+
+        self.recalc_cur_opt_state(new_red_params, recalc_global_matrices=False)
+
+    def recalc_cur_opt_state(self, new_red_params, recalc_global_matrices=True, lambda_der_only=False):
+        self.cur_optimizer_state=self.optimizer_state_generator(new_red_params, recalc_global_matrices=recalc_global_matrices,
+                                        lambda_der_only=lambda_der_only)
+
+    def lambda_exceeded(self, log_lambda_value=None):
         if self.max_lambda_diag_el_ratio is None:
             return False
         else:
+            if log_lambda_value is None:
+                log_lambda_value=self.cur_optimizer_state.red_parameters[0]
             lambda_value=np.exp(log_lambda_value)
             train_kernel_mat=self.optimizer_state_generator.goo_ensemble.global_matrix
             av_kernel_diag_el=np.mean(train_kernel_mat[np.diag_indices_from(train_kernel_mat)])
@@ -766,8 +793,8 @@ class GOO_randomized_iterator:
             trial_red_params=np.copy(prev_iteration.red_parameters)
             trial_red_params[0]+=scan_additive
 
-            if self.lambda_exceeded(trial_red_params[0]):
-                self.cur_optimizer_state=self.optimizer_state_generator(prev_iteration.red_parameters, recalc_global_matrices=False)
+            if (self.lambda_exceeded(trial_red_params[0]) and (scan_additive>0.0)):
+                self.recalc_cur_opt_state(prev_iteration.red_parameters, recalc_global_matrices=False)
                 return
 
             trial_iteration=self.optimizer_state_generator(trial_red_params, recalc_global_matrices=False, lambda_der_only=True)
@@ -782,13 +809,13 @@ class GOO_randomized_iterator:
             else:
                 if trial_iteration>prev_iteration: # something is wrong, we were supposed to be going down in MSE.
                     print("WARNING: Weird behavior during lambda value scan.")
-                    self.cur_optimizer_state=self.optimizer_state_generator(prev_iteration.red_parameters, recalc_global_matrices=False)
+                    self.recalc_cur_opt_state(prev_iteration.red_parameters, recalc_global_matrices=False)
                     return
                 else:
                     prev_iteration=trial_iteration
 
         if bisection_interval is None:
-            self.cur_optimizer_state=self.optimizer_state_generator(trial_iteration.red_parameters, recalc_global_matrices=False)
+            self.recalc_cur_opt_state(trial_iteration.red_parameters, recalc_global_matrices=False)
             return
 
         # Finalize locating the minumum via bisection.
@@ -810,8 +837,7 @@ class GOO_randomized_iterator:
                     bisection_interval[bisec_int_id]=middle_iteration
             bisection_interval.sort(key=lambda x: x.lambda_log_val())
 
-        self.cur_optimizer_state=self.optimizer_state_generator(min(bisection_interval).red_parameters, recalc_global_matrices=False)
-
+        self.recalc_cur_opt_state(min(bisection_interval).red_parameters, recalc_global_matrices=False)
 
 hyperparam_red_funcs={"default": Reduced_hyperparam_func, "single_rescaling" : Single_rescaling_rhf}
 

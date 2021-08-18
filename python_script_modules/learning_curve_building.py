@@ -7,7 +7,7 @@ from qml.math import cho_solve as fcho_solve
 from scipy.linalg import cho_factor
 from scipy.linalg import cho_solve as scipy_cho_solve
 import datetime
-
+import random
 
 byprod_result_ending=".brf"
 
@@ -638,7 +638,8 @@ def build_learning_curve(train_kernel, train_quantities, train_check_kernel, che
         all_MAEs.append(cur_train_MAEs)
     return all_MAEs
 
-def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=0.0, eigh_rcond=None):
+def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, train_kernel, train_quantities,
+                train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=0.0, eigh_rcond=None):
     all_MAEs=build_learning_curve(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=lambda_val, eigh_rcond=eigh_rcond)
     all_vals_output_file=open(all_vals_output_name, 'w')
     mean_stderr_output_file=open(mean_stderr_output_name, 'w')
@@ -652,11 +653,13 @@ def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, tr
 ######
 # A procedure for building learning curve from optimal indexing order obtained from active learning.
 ######
-def build_learning_curve_with_active_sampling(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes,
-                            optimal_order_indices=None, lambda_val=0.0, eigh_rcond=None):
+
+def build_learning_curve_with_AL(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes,
+                            optimal_order_indices=None, lambda_val=0.0, eigh_rcond=None, active_learning_method="metadynamics", starting_indices=None):
     if optimal_order_indices is None:
-        from qml.active_learning import metadynamics_active_learning_order
-        optimal_order_indices=metadynamics_active_learning_order(train_kernel, num_to_generate=max(training_set_sizes))
+        from qml.active_learning import active_learning_order
+        optimal_order_indices=active_learning_order(train_kernel, num_to_generate=max(training_set_sizes),
+                active_learning_method=active_learning_method, lambda_val=lambda_val, starting_indices=starting_indices)
     MAEs=[]
     for training_set_size in training_set_sizes:
         cur_train_indices=optimal_order_indices[:training_set_size]
@@ -667,9 +670,40 @@ def build_learning_curve_with_active_sampling(train_kernel, train_quantities, tr
     return MAEs
 
 
+def create_print_learning_curve_with_AL_multiple_initial_sets(mean_stderr_output_name, all_vals_output_name,
+                    train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes,
+                    num_init_sets=8, lambda_val=0.0, active_learning_method="feature_distance"):
+    num_samples=train_kernel.shape[0]
+    all_indices=list(range(num_samples))
+    random.shuffle(all_indices)
+    all_indices=np.array(all_indices)
 
+    init_set_num=training_set_sizes[0]
 
+    lower_bound=0
+    upper_bound=init_set_num
 
+    all_MAEs=np.zeros((len(training_set_sizes),num_init_sets))
+
+    for init_indices in range(num_init_sets):
+        cur_starting_set=all_indices[lower_bound:upper_bound]
+        lower_bound+=init_set_num
+        upper_bound+=init_set_num
+        cur_MAEs=build_learning_curve_with_AL(train_kernel, train_quantities, train_check_kernel, check_quantities,
+            training_set_sizes, lambda_val=lambda_val, active_learning_method=active_learning_method, starting_indices=cur_starting_set)
+        for MAE_id, MAE_val in enumerate(cur_MAEs):
+            all_MAEs[MAE_id, init_indices]=MAE_val
+
+    mean_stderr_output=open(mean_stderr_output_name, 'w')
+    all_vals_output=open(all_vals_output_name, 'w')
+    for tr_set_size_id, training_set_size in enumerate(training_set_sizes):
+        cur_tr_MAEs=all_MAEs[tr_set_size_id, :]
+        cur_mean=np.mean(cur_tr_MAEs)
+        cur_stderr=np.std(cur_tr_MAEs)/math.sqrt(num_init_sets)
+        print(training_set_size, cur_mean, cur_stderr, file=mean_stderr_output)
+        print(training_set_size, cur_tr_MAEs, file=all_vals_output)
+    mean_stderr_output.close()
+    all_vals_output.close()
 
 
 
