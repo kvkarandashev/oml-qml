@@ -655,11 +655,13 @@ def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, tr
 ######
 
 def build_learning_curve_with_AL(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes,
-                            optimal_order_indices=None, lambda_val=0.0, eigh_rcond=None, active_learning_method="metadynamics", starting_indices=None):
+                            optimal_order_indices=None, lambda_val=0.0, eigh_rcond=None, active_learning_method="metadynamics",
+                            starting_indices=None, covariance_relative_tolerance=0.2):
     if optimal_order_indices is None:
         from qml.active_learning import active_learning_order
         optimal_order_indices=active_learning_order(train_kernel, num_to_generate=max(training_set_sizes),
-                active_learning_method=active_learning_method, lambda_val=lambda_val, starting_indices=starting_indices)
+                active_learning_method=active_learning_method, lambda_val=lambda_val, starting_indices=starting_indices,
+                covariance_relative_tolerance=covariance_relative_tolerance)
     MAEs=[]
     for training_set_size in training_set_sizes:
         cur_train_indices=optimal_order_indices[:training_set_size]

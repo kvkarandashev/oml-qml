@@ -80,7 +80,6 @@ integer:: i_sample1, i_sample2, init_point_id
 !$OMP END CRITICAL
 
 !$OMP END PARALLEL
-
     do init_point_id=1, 2
         call switch_positions(ordered_indices, init_point_id, tot_min_cov_pair(init_point_id), num_samples)
     enddo

@@ -14,7 +14,7 @@ def active_learning_order(sym_kernel_mat, starting_indices=None, num_to_generate
         initial_ordered_size=0
     else:
         initial_ordered_size=len(starting_indices)
-        assert(num_samples>initial_ordered_size)
+        assert(num_samples>=initial_ordered_size)
         output_indices[:initial_ordered_size]=np.array(starting_indices)[:initial_ordered_size]
         output_indices+=1 # because we'll be using it in Fortran
         output_indices[:initial_ordered_size].sort()
