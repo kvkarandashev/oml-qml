@@ -1,14 +1,16 @@
 ! Subroutines for the metadynamics-like approximation to active learning order.
 SUBROUTINE fmetadynamics_active_learning_order(sym_kernel_mat, num_samples, initial_ordered_size,&
-            num_to_generate, output_indices)
+            num_to_generate, cov_num_tol, output_indices)
 implicit none
 double precision, dimension(:, :), intent(in):: sym_kernel_mat
 integer, intent(in):: initial_ordered_size, num_to_generate, num_samples
+double precision, intent(in):: cov_num_tol
 integer, intent(inout), dimension(:):: output_indices
 integer, dimension(num_samples):: ordered_indices
 double precision, dimension(num_samples):: metadynamics_potential
 integer:: i_sample, cur_ordered_size, cur_vec_true_id, next_addition
 logical:: adding_points
+double precision:: next_add_max_pot
 
     cur_ordered_size=initial_ordered_size
     if (cur_ordered_size/=0) ordered_indices(1:cur_ordered_size)=output_indices(1:cur_ordered_size)
@@ -25,7 +27,8 @@ logical:: adding_points
     adding_points=.false.
     do i_sample=1, num_to_generate
         if (adding_points) then
-            call omp_max_shuffled_indices(metadynamics_potential, ordered_indices, cur_ordered_size, num_samples, next_addition)
+            call omp_max_shuffled_indices(metadynamics_potential, ordered_indices, cur_ordered_size,&
+                        num_samples, next_addition, next_add_max_pot)
             cur_ordered_size=cur_ordered_size+1
             call switch_positions(ordered_indices, cur_ordered_size, next_addition, num_samples)
         else
@@ -100,17 +103,19 @@ integer:: temp_val
 
 END SUBROUTINE
 
-SUBROUTINE omp_max_shuffled_indices(metadynamics_potential, ordered_indices, ordered_size, num_samples, next_addition)
+SUBROUTINE omp_max_shuffled_indices(metadynamics_potential, ordered_indices,&
+            ordered_size, num_samples, next_addition, next_add_pot)
 implicit none
 integer, intent(in):: num_samples, ordered_size
 double precision, intent(in), dimension(num_samples):: metadynamics_potential
 integer, intent(in), dimension(num_samples):: ordered_indices
 integer, intent(inout):: next_addition
-double precision:: cur_pot, cur_max_pot, tot_max_pot
+double precision, intent(inout):: next_add_pot
+double precision:: cur_pot, cur_max_pot
 integer:: cur_max_pos
 integer:: i_sample
 
-    tot_max_pot=0.0
+    next_add_pot=0.0
     next_addition=0
 !$OMP PARALLEL PRIVATE (cur_pot, cur_max_pot, cur_max_pos, i_sample)
     cur_max_pot=0.0
@@ -125,8 +130,8 @@ integer:: i_sample
     enddo
 !$OMP END DO
 !$OMP CRITICAL
-    if (((cur_max_pot>tot_max_pot).or.(next_addition==0)).and.(cur_max_pos/=0)) then
-        tot_max_pot=cur_max_pot
+    if (((cur_max_pot>next_add_pot).or.(next_addition==0)).and.(cur_max_pos/=0)) then
+        next_add_pot=cur_max_pot
         next_addition=cur_max_pos
     endif
 !$OMP END CRITICAL
@@ -140,16 +145,19 @@ END SUBROUTINE
 !   Cholesky decomposition routines.
 
 SUBROUTINE ffeature_distance_learning_order(sym_kernel_mat, num_samples, initial_ordered_size,&
-                                            num_to_generate, output_indices)
+                                            num_to_generate, cov_num_tol, orthog_sqnorm_tol, output_indices)
 implicit none
 integer, intent(in):: initial_ordered_size, num_to_generate, num_samples
 double precision, dimension(:, :), intent(in):: sym_kernel_mat
+double precision, intent(in):: cov_num_tol, orthog_sqnorm_tol
 integer, intent(inout), dimension(:):: output_indices
 integer, dimension(num_samples):: ordered_indices
 double precision, dimension(num_samples):: residual_square_distances
 double precision, dimension(num_to_generate, num_to_generate):: orthogonal_coord_coeffs
 integer:: i_sample, cur_ordered_size, next_addition
-logical:: adding_points
+logical:: adding_points, stop_orthogonalization, choosing_least_neg_cov
+double precision, dimension(num_samples):: closest_neg_cov_vals
+double precision:: next_add_least_neg_cov
 
     cur_ordered_size=initial_ordered_size
 
@@ -159,6 +167,7 @@ logical:: adding_points
     do i_sample=1, num_samples
         residual_square_distances(i_sample)=sym_kernel_mat(i_sample, i_sample)
     enddo
+    closest_neg_cov_vals=0.0
 
     if (cur_ordered_size == 0) then
         call pick_least_covariant_points(sym_kernel_mat, ordered_indices, num_samples)
@@ -167,25 +176,43 @@ logical:: adding_points
     orthogonal_coord_coeffs=0.0
 
     adding_points=.false.
+    stop_orthogonalization=.false.
+    choosing_least_neg_cov=.true.
 
     do i_sample=1, num_to_generate
         if (adding_points) then
-            call omp_max_shuffled_indices(residual_square_distances, ordered_indices, cur_ordered_size, num_samples, next_addition)
+            if (choosing_least_neg_cov) then
+                call omp_max_shuffled_indices(closest_neg_cov_vals, ordered_indices, cur_ordered_size,&
+                                                num_samples, next_addition, next_add_least_neg_cov)
+                if (.not.stop_orthogonalization) &
+                    choosing_least_neg_cov=(next_add_least_neg_cov>-cov_num_tol)
+            endif
+            if (.not.choosing_least_neg_cov) then
+                call omp_max_shuffled_indices(residual_square_distances, ordered_indices, cur_ordered_size,&
+                                        num_samples, next_addition, next_add_least_neg_cov)
+            endif
             cur_ordered_size=cur_ordered_size+1
             call switch_positions(ordered_indices, cur_ordered_size, next_addition, num_samples)
         else
             adding_points=(i_sample==cur_ordered_size)
         endif
-        
-        call update_orthogonal_coord_coeffs(sym_kernel_mat, orthogonal_coord_coeffs,&
-                                            i_sample, ordered_indices(1:i_sample), num_to_generate, num_samples)
-        call update_residual_square_distances(sym_kernel_mat, orthogonal_coord_coeffs(1:i_sample, i_sample),&
+        if (.not.stop_orthogonalization) then
+            call update_orthogonal_coord_coeffs(sym_kernel_mat, orthogonal_coord_coeffs,&
+                                 i_sample, ordered_indices(1:i_sample), num_to_generate, num_samples,&
+                                 orthog_sqnorm_tol, stop_orthogonalization)
+            if (stop_orthogonalization) then
+                choosing_least_neg_cov=.true.
+            else
+                call update_residual_square_distances(sym_kernel_mat, orthogonal_coord_coeffs(1:i_sample, i_sample),&
                     i_sample, ordered_indices, num_samples, residual_square_distances)
+            endif
+        endif
+        call update_negative_closest_covariances(sym_kernel_mat, i_sample, ordered_indices, num_samples, closest_neg_cov_vals)
     enddo
     
     output_indices=ordered_indices(1:num_to_generate)-1
 
-END SUBROUTINE    
+END SUBROUTINE
 
 SUBROUTINE fill_ordered_indices(ordered_indices, initial_ordered_size, num_samples)
 integer, intent(in):: num_samples, initial_ordered_size
@@ -215,12 +242,14 @@ integer:: ordered_part_walker, skipped_indices, cur_index
 END SUBROUTINE
 
 SUBROUTINE update_orthogonal_coord_coeffs(sym_kernel_mat, orthogonal_coord_coeffs, cur_ordered_size,&
-                            ordered_indices, num_to_generate, num_samples)
+                            ordered_indices, num_to_generate, num_samples, sq_norm_tolerance, stop_orthogonalization)
 implicit none
 double precision, dimension(num_samples, num_samples):: sym_kernel_mat
 integer, intent(in):: cur_ordered_size, num_samples, num_to_generate
 double precision, dimension(num_to_generate, num_to_generate), intent(inout):: orthogonal_coord_coeffs
 integer, dimension(cur_ordered_size), intent(in):: ordered_indices
+double precision, intent(in):: sq_norm_tolerance
+logical, intent(inout):: stop_orthogonalization
 double precision, dimension(:), allocatable:: prev_coord_comps
 integer:: latest_addition_true_id
 integer:: i_coord, i_coord1
@@ -250,10 +279,13 @@ double precision:: sq_norm_coeff
 !$OMP END PARALLEL DO
         sq_norm_coeff=sq_norm_coeff-sum(prev_coord_comps**2)
     endif
-
-    orthogonal_coord_coeffs(1:cur_ordered_size, cur_ordered_size)=&
+    if (sq_norm_coeff<sq_norm_tolerance) then
+        print *, 'WARNING: negligible sq_norm_coeff during orthogonalization'
+        stop_orthogonalization=.true.
+    else
+        orthogonal_coord_coeffs(1:cur_ordered_size, cur_ordered_size)=&
                 orthogonal_coord_coeffs(1:cur_ordered_size, cur_ordered_size)/sqrt(sq_norm_coeff)
-
+    endif
 
 END SUBROUTINE
 
@@ -298,4 +330,29 @@ integer:: i_sample, true_sample_id
 !$OMP END PARALLEL DO
 
 END SUBROUTINE
+
                          
+SUBROUTINE update_negative_closest_covariances(sym_kernel_mat, last_added_sample,&
+                                    ordered_indices, num_samples, closest_neg_cov_vals)
+integer, intent(in):: num_samples, last_added_sample
+double precision, intent(inout), dimension(num_samples):: closest_neg_cov_vals
+double precision, intent(in), dimension(num_samples, num_samples):: sym_kernel_mat
+integer, dimension(num_samples), intent(in):: ordered_indices
+integer:: i_sample, true_sample_id, true_last_added_id
+double precision:: added_neg_cov
+
+    true_last_added_id=ordered_indices(last_added_sample)
+!$OMP PARALLEL DO PRIVATE(i_sample, true_sample_id, added_neg_cov)
+    do i_sample=last_added_sample, num_samples
+        true_sample_id=ordered_indices(i_sample)
+        added_neg_cov=-abs(sym_kernel_mat(true_sample_id, true_last_added_id))
+        if (added_neg_cov<closest_neg_cov_vals(true_sample_id)) then
+            closest_neg_cov_vals(true_sample_id)=added_neg_cov
+        endif
+    enddo
+!$OMP END PARALLEL DO
+
+END SUBROUTINE
+
+
+

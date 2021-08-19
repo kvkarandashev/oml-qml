@@ -3,7 +3,8 @@ from .factive_learning import fmetadynamics_active_learning_order, ffeature_dist
 
 learning_order_functions={"metadynamics" : fmetadynamics_active_learning_order, "feature_distance" : ffeature_distance_learning_order}
 
-def active_learning_order(sym_kernel_mat, starting_indices=None, num_to_generate=None, active_learning_method="metadynamics", lambda_val=None):
+def active_learning_order(sym_kernel_mat, starting_indices=None, num_to_generate=None, active_learning_method="metadynamics", lambda_val=None,
+                            covariance_relative_tolerance=0.2, orthog_sqnorm_tol=0.0):
     assert(len(sym_kernel_mat.shape)==2)
     num_samples=sym_kernel_mat.shape[0]
     if num_to_generate is None:
@@ -27,6 +28,7 @@ def active_learning_order(sym_kernel_mat, starting_indices=None, num_to_generate
     for i in range(num_samples):
         used_kernel_mat[i, :]*=norm_coeffs
         used_kernel_mat[:, i]*=norm_coeffs
-    learning_order_functions[active_learning_method](used_kernel_mat.T, num_samples, initial_ordered_size, num_to_generate, output_indices)
+    learning_order_functions[active_learning_method](used_kernel_mat.T, num_samples, initial_ordered_size,
+                                num_to_generate, covariance_relative_tolerance, orthog_sqnorm_tol, output_indices)
     return output_indices
     
