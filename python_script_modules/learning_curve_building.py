@@ -608,10 +608,13 @@ error_function={"MAE" : MAE, "maximum_error" : maximum_error}
 def error_from_kernels(train_kernel, train_quantities, check_kernel, check_quantities, lambda_val, eigh_rcond=None, error_type="MAE"):
     train_kernel[np.diag_indices_from(train_kernel)]+=lambda_val
     if eigh_rcond is None:
-        true_eigh_rcond=lambda_val
+        try:
+            alphas=np_cho_solve(train_kernel, train_quantities)
+        except np.linalg.LinAlgError:
+            print("Non-invertible at: ",len(train_quantities))
+            return 0.0
     else:
-        true_eigh_rcond=eigh_rcond
-    alphas=np_cho_solve_wcheck(train_kernel, train_quantities, eigh_rcond=true_eigh_rcond)
+        alphas=np_cho_solve_wcheck(train_kernel, train_quantities, eigh_rcond=eigh_rcond)
     predicted_quantities=np.dot(check_kernel, alphas)
     return error_function[error_type](predicted_quantities, check_quantities)
 
