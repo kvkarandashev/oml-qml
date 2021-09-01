@@ -605,7 +605,7 @@ def MAE(predicted_quants, check_quants):
 error_function={"MAE" : MAE, "maximum_error" : maximum_error}
 
 # Finalized version of a building procedure for learning curves.
-def error_from_kernels(train_kernel, train_quantities, check_kernel, check_quantities, lambda_val, eigh_rcond=None, error_type="MAE"):
+def error_from_kernels(train_kernel, train_quantities, check_kernel, check_quantities, lambda_val, eigh_rcond=None, error_type="MAE", heavy_atom_numbers=None):
     train_kernel[np.diag_indices_from(train_kernel)]+=lambda_val
     if eigh_rcond is None:
         try:
@@ -616,7 +616,12 @@ def error_from_kernels(train_kernel, train_quantities, check_kernel, check_quant
     else:
         alphas=np_cho_solve_wcheck(train_kernel, train_quantities, eigh_rcond=eigh_rcond)
     predicted_quantities=np.dot(check_kernel, alphas)
-    return error_function[error_type](predicted_quantities, check_quantities)
+    if heavy_atom_numbers is None:
+        true_check_quantities=check_quantities
+    else:
+        predicted_quantities/=heavy_atom_numbers
+        true_check_quantities=check_quantities/heavy_atom_numbers
+    return error_function[error_type](predicted_quantities, true_check_quantities)
 
 def generate_randomized_index_subsets(training_set_size, max_training_set_size, max_training_set_num):
     import random
@@ -630,14 +635,14 @@ def generate_randomized_index_subsets(training_set_size, max_training_set_size, 
     return output
 
 def build_learning_curve(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8,
-                        lambda_val=0.0, eigh_rcond=None, error_type="MAE"):
+                        lambda_val=0.0, eigh_rcond=None, error_type="MAE", test_set_heavy_atom_numbers=None):
     max_training_set_size=len(train_kernel)
     all_MAEs=[]
     for training_set_size in training_set_sizes:
         print("Started:", training_set_size, ", date:", datetime.datetime.now())
         if training_set_size==max_training_set_size:
             cur_train_MAEs=[error_from_kernels(train_kernel, train_quantities, train_check_kernel, check_quantities, lambda_val,
-                                eigh_rcond=eigh_rcond, error_type=error_type)]
+                                eigh_rcond=eigh_rcond, error_type=error_type, heavy_atom_numbers=test_set_heavy_atom_numbers)]
             print("Finished:", training_set_size, ", date:", datetime.datetime.now())
         else:
             cur_train_MAEs=[]
@@ -647,16 +652,17 @@ def build_learning_curve(train_kernel, train_quantities, train_check_kernel, che
                 cur_check_kernel=train_check_kernel[:, randomized_index_subset]
                 cur_train_quantities=train_quantities[randomized_index_subset]
                 cur_train_MAEs.append(error_from_kernels(cur_train_kernel, cur_train_quantities, cur_check_kernel, check_quantities,
-                                                    lambda_val, eigh_rcond=eigh_rcond, error_type=error_type))
+                                                    lambda_val, eigh_rcond=eigh_rcond, error_type=error_type, heavy_atom_numbers=test_set_heavy_atom_numbers))
                 print("Finished:", training_set_size, ", date:", datetime.datetime.now())
         all_MAEs.append(cur_train_MAEs)
     return all_MAEs
 
 def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, train_kernel, train_quantities,
                 train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=0.0,
-                eigh_rcond=None, error_type="MAE"):
+                eigh_rcond=None, error_type="MAE", test_set_heavy_atom_numbers=None):
     all_MAEs=build_learning_curve(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes,
-                        max_training_set_num=8, lambda_val=lambda_val, eigh_rcond=eigh_rcond, error_type=error_type)
+                        max_training_set_num=8, lambda_val=lambda_val, eigh_rcond=eigh_rcond, error_type=error_type,
+                        test_set_heavy_atom_numbers=test_set_heavy_atom_numbers)
     all_vals_output_file=open(all_vals_output_name, 'w')
     mean_stderr_output_file=open(mean_stderr_output_name, 'w')
     for training_set_size, MAE_line in zip(training_set_sizes, all_MAEs):
@@ -727,8 +733,13 @@ def create_print_learning_curve_with_AL_multiple_initial_sets(mean_stderr_output
     mean_stderr_output.close()
     all_vals_output.close()
 
+# For rescaling quantities with respect to number of heavy atoms.
 
+def count_heavy_atoms(comp):
+    return len(np.where(comp.nuclear_charges>1)[0])
 
+def heavy_atom_nums(comp_arr):
+    return np.array([count_heavy_atoms(comp) for comp in comp_arr])
 
 
 

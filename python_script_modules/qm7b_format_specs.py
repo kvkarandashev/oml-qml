@@ -1,6 +1,7 @@
 from qml.oml_compound import OML_compound, OML_Slater_pair
 import subprocess
 import qcportal as ptl
+import numpy as np
 
 class QuantityNotAvailableError(Exception):
     pass
@@ -135,6 +136,40 @@ def max_absorption_intensity(xyz_name, **oml_kwargs):
 
 def excitation_energy_max_absorption(xyz_name, **oml_kwargs):
     raise QuantityNotAvailableError
+
+# For generating sums of atomic energies for list of xyz files.
+def single_el_en(el, **oml_calc_kwargs):
+    el_xyz=el+".xyz"
+    el_xyz_output=open(el_xyz, 'w')
+    print(1, file=el_xyz_output)
+    print("", file=el_xyz_output)
+    print(el, 0.0, 0.0, 0.0, file=el_xyz_output)
+    el_xyz_output.close()
+    # TO-DO replace with something less dirty?
+    try:
+        temp_comp=OML_compound(xyz=el_xyz, mats_savefile=el_xyz, **oml_calc_kwargs)
+        temp_comp.run_calcs()
+    except:
+        temp_comp=OML_compound(xyz=el_xyz, mats_savefile=el_xyz, calc_type="UHF", spin=1, **oml_calc_kwargs)
+        temp_comp.run_calcs()
+    return temp_comp.e_tot*au_to_kcalmol_mult
+
+def atomic_energy_sums(xyz_list, **oml_calc_kwargs):
+    atomic_energies={}
+    output=np.zeros(len(xyz_list))
+    for xyz_id, xyz_file in enumerate(xyz_list):
+        xyz_file_input=open(xyz_file, 'r')
+        xyz_file_lines=xyz_file_input.readlines()
+        xyz_file_input.close()
+        num_atoms=int(xyz_file_lines[0])
+        for atom_line in xyz_file_lines[2:num_atoms+2]:
+            el=atom_line.split(' ')[0]
+            if el not in atomic_energies:
+                atomic_energies[el]=single_el_en(el, **oml_calc_kwargs)
+            output[xyz_id]+=atomic_energies[el]
+            
+    return output
+
 
 #   For importing quantities.
 estimate_functions={"e1" : excitation_energy, "ea" : electron_affinity, "emax" : excitation_energy_max_absorption, "energy" : potential_energy, "homo" : HOMO_en, "imax" : max_absorption_intensity, "ip" : ionization_potential, "lumo" : LUMO_en, "polarizability" : polarizability}

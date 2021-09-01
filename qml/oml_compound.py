@@ -20,6 +20,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# TO-DO change the way the default spin is chosen?
+
 from .compound import Compound
 from .oml_representations import generate_ibo_rep_array, gen_fock_based_coup_mats, weighted_array, generate_ibo_fidelity_rep
 import jax.numpy as jnp
@@ -66,7 +68,7 @@ class OML_compound(Compound):
         calc_type       - type of the calculation (for now only HF with IBO localization and the default basis set are supported).
     """
     def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="sto-3g", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False,
-            charge=0, spin=None, dft_xc='lda,vwn', dft_nlc='', software="pySCF", pyscf_calc_params=None, use_pyscf_localization=True, full_pyscf_chkfile=False):
+            charge=0, spin=None, dft_xc='lda,vwn', dft_nlc='', software="pySCF", pyscf_calc_params=None, use_pyscf_localization=True, full_pyscf_chkfile=False, solvent_eps=None):
         super().__init__(xyz=xyz)
 
         if used_orb_type not in available_IBO_types:
@@ -88,6 +90,7 @@ class OML_compound(Compound):
         self.optimize_geometry=optimize_geometry
         self.software=software
         self.use_pyscf_localization=use_pyscf_localization
+        self.solvent_eps=solvent_eps
 
         self.pyscf_chkfile=None
         self.full_pyscf_chkfile=None
@@ -116,6 +119,8 @@ class OML_compound(Compound):
                     savefile_prename+=".xc_"+self.dft_xc+".nlc_"+str(self.dft_nlc)
                 if self.software != "pySCF":
                     savefile_prename+="."+self.software+".pySCF_loc_"+str(self.use_pyscf_localization)
+                if self.solvent_eps is not None:
+                    savefile_prename+=".solvent_eps_"+str(self.solvent_eps)
                 self.pyscf_chkfile=savefile_prename+".chkfile"
                 self.mats_savefile=savefile_prename+"."+self.used_orb_type+".pkl"
             if full_pyscf_chkfile:
@@ -308,6 +313,10 @@ class OML_compound(Compound):
             mf.max_cycle=self.pyscf_calc_params.scf_max_cycle
             if ext_isfile(self.pyscf_chkfile):
                 mf.init_guess='chkfile'
+        if self.solvent_eps is not None:
+            from pyscf.solvent import DDCOSMO
+            mf=DDCOSMO(mf)
+            mf.with_solvent.eps=self.solvent_eps
         mf.run()
         if not (mf.converged or self.use_Huckel):
             mf=scf.newton(mf)
