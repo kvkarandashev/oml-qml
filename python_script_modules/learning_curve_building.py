@@ -605,17 +605,22 @@ def MAE(predicted_quants, check_quants):
 error_function={"MAE" : MAE, "maximum_error" : maximum_error}
 
 # Finalized version of a building procedure for learning curves.
-def error_from_kernels(train_kernel, train_quantities, check_kernel, check_quantities, lambda_val, eigh_rcond=None, error_type="MAE", heavy_atom_numbers=None):
-    train_kernel[np.diag_indices_from(train_kernel)]+=lambda_val
+def error_from_kernels(train_kernel, train_quantities, check_kernel, check_quantities, lambda_val, eigh_rcond=None, error_type="MAE", heavy_atom_numbers=None, err_dump_prefac=None):
+    true_train_kernel=np.copy(train_kernel)
+    true_train_kernel[np.diag_indices_from(true_train_kernel)]+=lambda_val
     if eigh_rcond is None:
         try:
-            alphas=np_cho_solve(train_kernel, train_quantities)
+            alphas=np_cho_solve(true_train_kernel, train_quantities)
         except np.linalg.LinAlgError:
             print("Non-invertible at: ",len(train_quantities))
             return 0.0
     else:
-        alphas=np_cho_solve_wcheck(train_kernel, train_quantities, eigh_rcond=eigh_rcond)
+        alphas=np_cho_solve_wcheck(true_train_kernel, train_quantities, eigh_rcond=eigh_rcond)
+    del(true_train_kernel)
     predicted_quantities=np.dot(check_kernel, alphas)
+    if err_dump_prefac is not None:
+        from qml.utils import dump2pkl
+        dump2pkl(predicted_quantities, err_dump_prefac+".pkl")
     if heavy_atom_numbers is None:
         true_check_quantities=check_quantities
     else:
@@ -634,35 +639,43 @@ def generate_randomized_index_subsets(training_set_size, max_training_set_size, 
         output.append(shuffled_index_list[tr_set_id*training_set_size:(tr_set_id+1)*training_set_size])
     return output
 
+def add_with_none(string_in, addition):
+    if string_in is None:
+        return string_in
+    else:
+        return string_in+"_"+str(addition)
+
 def build_learning_curve(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8,
-                        lambda_val=0.0, eigh_rcond=None, error_type="MAE", test_set_heavy_atom_numbers=None):
+                        lambda_val=0.0, eigh_rcond=None, error_type="MAE", test_set_heavy_atom_numbers=None, err_dump_prefac=None):
     max_training_set_size=len(train_kernel)
     all_MAEs=[]
     for training_set_size in training_set_sizes:
         print("Started:", training_set_size, ", date:", datetime.datetime.now())
+        tr_size_dump_prefac=add_with_none(err_dump_prefac, training_set_size)
         if training_set_size==max_training_set_size:
             cur_train_MAEs=[error_from_kernels(train_kernel, train_quantities, train_check_kernel, check_quantities, lambda_val,
-                                eigh_rcond=eigh_rcond, error_type=error_type, heavy_atom_numbers=test_set_heavy_atom_numbers)]
+                                eigh_rcond=eigh_rcond, error_type=error_type, heavy_atom_numbers=test_set_heavy_atom_numbers, err_dump_prefac=tr_size_dump_prefac)]
             print("Finished:", training_set_size, ", date:", datetime.datetime.now())
         else:
             cur_train_MAEs=[]
             randomized_index_subsets=generate_randomized_index_subsets(training_set_size, max_training_set_size, max_training_set_num)
-            for randomized_index_subset in randomized_index_subsets:
+            for ris_id, randomized_index_subset in enumerate(randomized_index_subsets):
                 cur_train_kernel=train_kernel[randomized_index_subset][:, randomized_index_subset]
                 cur_check_kernel=train_check_kernel[:, randomized_index_subset]
                 cur_train_quantities=train_quantities[randomized_index_subset]
                 cur_train_MAEs.append(error_from_kernels(cur_train_kernel, cur_train_quantities, cur_check_kernel, check_quantities,
-                                                    lambda_val, eigh_rcond=eigh_rcond, error_type=error_type, heavy_atom_numbers=test_set_heavy_atom_numbers))
+                                                    lambda_val, eigh_rcond=eigh_rcond, error_type=error_type, heavy_atom_numbers=test_set_heavy_atom_numbers,
+                                                    err_dump_prefac=add_with_none(tr_size_dump_prefac, ris_id)))
                 print("Finished:", training_set_size, ", date:", datetime.datetime.now())
         all_MAEs.append(cur_train_MAEs)
     return all_MAEs
 
 def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, train_kernel, train_quantities,
                 train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=0.0,
-                eigh_rcond=None, error_type="MAE", test_set_heavy_atom_numbers=None):
+                eigh_rcond=None, error_type="MAE", test_set_heavy_atom_numbers=None, err_dump_prefac=None):
     all_MAEs=build_learning_curve(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes,
                         max_training_set_num=8, lambda_val=lambda_val, eigh_rcond=eigh_rcond, error_type=error_type,
-                        test_set_heavy_atom_numbers=test_set_heavy_atom_numbers)
+                        test_set_heavy_atom_numbers=test_set_heavy_atom_numbers, err_dump_prefac=err_dump_prefac)
     all_vals_output_file=open(all_vals_output_name, 'w')
     mean_stderr_output_file=open(mean_stderr_output_name, 'w')
     for training_set_size, MAE_line in zip(training_set_sizes, all_MAEs):
