@@ -605,15 +605,26 @@ def MAE(predicted_quants, check_quants):
 error_function={"MAE" : MAE, "maximum_error" : maximum_error}
 
 # Finalized version of a building procedure for learning curves.
-def error_from_kernels(train_kernel, train_quantities, check_kernel, check_quantities, lambda_val, eigh_rcond=None, error_type="MAE", heavy_atom_numbers=None, err_dump_prefac=None):
-    true_train_kernel=np.copy(train_kernel)
+def error_from_kernels(train_kernel, train_quantities, check_kernel, check_quantities, lambda_val, eigh_rcond=None, error_type="MAE",
+                    heavy_atom_numbers=None, err_dump_prefac=None, use_Fortran=False, save_kernel_matrix=True):
+    if save_kernel_matrix:
+        true_train_kernel=np.copy(train_kernel)
+    else:
+        true_train_kernel=train_kernel
     true_train_kernel[np.diag_indices_from(true_train_kernel)]+=lambda_val
     if eigh_rcond is None:
-        try:
-            alphas=np_cho_solve(true_train_kernel, train_quantities)
-        except np.linalg.LinAlgError:
-            print("Non-invertible at: ",len(train_quantities))
-            return 0.0
+        if use_Fortran:
+            try:
+                alphas=fcho_solve(true_train_kernel, train_quantities)
+            except:
+                print("Non-invertible at: ",len(train_quantities))
+                return 0.0
+        else:
+            try:
+                alphas=np_cho_solve(true_train_kernel, train_quantities)
+            except np.linalg.LinAlgError:
+                print("Non-invertible at: ",len(train_quantities))
+                return 0.0
     else:
         alphas=np_cho_solve_wcheck(true_train_kernel, train_quantities, eigh_rcond=eigh_rcond)
     del(true_train_kernel)
@@ -646,7 +657,8 @@ def add_with_none(string_in, addition):
         return string_in+"_"+str(addition)
 
 def build_learning_curve(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8,
-                        lambda_val=0.0, eigh_rcond=None, error_type="MAE", test_set_heavy_atom_numbers=None, err_dump_prefac=None):
+                        lambda_val=0.0, eigh_rcond=None, error_type="MAE", test_set_heavy_atom_numbers=None, err_dump_prefac=None,
+                        use_Fortran=False):
     max_training_set_size=len(train_kernel)
     all_MAEs=[]
     for training_set_size in training_set_sizes:
@@ -654,7 +666,8 @@ def build_learning_curve(train_kernel, train_quantities, train_check_kernel, che
         tr_size_dump_prefac=add_with_none(err_dump_prefac, training_set_size)
         if training_set_size==max_training_set_size:
             cur_train_MAEs=[error_from_kernels(train_kernel, train_quantities, train_check_kernel, check_quantities, lambda_val,
-                                eigh_rcond=eigh_rcond, error_type=error_type, heavy_atom_numbers=test_set_heavy_atom_numbers, err_dump_prefac=tr_size_dump_prefac)]
+                                eigh_rcond=eigh_rcond, error_type=error_type, heavy_atom_numbers=test_set_heavy_atom_numbers, err_dump_prefac=tr_size_dump_prefac,
+                                use_Fortran=use_Fortran, save_kernel_matrix=False)]
             print("Finished:", training_set_size, ", date:", datetime.datetime.now())
         else:
             cur_train_MAEs=[]
@@ -665,17 +678,17 @@ def build_learning_curve(train_kernel, train_quantities, train_check_kernel, che
                 cur_train_quantities=train_quantities[randomized_index_subset]
                 cur_train_MAEs.append(error_from_kernels(cur_train_kernel, cur_train_quantities, cur_check_kernel, check_quantities,
                                                     lambda_val, eigh_rcond=eigh_rcond, error_type=error_type, heavy_atom_numbers=test_set_heavy_atom_numbers,
-                                                    err_dump_prefac=add_with_none(tr_size_dump_prefac, ris_id)))
+                                                    err_dump_prefac=add_with_none(tr_size_dump_prefac, ris_id), use_Fortran=use_Fortran))
                 print("Finished:", training_set_size, ", date:", datetime.datetime.now())
         all_MAEs.append(cur_train_MAEs)
     return all_MAEs
 
 def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, train_kernel, train_quantities,
                 train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=0.0,
-                eigh_rcond=None, error_type="MAE", test_set_heavy_atom_numbers=None, err_dump_prefac=None):
+                eigh_rcond=None, error_type="MAE", test_set_heavy_atom_numbers=None, err_dump_prefac=None, use_Fortran=False):
     all_MAEs=build_learning_curve(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes,
                         max_training_set_num=8, lambda_val=lambda_val, eigh_rcond=eigh_rcond, error_type=error_type,
-                        test_set_heavy_atom_numbers=test_set_heavy_atom_numbers, err_dump_prefac=err_dump_prefac)
+                        test_set_heavy_atom_numbers=test_set_heavy_atom_numbers, err_dump_prefac=err_dump_prefac, use_Fortran=use_Fortran)
     all_vals_output_file=open(all_vals_output_name, 'w')
     mean_stderr_output_file=open(mean_stderr_output_name, 'w')
     for training_set_size, MAE_line in zip(training_set_sizes, all_MAEs):
