@@ -576,11 +576,13 @@ class Ang_mom_classified_rhf(Reduced_hyperparam_func):
         self.num_reduced_params=last_red_param+1
 
         self.coup_mat_prop_coeffs=np.zeros((last_prop_coeff+1,))
-        self.coup_mat_prop_coeffs[:self.num_simple_log_params]=1.0
-        for sigma_id, stddev in enumerate(stddevs):
-            self.coup_mat_prop_coeffs[self.prop_coeff_id[sigma_id+self.num_simple_log_params]]+=stddev**2
-
-        self.coup_mat_prop_coeffs=self.coup_mat_prop_coeffs**(-1)
+        if stddevs is None:
+            self.coup_mat_prop_coeffs[:]=1.0
+        else:
+            self.coup_mat_prop_coeffs[:self.num_simple_log_params]=1.0
+            for sigma_id, stddev in enumerate(stddevs):
+                self.coup_mat_prop_coeffs[self.prop_coeff_id[sigma_id+self.num_simple_log_params]]+=stddev**2
+            self.coup_mat_prop_coeffs=self.coup_mat_prop_coeffs**(-1)
 
     def reduced_params_to_full(self, reduced_parameters):
         output=np.repeat(1.0, self.num_full_params)
@@ -847,10 +849,18 @@ def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=Fa
                                     additional_BFGS_iters=None, iter_dump_name_add_BFGS=None, negligible_red_param_distance=1e-9, num_procs=None, num_threads=None,
                                     kernel_input_converter=None, sym_kernel_func=None):
 
+#   TO-DO make array of ones created for single rescaling of scalar representation length? Add function for oml_representation? that determines length of representation
     if hyperparam_red_type != "default":
-        avs, stddevs=oml_ensemble_avs_stddevs(compound_list)
-        print("Found stddevs:", stddevs)
-        base_inv_sqwidth_params=0.25/stddevs**2
+        if rep_params is None:
+            need_stddevs=True
+        else:
+            need_stddevs=(not rep_params.propagator_coup_mat)
+        if need_stddevs:
+            avs, stddevs=oml_ensemble_avs_stddevs(compound_list)
+            print("Found stddevs:", stddevs)
+            base_inv_sqwidth_params=0.25/stddevs**2
+        else:
+            stddevs=None
 
     if hyperparam_red_type == "ang_mom_classified":
         red_hyperparam_func=Ang_mom_classified_rhf(rep_params, stddevs, use_Gauss=use_Gauss)

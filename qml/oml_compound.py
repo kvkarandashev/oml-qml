@@ -23,7 +23,7 @@
 # TO-DO change the way the default spin is chosen?
 
 from .compound import Compound
-from .oml_representations import generate_ibo_rep_array, gen_fock_based_coup_mats, weighted_array, generate_ibo_fidelity_rep
+from .oml_representations import generate_ibo_rep_array, gen_propagator_based_coup_mats, weighted_array, generate_ibo_fidelity_rep
 import jax.numpy as jnp
 import numpy as np
 import copy
@@ -251,18 +251,9 @@ class OML_compound(Compound):
             self.orb_reps=[]
             for spin in range(num_spins):
             #   Generate the array of orbital representations.
-                if rep_params.fock_based_coup_mat:
-                    if (rep_params.fbcm_pseudo_orbs and is_HF[self.calc_type]):
-                        pseudo_ens, pseudo_orbs=jnp.linalg.eigh(self.fock_mat[spin])
-                        coupling_matrices=gen_fock_based_coup_mats(rep_params, pseudo_orbs, pseudo_ens)
-                    else:
-                        coupling_matrices=gen_fock_based_coup_mats(rep_params, self.mo_coeff[spin], self.mo_energy[spin])
-                    if is_HF[self.calc_type]:
-                        cur_fock_mat=self.fock_mat[spin]
-                    else:
-                        cur_fock_mat=reconstruct_effective_Hamiltonian(self.mo_coeff[spin], self.mo_energy[spin])
-                    if not rep_params.fbcm_exclude_Fock:
-                        coupling_matrices=(*coupling_matrices, cur_fock_mat)
+                if rep_params.propagator_coup_mat:
+                    coupling_matrices=gen_propagator_based_coup_mats(rep_params, self.mo_coeff[spin], self.mo_energy[spin])
+                    coupling_matrices=(self.ovlp_mat, *coupling_matrices)
                 else:
                     coupling_matrices=(self.fock_mat[spin], self.j_mat[spin]/orb_occ_prop_coeff(self), self.k_mat[spin]/orb_occ_prop_coeff(self))
                 self.orb_reps+=generate_ibo_rep_array(self.ibo_mat[spin], rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)

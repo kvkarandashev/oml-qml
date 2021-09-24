@@ -36,17 +36,15 @@ class OML_rep_params:
 #                         ibo_atom_rho_comp of the electronic density.
 #   l_max               - maximal value of angular momentum.
     def __init__(self, tol_orb_cutoff=0.0,  ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
-                    fock_based_coup_mat=False, num_prop_times=1, prop_delta_t=1.0, fbcm_exclude_Fock=False,
-                    fbcm_pseudo_orbs=False, ibo_fidelity_rep=False, add_global_ibo_couplings=False):
+                    propagator_coup_mat=False, num_prop_times=1, prop_delta_t=1.0,
+                    ibo_fidelity_rep=False, add_global_ibo_couplings=False):
         self.tol_orb_cutoff=tol_orb_cutoff
         self.ibo_atom_rho_comp=ibo_atom_rho_comp
         self.max_angular_momentum=max_angular_momentum
         self.use_Fortran=use_Fortran
-        self.fock_based_coup_mat=fock_based_coup_mat
+        self.propagator_coup_mat=propagator_coup_mat
         self.num_prop_times=num_prop_times
         self.prop_delta_t=prop_delta_t
-        self.fbcm_pseudo_orbs=fbcm_pseudo_orbs
-        self.fbcm_exclude_Fock=fbcm_exclude_Fock
         self.add_global_ibo_couplings=add_global_ibo_couplings
 
         self.ibo_fidelity_rep=ibo_fidelity_rep
@@ -55,11 +53,11 @@ class OML_rep_params:
             str_out="IBOFR,num_prop_times:"+str(self.num_prop_times)+",prop_delta_dt"+str(self.prop_delta_t)
         else:
             str_out="ibo_atom_rho_comp:"+str(self.ibo_atom_rho_comp)+",max_ang_mom:"+str(self.max_angular_momentum)
-            if self.fock_based_coup_mat:
+            if self.propagator_coup_mat:
                 str_out+=",prop_delta_t:"+str(self.prop_delta_t)+",num_prop_times:"+str(self.num_prop_times)
         return str_out
 
-def gen_fock_based_coup_mats(rep_params, hf_orb_coeffs, hf_orb_energies):
+def gen_propagator_based_coup_mats(rep_params, hf_orb_coeffs, hf_orb_energies):
     num_orbs=len(hf_orb_energies)
     inv_hf_orb_coeffs=np.linalg.inv(hf_orb_coeffs)
     if rep_params.use_Fortran:
@@ -82,15 +80,15 @@ def gen_fock_based_coup_mats(rep_params, hf_orb_coeffs, hf_orb_energies):
 
 class OML_ibo_atom_rep:
     def __init__(self, atom_ao_range, coeffs, rep_params, angular_momenta, ovlp_mat):
+        self.atom_ao_range=atom_ao_range
         if rep_params.use_Fortran:
-            self.atom_ao_range=atom_ao_range
             self.scalar_reps=np.zeros(rep_params.max_angular_momentum)
             rho_arr=np.zeros(1)
             fang_mom_descr(atom_ao_range, coeffs, angular_momenta, ovlp_mat, rep_params.max_angular_momentum, len(coeffs), self.scalar_reps, rho_arr)
             self.rho=rho_arr[0]
-            self.pre_renorm_rho=self.rho
         else:
-            self.scalar_reps, self.rho=ang_mom_descr(atom_id, atom_ao_ranges, coeffs, angular_momenta, ovlp_mat, rep_params.max_angular_momentum)
+            self.scalar_reps, self.rho=ang_mom_descr(self.atom_ao_range, coeffs, angular_momenta, ovlp_mat, rep_params.max_angular_momentum)
+        self.pre_renorm_rho=self.rho
     def completed_scalar_reps(self, coeffs, rep_params, angular_momenta, coup_mats):
         if rep_params.use_Fortran:
             couplings=np.zeros(scalar_coup_length(rep_params, coup_mats))
@@ -105,29 +103,25 @@ class OML_ibo_atom_rep:
                         for ang_mom2 in avail_ang_mom(rep_params):
                             if same_atom and (ang_mom1 > ang_mom2):
                                 continue
-                            if same_atom:
-                                cur_coupling=ibo_atom_atom_coupling(atom_id, atom_id, ang_mom1, ang_mom2,
-                                                            atom_ao_ranges, coeffs, mat, angular_momenta)
-                            else:
-                                cur_coupling=0.0
-                                for other_atom_id in atom_list:
-                                    if other_atom_id != atom_id:
-                                        cur_coupling+=ibo_atom_atom_coupling(atom_id, other_atom_id, ang_mom1, ang_mom2,
-                                                        atom_ao_ranges, coeffs, mat, angular_momenta)
+                            cur_coupling=ibo_atom_atom_coupling(self.atom_ao_range, ang_mom1, ang_mom2,
+                                                            coeffs, angular_momenta, mat, same_atom=same_atom)
                             couplings.append(cur_coupling)
         self.scalar_reps=np.append(self.scalar_reps, couplings)
         self.scalar_reps/=self.pre_renorm_rho
+        if rep_params.propagator_coup_mat:
+            # The parts corresponding to the angular momentum distribution are duplicated, remove:
+            self.scalar_reps=self.scalar_reps[rep_params.max_angular_momentum:]
     def __str__(self):
         return "OML_ibo_atom_rep,rho:"+str(self.rho)
     def __repr__(self):
         return str(self)
 
-def ang_mom_descr(atom_id, atom_ao_ranges, coeffs, angular_momenta, ovlp_mat, max_angular_momentum):
+def ang_mom_descr(atom_ao_range, coeffs, angular_momenta, ovlp_mat, max_angular_momentum):
     ang_mom_distr=np.zeros(max_angular_momentum)
     for ang_mom_counter in range(max_angular_momentum):
         ang_mom=ang_mom_counter+1
-        ang_mom_distr[ang_mom_counter]=ibo_atom_atom_coupling(atom_id, atom_id, ang_mom, ang_mom, atom_ao_ranges, coeffs, ovlp_mat, angular_momenta)
-    rho=ibo_atom_atom_coupling(atom_id, atom_id, 0, 0, atom_ao_ranges, coeffs, ovlp_mat, angular_momenta)+sum(ang_mom_distr)
+        ang_mom_distr[ang_mom_counter]=ibo_atom_atom_coupling(atom_ao_range, ang_mom, ang_mom, coeffs, angular_momenta, ovlp_mat)
+    rho=ibo_atom_atom_coupling(atom_ao_range, 0, 0, coeffs, angular_momenta, ovlp_mat)+sum(ang_mom_distr)
     return ang_mom_distr, rho
 
 def avail_ang_mom(rep_params):
@@ -140,12 +134,17 @@ def scalar_coup_length(rep_params, coup_mats):
 def num_ang_mom(rep_params):
     return rep_params.max_angular_momentum+1
 
-#   TO-DO How to use JIT here? Applying it to parts of arrays does not look straightforward.
-def ibo_atom_atom_coupling(atom_id1, atom_id2, ang_mom1, ang_mom2, atom_ao_ranges, coeffs, matrix, angular_momenta):
+def ibo_atom_atom_coupling(atom_ao_range, ang_mom1, ang_mom2, coeffs, angular_momenta, matrix, same_atom=True):
     coupling=0.0
-    for aid1 in range(atom_ao_ranges[atom_id1, 0], atom_ao_ranges[atom_id1, 1]):
+    cur_ao_list=list(range(*atom_ao_range))
+    if same_atom:
+        other_ao_list=cur_ao_list
+    else:
+        other_ao_list=list(range(atom_ao_range[0]))+list(range(atom_ao_range[1], len(angular_momenta)))
+
+    for aid1 in cur_ao_list:
         if angular_momenta[aid1]==ang_mom1:
-            for aid2 in range(atom_ao_ranges[atom_id2, 0], atom_ao_ranges[atom_id2, 1]):
+            for aid2 in other_ao_list:
                 if angular_momenta[aid2]==ang_mom2:
                     coupling+=coeffs[aid1]*coeffs[aid2]*matrix[aid1, aid2]
     return coupling
@@ -154,11 +153,15 @@ def ibo_atom_atom_coupling(atom_id1, atom_id2, ang_mom1, ang_mom2, atom_ao_range
 # Generates a representation of what different components of atomic components of IBOs correspond to.
 # TO-DO check whether it's the same for Fortran and Python implementations?
 def component_id_ang_mom_map(rep_params):
-    num_coup_matrices=3 # update if other representations are available.
     output=[]
-    # Components corresponding to the angular momentum distribution.
-    for ang_mom in range(1, num_ang_mom(rep_params)):
-        output.append([ang_mom, ang_mom, -1, True])
+    if rep_params.propagator_coup_mat:
+        # Real and imaginary propagator components for each propagation time plus the overlap matrix.
+        num_coup_matrices=num_prop_times*2+1
+    else:
+        # Components corresponding to the angular momentum distribution.
+        num_coup_matrices=3 # F, J, and K
+        for ang_mom in range(1, num_ang_mom(rep_params)):
+            output.append([ang_mom, ang_mom, -1, True])
     for coup_mat_id in range(num_coup_matrices):
         for same_atom in [True, False]:
             for ang_mom1 in range(num_ang_mom(rep_params)):
