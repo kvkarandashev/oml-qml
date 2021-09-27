@@ -2,7 +2,7 @@ import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 import math, random, copy
 from .oml_kernels import lin_sep_IBO_kernel_conv, lin_sep_IBO_sym_kernel_conv, GMO_sep_IBO_kern_input, oml_ensemble_avs_stddevs, gauss_sep_IBO_kernel_conv, gauss_sep_IBO_sym_kernel_conv
-from .oml_representations import component_id_ang_mom_map
+from .oml_representations import component_id_ang_mom_map, scalar_rep_length
 from .utils import dump2pkl
 from scipy.optimize import minimize
 from .python_parallelization import embarassingly_parallel
@@ -861,6 +861,7 @@ def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=Fa
             base_inv_sqwidth_params=0.25/stddevs**2
         else:
             stddevs=None
+            base_inv_sqwidth_params=np.repeat(1.0, scalar_rep_length(compound_list[0]))
 
     if hyperparam_red_type == "ang_mom_classified":
         red_hyperparam_func=Ang_mom_classified_rhf(rep_params, stddevs, use_Gauss=use_Gauss)

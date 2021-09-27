@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# TO-DO change the way the default spin is chosen?
+# TO-DO change the way the default spin is chosen? Get rid of IAOs?
 
 from .compound import Compound
 from .oml_representations import generate_ibo_rep_array, gen_propagator_based_coup_mats, weighted_array, generate_ibo_fidelity_rep
@@ -42,7 +42,10 @@ is_KS={"HF" : False, "UHF" : False, "KS" : True, "UKS" : True}
 
 neglect_orb_occ=0.1
 
+#   TO-DO rename to "available_orbital_types" now that Boys is also used?
 available_IBO_types=["standard_IBO", "IBO_HOMO_removed", "IBO_LUMO_added", "IBO_first_excitation"]
+
+available_localization_procedures=["Boys", "IBO"]
 
 def pySCFNotConvergedErrorMessage(oml_comp=None):
     if oml_comp is None:
@@ -68,7 +71,8 @@ class OML_compound(Compound):
         calc_type       - type of the calculation (for now only HF with IBO localization and the default basis set are supported).
     """
     def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="sto-3g", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False,
-            charge=0, spin=None, dft_xc='lda,vwn', dft_nlc='', software="pySCF", pyscf_calc_params=None, use_pyscf_localization=True, full_pyscf_chkfile=False, solvent_eps=None):
+            charge=0, spin=None, dft_xc='lda,vwn', dft_nlc='', software="pySCF", pyscf_calc_params=None, use_pyscf_localization=True, full_pyscf_chkfile=False, solvent_eps=None,
+            localization_procedure="IBO"):
         super().__init__(xyz=xyz)
 
         if used_orb_type not in available_IBO_types:
@@ -91,6 +95,8 @@ class OML_compound(Compound):
         self.software=software
         self.use_pyscf_localization=use_pyscf_localization
         self.solvent_eps=solvent_eps
+        self.localization_procedure=localization_procedure
+
 
         self.pyscf_chkfile=None
         self.full_pyscf_chkfile=None
@@ -122,7 +128,10 @@ class OML_compound(Compound):
                 if self.solvent_eps is not None:
                     savefile_prename+=".solvent_eps_"+str(self.solvent_eps)
                 self.pyscf_chkfile=savefile_prename+".chkfile"
-                self.mats_savefile=savefile_prename+"."+self.used_orb_type+".pkl"
+                self.mats_savefile=savefile_prename+"."+self.used_orb_type
+                if self.localization_procedure != "IBO":
+                    self.mats_savefile+=".localization_"+self.localization_procedure
+                self.mats_savefile+=".pkl"
             if full_pyscf_chkfile:
                 self.full_pyscf_chkfile=self.pyscf_chkfile+"_full"
         self.mats_created=ext_isfile(self.mats_savefile)
@@ -197,7 +206,7 @@ class OML_compound(Compound):
             self.atom_ao_ranges=generate_atom_ao_ranges(pyscf_mol)
             self.e_tot=mf.e_tot
 
-            if is_HF[self.calc_type]:
+            if (is_HF[self.calc_type] and (self.solvent_eps is None)):
                 self.j_mat=self.adjust_spin_mat_dimen(mf.get_j())
                 self.k_mat=self.adjust_spin_mat_dimen(mf.get_k())
                 self.fock_mat=self.adjust_spin_mat_dimen(mf.get_fock())
@@ -206,6 +215,7 @@ class OML_compound(Compound):
                 self.ovlp_mat=generate_ovlp_mat(pyscf_mol)
             self.iao_mat, self.ibo_mat=self.create_iao_ibo(pyscf_mol=pyscf_mol)
             self.create_mats_savefile()
+    # TO-DO rename? Get rid of IAO?
     def create_iao_ibo(self, pyscf_mol=None):
         occ_orb_arrs=self.occ_orbs()
         if pyscf_mol is None:
@@ -217,8 +227,16 @@ class OML_compound(Compound):
                 iao_mat.append([])
                 ibo_mat.append([])
             else:
-                iao_mat.append(jnp.array(lo.iao.iao(pyscf_mol, occ_orb_arr)))
-                ibo_mat.append(jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_arr, **self.pyscf_calc_params.ibo_kwargs)))
+                if self.localization_procedure not in available_localization_procedures:
+                    raise OptionUnavailableError
+                if self.localization_procedure == "IBO":
+                    iao_mat.append(jnp.array(lo.iao.iao(pyscf_mol, occ_orb_arr)))
+                    ibo_mat.append(jnp.array(lo.ibo.ibo(pyscf_mol, occ_orb_arr, **self.pyscf_calc_params.ibo_kwargs)))
+                if self.localization_procedure == "Boys":
+                    iao_mat.append(None)
+                    Boys_obj=lo.boys.Boys(pyscf_mol, mo_coeff=occ_orb_arr) # TO-DO: self.pyscf_calc_params.ibo_kwargs?
+                    Boys_obj.kernel()
+                    ibo_mat.append(jnp.array(Boys_obj.mo_coeff))
         return iao_mat, ibo_mat
 
     def create_mats_savefile(self):

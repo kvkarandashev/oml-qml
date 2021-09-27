@@ -149,6 +149,13 @@ def ibo_atom_atom_coupling(atom_ao_range, ang_mom1, ang_mom2, coeffs, angular_mo
                     coupling+=coeffs[aid1]*coeffs[aid2]*matrix[aid1, aid2]
     return coupling
 
+#   Auxiliary functions.
+def scalar_rep_length(oml_comp):
+    try: # if that's a Slater pair list
+        first_comp=oml_comp.comps[0]
+    except AttributeError: # if that's a compound list
+        first_comp=oml_comp
+    return len(first_comp.orb_reps[0].ibo_atom_reps[0].scalar_reps)
 
 # Generates a representation of what different components of atomic components of IBOs correspond to.
 # TO-DO check whether it's the same for Fortran and Python implementations?
@@ -156,7 +163,7 @@ def component_id_ang_mom_map(rep_params):
     output=[]
     if rep_params.propagator_coup_mat:
         # Real and imaginary propagator components for each propagation time plus the overlap matrix.
-        num_coup_matrices=num_prop_times*2+1
+        num_coup_matrices=rep_params.num_prop_times*2+1
     else:
         # Components corresponding to the angular momentum distribution.
         num_coup_matrices=3 # F, J, and K
@@ -219,6 +226,7 @@ def generate_ibo_rep_array(ibo_mat, rep_params, aos, atom_ao_ranges, ovlp_mat, *
     # It's important that ovlp_mat appears first in this array.
     ibo_tmat=ibo_mat.T
     output=[OML_ibo_rep(ibo_coeffs, rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coupling_mats) for ibo_coeffs in ibo_tmat]
+    # TO-DO add definition of add_global_couplings?
     if rep_params.add_global_ibo_couplings:
         for ibo_id in range(len(output)):
             output[ibo_id].add_global_couplings(ibo_tmat, ibo_id, rep_params, atom_ids, angular_momenta, coupling_mats)
@@ -300,6 +308,7 @@ def generate_ibo_fidelity_rep(oml_compound, rep_params):
             vhf=oml_compound.j_mat[0]-0.5*oml_compound.k_mat[0]
         else:
             vhf=oml_compound.j_mat[0]+oml_compound.j_mat[1]-oml_compound.k_mat[ispin]
+        # TO-DO is there a way to get true orbitals instead???
         pseudo_ens, pseudo_orbs=np.linalg.eigh(vhf)
         fgen_ft_coup_mats(pseudo_orbs.T, pseudo_ens, rep_params.prop_delta_t, naos, rep_params.num_prop_times, prop_mats)
         for mat_id, mat in enumerate(prop_mats.T):
