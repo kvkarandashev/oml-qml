@@ -175,7 +175,7 @@ class OML_compound(Compound):
             self.fock_mat=calc_res_dict["fock_mat"]
         if self.optimize_geometry:
             self.opt_coords=calc_res_dict["opt_coords"]
-    def run_calcs(self):
+    def run_calcs(self, initial_guess_comp=None):
         """ Runs the ab initio calculations if they are necessary.
 
             pyscf_calc_params   - object of OML_pyscf_calc_params class containing parameters of the pySCF calculation. (To be made more useful.)
@@ -194,7 +194,7 @@ class OML_compound(Compound):
                 return
             # Run the pySCF calculations.
             from qml.oml_representations import generate_ao_arr, generate_atom_ao_ranges
-            mf, pyscf_mol=self.generate_pyscf_mf_mol()
+            mf, pyscf_mol=self.generate_pyscf_mf_mol(initial_guess_comp=initial_guess_comp)
             ### Special operations.
             if self.used_orb_type != "standard_IBO":
                 self.mo_occ=self.alter_mo_occ(mf.mo_occ)
@@ -251,23 +251,20 @@ class OML_compound(Compound):
             if self.optimize_geometry:
                 saved_data["opt_coords"]=self.opt_coords
             dump2pkl(saved_data, self.mats_savefile)
-    def generate_orb_reps(self, rep_params):
+    def generate_orb_reps(self, rep_params, initial_guess_comp=None):
         """ Generates orbital representation.
 
             rep_params  - object of oml_representations.OML_rep_params class containing parameters of the orbital representation.
         """
         if not self.mats_created:
-            self.run_calcs()
+            self.run_calcs(initial_guess_comp=initial_guess_comp)
         if rep_params.ibo_fidelity_rep:
             self.ibo_occ=orb_occ_prop_coeff(self)
             self.orb_reps=generate_ibo_fidelity_rep(self, rep_params)
         else:
-            if is_restricted[self.calc_type]:
-                num_spins=1
-            else:
-                num_spins=2
+
             self.orb_reps=[]
-            for spin in range(num_spins):
+            for spin in range(self.num_spins()):
             #   Generate the array of orbital representations.
                 if rep_params.propagator_coup_mat:
                     coupling_matrices=gen_propagator_based_coup_mats(rep_params, self.mo_coeff[spin], self.mo_energy[spin])
@@ -308,7 +305,7 @@ class OML_compound(Compound):
             else:
                 raise KE
         return mol
-    def generate_pyscf_mf(self, pyscf_mol):
+    def generate_pyscf_mf(self, pyscf_mol, initial_guess_comp=None):
         mf=mf_creator[self.calc_type](pyscf_mol)
         if is_KS[self.calc_type]:
             mf.xc=self.dft_xc
@@ -326,6 +323,14 @@ class OML_compound(Compound):
             from pyscf.solvent import DDCOSMO
             mf=DDCOSMO(mf)
             mf.with_solvent.eps=self.solvent_eps
+        # TO-DO why this does not work???
+        if initial_guess_comp is not None:
+            mf.mo_coeff=self.mf_spin_adj_copy(initial_guess_comp.mo_coeff)
+            mf.mo_occ=self.mf_spin_adj_copy(initial_guess_comp.mo_occ)
+            mf.init_guess=mf.make_rdm1()
+            print(type(mf.init_guess), mf.init_guess.shape)
+            mf.mo_occ=None
+            mf.mo_coeff=None
         mf.run()
         if not (mf.converged or self.use_Huckel):
             mf=scf.newton(mf)
@@ -337,11 +342,11 @@ class OML_compound(Compound):
 #        subprocess.run(["rm", '-f', chkfile])
         return mf
 
-    def generate_pyscf_mf_mol(self):
+    def generate_pyscf_mf_mol(self, initial_guess_comp=None):
         if ext_isfile(self.full_pyscf_chkfile):
             return loadpkl(self.full_pyscf_chkfile)
         pyscf_mol=self.generate_pyscf_mol()
-        mf=self.generate_pyscf_mf(pyscf_mol)
+        mf=self.generate_pyscf_mf(pyscf_mol, initial_guess_comp=initial_guess_comp)
         if self.optimize_geometry:
             from pyscf.geomopt.geometric_solver import optimize
             pyscf_mol=optimize(mf)
@@ -402,6 +407,26 @@ class OML_compound(Compound):
             return jnp.array([matrices])
         else:
             return jnp.array(matrices)
+    def mf_spin_adj_copy(self, matrix_in):
+        matrix_nspins=matrix_in.shape[0]
+        nspins=self.num_spins()
+        if matrix_nspins==1:
+            true_matrix=np.array(matrix_in[0])
+        else:
+            true_matrix=np.array(matrix_in)
+        if nspins==matrix_nspins:
+            return np.copy(true_matrix)
+        else:
+            if nspins==1: # TO-DO would it be better to return an error instead???
+                return np.copy(true_matrix[0])
+            else:
+                return np.array([np.copy(true_matrix), np.copy(true_matrix)])
+
+    def num_spins(self):
+        if is_restricted[self.calc_type]:
+            return 1
+        else:
+            return 2
 
 def remove_HOMO(oml_comp):
     used_orb_type=oml_comp.used_orb_type
@@ -447,7 +472,8 @@ class OML_pyscf_calc_params:
 
 #   TO-DO replace the growing number of "second_" arguments with "second_kwarg_override" or something similarly named.
 class OML_Slater_pair:
-    def __init__(self, second_calc_type="HF", second_charge=0, second_orb_type="standard_IBO", second_spin=None, second_xyz=None, second_mats_savefile=None, **oml_comp_kwargs):
+    def __init__(self, second_calc_type="HF", second_charge=0, second_orb_type="standard_IBO", second_spin=None, second_xyz=None, second_mats_savefile=None, initial_guess_from_first=False, **oml_comp_kwargs):
+        self.initial_guess_from_first=initial_guess_from_first
         comp1=OML_compound(**oml_comp_kwargs)
         second_special_kwarg_dict={"calc_type" : second_calc_type, "charge" : second_charge, "used_orb_type" : second_orb_type, "spin" : second_spin, "xyz" : second_xyz, "mats_savefile" : second_mats_savefile}
         second_oml_comp_kwargs=copy.copy(oml_comp_kwargs)
@@ -459,7 +485,15 @@ class OML_Slater_pair:
         self.comps=[comp1, comp2]
     def run_calcs(self):
         self.comps[0].run_calcs()
-        self.comps[1].run_calcs()
+        if self.initial_guess_from_first:
+            initial_guess_comp=self.comps[0]
+        else:
+            initial_guess_comp=None
+        self.comps[1].run_calcs(initial_guess_comp=initial_guess_comp)
     def generate_orb_reps(self, rep_params):
         self.comps[0].generate_orb_reps(rep_params)
-        self.comps[1].generate_orb_reps(rep_params)
+        if self.initial_guess_from_first:
+            initial_guess_comp=self.comps[0]
+        else:
+            initial_guess_comp=None
+        self.comps[1].generate_orb_reps(rep_params, initial_guess_comp=initial_guess_comp)

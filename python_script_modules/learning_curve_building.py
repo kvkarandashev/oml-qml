@@ -6,8 +6,11 @@ import numpy as np
 from qml.math import cho_solve as fcho_solve
 from scipy.linalg import cho_factor
 from scipy.linalg import cho_solve as scipy_cho_solve
+from qml.python_parallelization import embarassingly_parallel
 import datetime
 import random
+from numba import njit, prange
+from numba.types import bool_
 
 byprod_result_ending=".brf"
 
@@ -86,10 +89,13 @@ class representation:
         pass
     def compound_list(self, xyz_list):
         return [self.xyz2compound(xyz=f) for f in xyz_list]
-    def init_compound_list(self, comp_list=None, xyz_list=None):
+    def init_compound_list(self, comp_list=None, xyz_list=None, parallel=False, disable_openmp=True):
         if xyz_list is not None:
             comp_list=self.compound_list(xyz_list)
-        return [self.initialized_compound(compound=comp) for comp in comp_list]
+        if parallel:
+            return embarassingly_parallel(self.initialized_compound, comp_list, disable_openmp=disable_openmp)
+        else:
+            return [self.initialized_compound(compound=comp) for comp in comp_list]
     def xyz2compound(self, xyz=None):
         return qml.Compound(xyz=xyz)
     def check_compound_defined(self, compound=None, xyz=None):
@@ -185,9 +191,9 @@ class OML_representation(representation):
         
         
 class OML_Slater_pair_rep(OML_representation):
-    def __init__(self, second_charge=0, second_orb_type="standard_IBO", second_calc_type="HF", second_spin=None, **OML_representation_kwargs):
+    def __init__(self, second_charge=0, second_orb_type="standard_IBO", second_calc_type="HF", second_spin=None, initial_guess_from_first=False, **OML_representation_kwargs):
         super().__init__(**OML_representation_kwargs)
-        self.second_calc_kwargs={"second_calc_type" : second_calc_type, "second_orb_type" : second_orb_type, "second_charge" : second_charge, "second_spin" : second_spin}
+        self.second_calc_kwargs={"second_calc_type" : second_calc_type, "second_orb_type" : second_orb_type, "second_charge" : second_charge, "second_spin" : second_spin, "initial_guess_from_first" : initial_guess_from_first}
     def xyz2compound(self, xyz=None):
         return qml.oml_compound.OML_Slater_pair(xyz=xyz, **self.second_calc_kwargs, **self.OML_compound_kwargs)
     def compound_list(self, xyz_list):
@@ -683,9 +689,55 @@ def build_learning_curve(train_kernel, train_quantities, train_check_kernel, che
         all_MAEs.append(cur_train_MAEs)
     return all_MAEs
 
+
+@njit(fastmath=True, parallel=True)
+def repeated_entrys(train_kernel, train_quantities, diff_tol, av_diag_el):
+    duplicates=np.zeros(train_kernel.shape, dtype=bool_)
+    for i in prange(train_kernel.shape[0]):
+        upper_bounds=train_kernel[i]+diff_tol
+        lower_bounds=train_kernel[i]-diff_tol
+        for j in range(i+1, train_kernel.shape[0]):
+            cur_row=train_kernel[j]
+            stop=False
+            duplicates[i,j]=True
+            for q in range(train_kernel.shape[0]):
+                if cur_row[q]<lower_bounds[q]:
+                    stop=True
+                if cur_row[q]>upper_bounds[q]:
+                    stop=True
+                if stop:
+                    duplicates[i,j]=False
+                    break
+    duplicate_nums=np.zeros((train_kernel.shape[0],), dtype=np.int32)
+    for i in prange(train_kernel.shape[0]):
+        for j in range(i+1, train_kernel.shape[0]):
+            if duplicates[i, j]:
+                train_kernel[j, :]=0.0
+                train_quantities[j]=0.0
+                duplicate_nums[i]+=1
+    # Can't do it at once or two different threads may access once point at once.
+    for i in prange(train_kernel.shape[0]):
+        for j in range(i+1, train_kernel.shape[0]):
+            if duplicates[i, j]:
+                train_kernel[:, j]=0.0
+                train_kernel[j, j]=av_diag_el
+    return duplicate_nums, train_kernel, train_quantities
+
+def check_repeated_entries(train_kernel, train_quantities, train_kernel_repetition_coeff):
+    # Calculate average diagonal kernel element.
+    av_diag_el=np.mean(train_kernel[np.diag_indices_from(train_kernel)])
+    diff_tol=av_diag_el*train_kernel_repetition_coeff
+    duplicate_nums, train_kernel, train_quantities=repeated_entrys(train_kernel, train_quantities, diff_tol, av_diag_el)
+    for i in range(train_kernel.shape[0]):
+        if duplicate_nums[i]>0:
+            print("WARNING: duplicates for ", i, " numbering ", duplicate_nums[i])
+
 def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, train_kernel, train_quantities,
                 train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=0.0,
-                eigh_rcond=None, error_type="MAE", test_set_heavy_atom_numbers=None, err_dump_prefac=None, use_Fortran=False):
+                eigh_rcond=None, error_type="MAE", test_set_heavy_atom_numbers=None, err_dump_prefac=None, use_Fortran=False,
+                train_kernel_repetition_coeff=None):
+    if train_kernel_repetition_coeff is not None:
+        check_repeated_entries(train_kernel, train_quantities, train_kernel_repetition_coeff)
     all_MAEs=build_learning_curve(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes,
                         max_training_set_num=8, lambda_val=lambda_val, eigh_rcond=eigh_rcond, error_type=error_type,
                         test_set_heavy_atom_numbers=test_set_heavy_atom_numbers, err_dump_prefac=err_dump_prefac, use_Fortran=use_Fortran)
