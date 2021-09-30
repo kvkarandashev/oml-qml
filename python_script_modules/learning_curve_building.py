@@ -191,9 +191,9 @@ class OML_representation(representation):
         
         
 class OML_Slater_pair_rep(OML_representation):
-    def __init__(self, second_charge=0, second_orb_type="standard_IBO", second_calc_type="HF", second_spin=None, initial_guess_from_first=False, **OML_representation_kwargs):
+    def __init__(self, second_charge=0, second_orb_type="standard_IBO", second_calc_type="HF", second_spin=None, **OML_representation_kwargs):
         super().__init__(**OML_representation_kwargs)
-        self.second_calc_kwargs={"second_calc_type" : second_calc_type, "second_orb_type" : second_orb_type, "second_charge" : second_charge, "second_spin" : second_spin, "initial_guess_from_first" : initial_guess_from_first}
+        self.second_calc_kwargs={"second_calc_type" : second_calc_type, "second_orb_type" : second_orb_type, "second_charge" : second_charge, "second_spin" : second_spin}
     def xyz2compound(self, xyz=None):
         return qml.oml_compound.OML_Slater_pair(xyz=xyz, **self.second_calc_kwargs, **self.OML_compound_kwargs)
     def compound_list(self, xyz_list):
@@ -690,8 +690,99 @@ def build_learning_curve(train_kernel, train_quantities, train_check_kernel, che
     return all_MAEs
 
 
+
+# Routines for cutting off redundant entries from the kernel matrix.
 @njit(fastmath=True, parallel=True)
-def repeated_entrys(train_kernel, train_quantities, diff_tol, av_diag_el):
+def kernel2sqdist(train_kernel):
+    num_train=train_kernel.shape[0]
+    sqdist_mat=np.zeros((num_train, num_train))
+    for i in prange(num_train):
+        for j in range(num_train):
+            sqdist_mat[i,j]=train_kernel[i,i]+train_kernel[j,j]-2*train_kernel[i,j]
+    return sqdist_mat
+
+@njit(fastmath=True)
+def all_indices_except(to_ignore):
+    num_left=0
+    for el in to_ignore:
+        if not el:
+            num_left+=1
+    output=np.zeros((num_left,), dtype=np.int32)
+    arr_pos=0
+    for el_id, el in enumerate(to_ignore):
+        if el:
+            print("Skipped: ", el_id)
+        else:
+            output[arr_pos]=el_id
+            arr_pos+=1
+    return output
+
+@njit(fastmath=True)
+def min_id_sqdist(sqdist_row, to_ignore, entry_id):
+    cur_min_sqdist=0.0
+    cur_min_sqdist_id=0
+    minimal_sqdist_init=False
+    num_train=sqdist_row.shape[0]
+
+    for j in range(num_train):
+        if entry_id != j:
+            cur_sqdist=sqdist_row[j]
+            if (((cur_sqdist<cur_min_sqdist) or (not minimal_sqdist_init)) and (not to_ignore[j])):
+                minimal_sqdist_init=True
+                cur_min_sqdist=cur_sqdist
+                cur_min_sqdist_id=j
+    return cur_min_sqdist_id, cur_min_sqdist
+
+
+@njit(fastmath=True, parallel=True)
+def numba_kernel_exclude_nearest(train_kernel, min_sqdist, num_cut_closest_entries):
+    num_train=train_kernel.shape[0]
+    sqdist_mat=kernel2sqdist(train_kernel)
+
+    minimal_distance_ids=np.zeros(num_train, dtype=np.int32)
+    minimal_distances=np.zeros(num_train)
+    to_ignore=np.zeros(num_train, dtype=bool_)
+
+    for i in prange(num_train):
+        minimal_distance_ids[i], minimal_distances[i]=min_id_sqdist(sqdist_mat[i], to_ignore, i)
+
+    num_ignored=0
+
+    while True:
+        cur_min_id, cur_min_sqdist=min_id_sqdist(minimal_distances, to_ignore, -1)
+        if (cur_min_sqdist > min_sqdist) and (min_sqdist > 0.0):
+            break
+        if np.random.random()>0.5:
+            new_ignored=cur_min_id
+        else:
+            new_ignored=minimal_distance_ids[cur_min_id]
+
+        to_ignore[new_ignored]=True
+        num_ignored+=1
+        if num_ignored==1:
+            print("Smallest ignored distance:", cur_min_sqdist)
+        if num_ignored==num_cut_closest_entries:
+            print("Largest ignored distance:", cur_min_sqdist)
+            break
+        for i in prange(num_train):
+            if minimal_distance_ids[i]==new_ignored:
+                minimal_distance_ids[i], minimal_distances[i]=min_id_sqdist(sqdist_mat[i], to_ignore, i)
+    return all_indices_except(to_ignore)
+
+def default_if_None(val, default_val):
+    if val is None:
+        return default_val
+    else:
+        return val
+
+def kernel_exclude_nearest(train_kernel, min_closest_sqdist=None, num_cut_closest_entries=None):
+    true_min_closest_sqdist=default_if_None(min_closest_sqdist, -1.0)
+    true_num_cut_closest_entries=default_if_None(num_cut_closest_entries, -1)
+    return numba_kernel_exclude_nearest(train_kernel, true_min_closest_sqdist, true_num_cut_closest_entries)
+
+
+@njit(fastmath=True, parallel=True)
+def unrepeated_entries(train_kernel, diff_tol):
     duplicates=np.zeros(train_kernel.shape, dtype=bool_)
     for i in prange(train_kernel.shape[0]):
         upper_bounds=train_kernel[i]+diff_tol
@@ -708,36 +799,37 @@ def repeated_entrys(train_kernel, train_quantities, diff_tol, av_diag_el):
                 if stop:
                     duplicates[i,j]=False
                     break
-    duplicate_nums=np.zeros((train_kernel.shape[0],), dtype=np.int32)
-    for i in prange(train_kernel.shape[0]):
-        for j in range(i+1, train_kernel.shape[0]):
-            if duplicates[i, j]:
-                train_kernel[j, :]=0.0
-                train_quantities[j]=0.0
-                duplicate_nums[i]+=1
-    # Can't do it at once or two different threads may access once point at once.
-    for i in prange(train_kernel.shape[0]):
-        for j in range(i+1, train_kernel.shape[0]):
-            if duplicates[i, j]:
-                train_kernel[:, j]=0.0
-                train_kernel[j, j]=av_diag_el
-    return duplicate_nums, train_kernel, train_quantities
 
-def check_repeated_entries(train_kernel, train_quantities, train_kernel_repetition_coeff):
-    # Calculate average diagonal kernel element.
-    av_diag_el=np.mean(train_kernel[np.diag_indices_from(train_kernel)])
-    diff_tol=av_diag_el*train_kernel_repetition_coeff
-    duplicate_nums, train_kernel, train_quantities=repeated_entrys(train_kernel, train_quantities, diff_tol, av_diag_el)
-    for i in range(train_kernel.shape[0]):
-        if duplicate_nums[i]>0:
-            print("WARNING: duplicates for ", i, " numbering ", duplicate_nums[i])
+    repeated_bool=np.zeros((train_kernel.shape[0],), dtype=bool_)
+    for j in prange(train_kernel.shape[0]):
+        for i in range(train_kernel.shape[0]):
+            if duplicates[i, j]:
+                repeated_bool[j]=True
+    return all_indices_except(repeated_bool)
 
 def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, train_kernel, train_quantities,
                 train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=0.0,
                 eigh_rcond=None, error_type="MAE", test_set_heavy_atom_numbers=None, err_dump_prefac=None, use_Fortran=False,
-                train_kernel_repetition_coeff=None):
+                train_kernel_repetition_coeff=None, min_closest_sqdist=None, num_cut_closest_entries=None):
+    new_indices=None
     if train_kernel_repetition_coeff is not None:
-        check_repeated_entries(train_kernel, train_quantities, train_kernel_repetition_coeff)
+        new_indices=unrepeated_entries(train_kernel, np.mean(train_kernel[np.diag_indices_from(train_kernel)])*train_kernel_repetition_coeff)
+    if ((num_cut_closest_entries is not None) or (min_closest_sqdist is not None)):
+        new_indices=kernel_exclude_nearest(train_kernel, min_closest_sqdist=min_closest_sqdist, num_cut_closest_entries=num_cut_closest_entries)
+    if new_indices is not None:
+        train_kernel=train_kernel[new_indices][:, new_indices]
+        train_quantities=train_quantities[new_indices]
+        train_check_kernel=train_check_kernel[:, new_indices]
+
+        new_training_set_sizes=[]
+        new_max_training_set_size=len(train_quantities)
+        for tr_set_size in training_set_sizes:
+            if tr_set_size > new_max_training_set_size:
+                new_training_set_sizes.append(new_max_training_set_size)
+                break
+            else:
+                new_training_set_sizes.append(tr_set_size)
+        training_set_sizes=new_training_set_sizes
     all_MAEs=build_learning_curve(train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes,
                         max_training_set_num=8, lambda_val=lambda_val, eigh_rcond=eigh_rcond, error_type=error_type,
                         test_set_heavy_atom_numbers=test_set_heavy_atom_numbers, err_dump_prefac=err_dump_prefac, use_Fortran=use_Fortran)
