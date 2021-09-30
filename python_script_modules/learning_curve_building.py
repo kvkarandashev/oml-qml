@@ -767,7 +767,8 @@ def numba_kernel_exclude_nearest(train_kernel, min_sqdist, num_cut_closest_entri
         for i in prange(num_train):
             if minimal_distance_ids[i]==new_ignored:
                 minimal_distance_ids[i], minimal_distances[i]=min_id_sqdist(sqdist_mat[i], to_ignore, i)
-    return all_indices_except(to_ignore)
+
+    return to_ignore
 
 def default_if_None(val, default_val):
     if val is None:
@@ -805,21 +806,40 @@ def unrepeated_entries(train_kernel, diff_tol):
         for i in range(train_kernel.shape[0]):
             if duplicates[i, j]:
                 repeated_bool[j]=True
-    return all_indices_except(repeated_bool)
+    return repeated_bool
+
+def copy_matrix_vals(matrix_in, indices1, indices2):
+    mat_shape=matrix_in.shape
+    if indices1 is None:
+        indices1=list(range(mat_shape[0]))
+    if indices2 is None:
+        indices2=list(range(mat_shape[1]))
+    output=np.zeros((len(indices1), len(indices2)))
+    output[:, :]=matrix_in[indices1][:, indices2]
+    return output
 
 def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, train_kernel, train_quantities,
                 train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=0.0,
                 eigh_rcond=None, error_type="MAE", test_set_heavy_atom_numbers=None, err_dump_prefac=None, use_Fortran=False,
                 train_kernel_repetition_coeff=None, min_closest_sqdist=None, num_cut_closest_entries=None):
-    new_indices=None
+    deleted_indices=None
     if train_kernel_repetition_coeff is not None:
-        new_indices=unrepeated_entries(train_kernel, np.mean(train_kernel[np.diag_indices_from(train_kernel)])*train_kernel_repetition_coeff)
+        deleted_indices=unrepeated_entries(train_kernel, np.mean(train_kernel[np.diag_indices_from(train_kernel)])*train_kernel_repetition_coeff)
     if ((num_cut_closest_entries is not None) or (min_closest_sqdist is not None)):
-        new_indices=kernel_exclude_nearest(train_kernel, min_closest_sqdist=min_closest_sqdist, num_cut_closest_entries=num_cut_closest_entries)
-    if new_indices is not None:
-        train_kernel=train_kernel[new_indices][:, new_indices]
-        train_quantities=train_quantities[new_indices]
-        train_check_kernel=train_check_kernel[:, new_indices]
+        deleted_indices=kernel_exclude_nearest(train_kernel, min_closest_sqdist=min_closest_sqdist, num_cut_closest_entries=num_cut_closest_entries)
+    if deleted_indices is not None:
+        # TO-DO: I'm not sure that using delete/del really decreases the memory usage.
+        new_train_kernel=np.delete(np.delete(train_kernel, deleted_indices, 0), deleted_indices, 1)
+        new_train_quantities=np.delete(train_quantities, deleted_indices)
+        new_train_check_kernel=np.delete(train_check_kernel, deleted_indices, 1)
+
+        del(train_kernel)
+        del(train_quantities)
+        del(train_check_kernel)
+
+        train_kernel=new_train_kernel
+        train_quantities=new_train_quantities
+        train_check_kernel=new_train_check_kernel
 
         new_training_set_sizes=[]
         new_max_training_set_size=len(train_quantities)
