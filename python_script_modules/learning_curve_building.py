@@ -808,6 +808,68 @@ def unrepeated_entries(train_kernel, diff_tol):
                 repeated_bool[j]=True
     return repeated_bool
 
+@njit(fastmath=True, parallel=True)
+def linear_dependent_entries(train_kernel, residue_tol_coeff):
+    num_elements=train_kernel.shape[0]
+
+    sqnorm_residue=np.zeros(num_elements)
+    residue_tolerance=np.zeros(num_elements)
+
+    for i in prange(num_elements):
+        sqnorm=train_kernel[i, i]
+        sqnorm_residue[i]=sqnorm
+        residue_tolerance[i]=sqnorm*residue_tol_coeff
+
+    cur_orth_id=0
+
+    num_remaining_elements=num_elements
+
+    true_indices=np.zeros(num_elements, dtype=np.int32)
+    for i in prange(num_elements):
+        true_indices[i]=i
+
+    to_ignore=np.zeros(num_elements, dtype=bool_)
+
+    orthonormalized_vectors=np.eye(num_elements)
+
+    while cur_orth_id != num_remaining_elements:
+        # Index of the vector being normalized.
+        true_norm_index=true_indices[cur_orth_id]
+        # Normalize the vector.
+        cur_norm=np.sqrt(sqnorm_residue[true_norm_index])
+        for i in prange(cur_orth_id+1):
+            orthonormalized_vectors[true_norm_index, true_indices[i]]/=cur_norm
+        # Subtract projections of the normalized vector from all currently not orthonormalized vectors.
+        # Also check that their residue is above the corresponding threshold.
+        for i in prange(cur_orth_id+1, num_remaining_elements):
+            true_index_residue=true_indices[i]
+            cur_product=0.0
+            for j in range(cur_orth_id+1):
+                cur_product+=train_kernel[true_indices[i], true_indices[j]]*orthonormalized_vectors[true_norm_index, true_indices[j]]
+            sqnorm_residue[true_index_residue]-=cur_product**2
+            if sqnorm_residue[true_index_residue]<residue_tolerance[true_index_residue]:
+                to_ignore[true_index_residue]=True
+            else:
+                for j in range(cur_orth_id+1):
+                    true_index_subtracted=true_indices[j]
+                    orthonormalized_vectors[true_index_residue, true_index_subtracted]-=cur_product*orthonormalized_vectors[true_norm_index, true_index_subtracted]
+#        print('#', sqnorm_residue)
+        # If some new indices to ignore have been found, shift them to the back of the list.
+        i=cur_orth_id+1
+        while i!=num_remaining_elements:
+            if to_ignore[true_indices[i]]:
+                shifted_index=true_indices[i]
+                num_remaining_elements-=1
+                for j in range(i, num_remaining_elements):
+                    true_indices[j]=true_indices[j+1]
+                true_indices[num_remaining_elements]=shifted_index
+            else:
+                i+=1
+        cur_orth_id+=1
+    return true_indices[num_remaining_elements:]
+
+# END
+
 def copy_matrix_vals(matrix_in, indices1, indices2):
     mat_shape=matrix_in.shape
     if indices1 is None:
@@ -818,15 +880,19 @@ def copy_matrix_vals(matrix_in, indices1, indices2):
     output[:, :]=matrix_in[indices1][:, indices2]
     return output
 
+
 def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, train_kernel, train_quantities,
                 train_check_kernel, check_quantities, training_set_sizes, max_training_set_num=8, lambda_val=0.0,
                 eigh_rcond=None, error_type="MAE", test_set_heavy_atom_numbers=None, err_dump_prefac=None, use_Fortran=False,
-                train_kernel_repetition_coeff=None, min_closest_sqdist=None, num_cut_closest_entries=None):
+                train_kernel_repetition_coeff=None, min_closest_sqdist=None, num_cut_closest_entries=None,
+                linear_dependence_cut_coeff=None):
     deleted_indices=None
     if train_kernel_repetition_coeff is not None:
         deleted_indices=unrepeated_entries(train_kernel, np.mean(train_kernel[np.diag_indices_from(train_kernel)])*train_kernel_repetition_coeff)
     if ((num_cut_closest_entries is not None) or (min_closest_sqdist is not None)):
         deleted_indices=kernel_exclude_nearest(train_kernel, min_closest_sqdist=min_closest_sqdist, num_cut_closest_entries=num_cut_closest_entries)
+    if linear_dependence_cut_coeff is not None:
+        deleted_indices=linear_dependent_entries(train_kernel, linear_dependence_cut_coeff)
     if deleted_indices is not None:
         # TO-DO: I'm not sure that using delete/del really decreases the memory usage.
         new_train_kernel=np.delete(np.delete(train_kernel, deleted_indices, 0), deleted_indices, 1)
