@@ -702,17 +702,16 @@ def kernel2sqdist(train_kernel):
     return sqdist_mat
 
 @njit(fastmath=True)
-def all_indices_except(to_ignore):
+def all_indices_except(to_include):
     num_left=0
-    for el in to_ignore:
+    for el in to_include:
         if not el:
             num_left+=1
     output=np.zeros((num_left,), dtype=np.int32)
     arr_pos=0
-    for el_id, el in enumerate(to_ignore):
-        if el:
+    for el_id, el in enumerate(to_include):
+        if not el:
             print("Skipped: ", el_id)
-        else:
             output[arr_pos]=el_id
             arr_pos+=1
     return output
@@ -809,7 +808,7 @@ def unrepeated_entries(train_kernel, diff_tol):
     return repeated_bool
 
 @njit(fastmath=True, parallel=True)
-def linear_dependent_entries(train_kernel, residue_tol_coeff):
+def numba_linear_dependent_entries(train_kernel, residue_tol_coeff):
     num_elements=train_kernel.shape[0]
 
     sqnorm_residue=np.zeros(num_elements)
@@ -822,51 +821,46 @@ def linear_dependent_entries(train_kernel, residue_tol_coeff):
 
     cur_orth_id=0
 
-    num_remaining_elements=num_elements
-
-    true_indices=np.zeros(num_elements, dtype=np.int32)
-    for i in prange(num_elements):
-        true_indices[i]=i
-
-    to_ignore=np.zeros(num_elements, dtype=bool_)
+    to_include=np.ones(num_elements, dtype=bool_)
 
     orthonormalized_vectors=np.eye(num_elements)
 
-    while cur_orth_id != num_remaining_elements:
-        # Index of the vector being normalized.
-        true_norm_index=true_indices[cur_orth_id]
+    for cur_orth_id in range(num_elements):
+        if not to_include[cur_orth_id]:
+            continue
         # Normalize the vector.
-        cur_norm=np.sqrt(sqnorm_residue[true_norm_index])
+        cur_norm=np.sqrt(sqnorm_residue[cur_orth_id])
         for i in prange(cur_orth_id+1):
-            orthonormalized_vectors[true_norm_index, true_indices[i]]/=cur_norm
+            orthonormalized_vectors[cur_orth_id, i]/=cur_norm
         # Subtract projections of the normalized vector from all currently not orthonormalized vectors.
         # Also check that their residue is above the corresponding threshold.
-        for i in prange(cur_orth_id+1, num_remaining_elements):
-            true_index_residue=true_indices[i]
+        for i in prange(cur_orth_id+1, num_elements):
+            if not to_include[i]:
+                continue
             cur_product=0.0
             for j in range(cur_orth_id+1):
-                cur_product+=train_kernel[true_indices[i], true_indices[j]]*orthonormalized_vectors[true_norm_index, true_indices[j]]
-            sqnorm_residue[true_index_residue]-=cur_product**2
-            if sqnorm_residue[true_index_residue]<residue_tolerance[true_index_residue]:
-                to_ignore[true_index_residue]=True
+                if to_include[j]:
+                    cur_product+=train_kernel[i, j]*orthonormalized_vectors[cur_orth_id, j]
+            sqnorm_residue[i]-=cur_product**2
+            if sqnorm_residue[i]<residue_tolerance[i]:
+                to_include[i]=False
             else:
                 for j in range(cur_orth_id+1):
-                    true_index_subtracted=true_indices[j]
-                    orthonormalized_vectors[true_index_residue, true_index_subtracted]-=cur_product*orthonormalized_vectors[true_norm_index, true_index_subtracted]
-#        print('#', sqnorm_residue)
-        # If some new indices to ignore have been found, shift them to the back of the list.
-        i=cur_orth_id+1
-        while i!=num_remaining_elements:
-            if to_ignore[true_indices[i]]:
-                shifted_index=true_indices[i]
-                num_remaining_elements-=1
-                for j in range(i, num_remaining_elements):
-                    true_indices[j]=true_indices[j+1]
-                true_indices[num_remaining_elements]=shifted_index
-            else:
-                i+=1
+                    orthonormalized_vectors[i, j]-=cur_product*orthonormalized_vectors[cur_orth_id, j]
         cur_orth_id+=1
-    return true_indices[num_remaining_elements:]
+    return all_indices_except(to_include)
+
+def linear_dependent_entries(train_kernel, residue_tol_coeff, use_Fortran=False):
+    if use_Fortran:
+        num_elements=train_kernel.shape[0]
+        output_indices=np.zeros(num_elements, dtype=np.int32)
+        from qml.factive_learning import flinear_dependent_entries
+        flinear_dependent_entries(train_kernel, num_elements, residue_tol_coeff, output_indices)
+        for i in range(num_elements):
+            if output_indices[i]==0:
+                return output_indices[:i]
+    else:
+        return numba_linear_dependent_entries(train_kernel, residue_tol_coeff)
 
 # END
 
@@ -892,7 +886,7 @@ def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, tr
     if ((num_cut_closest_entries is not None) or (min_closest_sqdist is not None)):
         deleted_indices=kernel_exclude_nearest(train_kernel, min_closest_sqdist=min_closest_sqdist, num_cut_closest_entries=num_cut_closest_entries)
     if linear_dependence_cut_coeff is not None:
-        deleted_indices=linear_dependent_entries(train_kernel, linear_dependence_cut_coeff)
+        deleted_indices=linear_dependent_entries(train_kernel, linear_dependence_cut_coeff, use_Fortran=use_Fortran)
     if deleted_indices is not None:
         # TO-DO: I'm not sure that using delete/del really decreases the memory usage.
         new_train_kernel=np.delete(np.delete(train_kernel, deleted_indices, 0), deleted_indices, 1)
@@ -952,7 +946,6 @@ def build_learning_curve_with_AL(train_kernel, train_quantities, train_check_ker
                                 eigh_rcond=eigh_rcond, error_type=err_type))
         MAEs.append(cur_err_line)
     return MAEs
-
 
 def create_print_learning_curve_with_AL_multiple_initial_sets(mean_stderr_output_name, all_vals_output_name,
                     train_kernel, train_quantities, train_check_kernel, check_quantities, training_set_sizes,

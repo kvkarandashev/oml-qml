@@ -333,6 +333,7 @@ END SUBROUTINE
                          
 SUBROUTINE update_negative_closest_covariances(sym_kernel_mat, last_added_sample,&
                                     ordered_indices, num_samples, closest_neg_cov_vals)
+implicit none
 integer, intent(in):: num_samples, last_added_sample
 double precision, intent(inout), dimension(num_samples):: closest_neg_cov_vals
 double precision, intent(in), dimension(num_samples, num_samples):: sym_kernel_mat
@@ -353,5 +354,78 @@ double precision:: added_neg_cov
 
 END SUBROUTINE
 
+! Deleting linear dependent entries.
 
+SUBROUTINE flinear_dependent_entries(sym_kernel_mat, num_elements, residue_tol_coeff, indices_to_ignore)
+implicit none
+integer, intent(in):: num_elements
+double precision, intent(in), dimension(:, :):: sym_kernel_mat
+double precision, intent(in):: residue_tol_coeff
+integer, intent(inout), dimension(:):: indices_to_ignore
+double precision, dimension(num_elements):: sqnorm_residue, residue_tolerance
+logical, dimension(num_elements):: to_ignore
+double precision, dimension(num_elements, num_elements):: orthonormalized_vectors
+integer:: i, j, cur_orth_id
+double precision:: cur_norm, cur_product
 
+    orthonormalized_vectors=0.0
+    to_ignore=.False.
+!$OMP PARALLEL DO PRIVATE(i, cur_norm)
+    do i=1, num_elements
+        orthonormalized_vectors(i, i)=1.0
+
+        cur_norm=sym_kernel_mat(i, i)
+        sqnorm_residue(i)=cur_norm
+        residue_tolerance(i)=cur_norm*residue_tol_coeff
+    enddo
+!$OMP END PARALLEL DO
+
+    cur_orth_id=1
+
+    do cur_orth_id=1, num_elements
+        if (to_ignore(cur_orth_id)) cycle
+        ! Normalize the vector.
+        cur_norm=sqrt(sqnorm_residue(cur_orth_id))
+!$OMP PARALLEL DO PRIVATE(i)
+        do i=1, cur_orth_id
+            orthonormalized_vectors(i, cur_orth_id)=orthonormalized_vectors(i,&
+                                                    cur_orth_id)/cur_norm
+        enddo
+!$OMP END PARALLEL DO
+        ! Subtract projections of the normalized vector from all currently not orthonormalized vectors.
+        ! Also check that their residue is above the corresponding threshold.
+!$OMP PARALLEL DO PRIVATE(i, j, cur_product)
+        do i=cur_orth_id+1, num_elements
+            if (.not.to_ignore(i)) then
+                cur_product=0.0
+                do j=1, cur_orth_id
+                    if (.not.to_ignore(j)) &
+                    cur_product=cur_product+sym_kernel_mat(j, i)&
+                                        *orthonormalized_vectors(j, cur_orth_id)
+                enddo
+                sqnorm_residue(i)=sqnorm_residue(i)-cur_product**2
+                if (sqnorm_residue(i)<residue_tolerance(i)) then
+                    to_ignore(i)=.True.
+                else
+                    do j=1, cur_orth_id
+                        orthonormalized_vectors(j, i)=&
+                            orthonormalized_vectors(j, i)-cur_product*&
+                            orthonormalized_vectors(j, cur_orth_id)
+                    enddo
+                endif
+            endif
+        enddo
+!$OMP END PARALLEL DO
+    enddo
+
+    indices_to_ignore=0
+    ! Create a list with ignored indices.
+    j=1
+    do i=1, num_elements
+        if (to_ignore(i)) then
+            print *, 'Skipped:', i-1, 'residue:', sqnorm_residue(i) ! Subtracting 1 because later used in python scripts.
+            indices_to_ignore(j)=i-1 ! Subtracting 1 because later used in python scripts.
+            j=j+1
+        endif
+    enddo
+END SUBROUTINE
