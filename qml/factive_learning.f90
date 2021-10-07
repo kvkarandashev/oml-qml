@@ -356,34 +356,35 @@ END SUBROUTINE
 
 ! Deleting linear dependent entries.
 
-SUBROUTINE flinear_dependent_entries(sym_kernel_mat, num_elements, residue_tol_coeff,&
-    lambda_val, indices_to_ignore)
+SUBROUTINE flinear_dependent_entries(sym_kernel_mat, orthonormalized_vectors, num_elements,&
+                      residue_tol_coeff, lambda_val, ascending_residue_order, indices_to_ignore)
 implicit none
 integer, intent(in):: num_elements
+logical, intent(in):: ascending_residue_order
 double precision, intent(in), dimension(:, :):: sym_kernel_mat
+double precision, intent(inout), dimension(:, :):: orthonormalized_vectors
 double precision, intent(in):: residue_tol_coeff, lambda_val
 integer, intent(inout), dimension(:):: indices_to_ignore
 double precision, dimension(num_elements):: sqnorm_residue, residue_tolerance
 logical, dimension(num_elements):: to_ignore, considered
-double precision, dimension(num_elements, num_elements):: orthonormalized_vectors
 integer:: i, j, cur_orth_id
 double precision:: cur_norm, cur_product
 integer, dimension(num_elements):: orthonorm_order
-double precision:: proc_min_residue, global_min_residue
-integer:: proc_min_res_id, global_min_res_id
-logical:: proc_min_res_init, global_min_res_init
+double precision:: proc_extr_residue, global_extr_residue
+integer:: proc_extr_res_id, global_extr_res_id
+logical:: proc_extr_res_init, global_extr_res_init
 logical:: matrix_unstable
 integer:: true_j
 
     matrix_unstable=.False.
 
-    global_min_res_init=.False.
+    global_extr_res_init=.False.
 
     orthonormalized_vectors=0.0
     considered=.False.
-!$OMP PARALLEL PRIVATE(i, cur_norm, proc_min_res_id, proc_min_res_init, proc_min_residue)
+!$OMP PARALLEL PRIVATE(i, cur_norm, proc_extr_res_id, proc_extr_res_init, proc_extr_residue)
 
-    proc_min_res_init=.False.
+    proc_extr_res_init=.False.
 
 !$OMP DO
     do i=1, num_elements
@@ -393,21 +394,17 @@ integer:: true_j
         sqnorm_residue(i)=cur_norm
         residue_tolerance(i)=cur_norm*residue_tol_coeff
 
-        if ((.not.proc_min_res_init).or.(proc_min_residue<cur_norm)) then
-            proc_min_residue=cur_norm
-            proc_min_res_id=i
-            proc_min_res_init=.True.
-        endif
+        call compare_replace(ascending_residue_order,&
+            proc_extr_residue, proc_extr_res_id, proc_extr_res_init,&
+            cur_norm, i)
     enddo
 !$OMP END DO
 
-    if (proc_min_res_init) then
+    if (proc_extr_res_init) then
 !$OMP CRITICAL
-        if ((.not.global_min_res_init).or.(global_min_residue<proc_min_residue)) then
-            global_min_residue=proc_min_residue
-            global_min_res_id=proc_min_res_id
-            global_min_res_init=.True.
-        endif
+        call compare_replace(ascending_residue_order,&
+            global_extr_residue, global_extr_res_id, global_extr_res_init,&
+            proc_extr_residue, proc_extr_res_id)
 !$OMP END CRITICAL
     endif
 
@@ -416,24 +413,24 @@ integer:: true_j
     cur_orth_id=1
 
     do
-        orthonorm_order(cur_orth_id)=global_min_res_id
-        considered(global_min_res_id)=.True.
+        orthonorm_order(cur_orth_id)=global_extr_res_id
+        considered(global_extr_res_id)=.True.
         ! Normalize the vector.
-        cur_norm=sqrt(global_min_residue)
+        cur_norm=sqrt(global_extr_residue)
 !$OMP PARALLEL DO PRIVATE(j, true_j)
         do j=1, cur_orth_id
             true_j=orthonorm_order(j)
-            orthonormalized_vectors(true_j, global_min_res_id)=&
-                orthonormalized_vectors(true_j, global_min_res_id)/cur_norm
+            orthonormalized_vectors(true_j, global_extr_res_id)=&
+                orthonormalized_vectors(true_j, global_extr_res_id)/cur_norm
         enddo
 !$OMP END PARALLEL DO
         ! Subtract projections of the normalized vector from all currently not orthonormalized vectors.
         ! Also check that their residue is above the corresponding threshold.
 
-        global_min_res_init=.False.
-!$OMP PARALLEL PRIVATE(i, j, cur_product, proc_min_res_id, proc_min_res_init, proc_min_residue, cur_norm, true_j)
+        global_extr_res_init=.False.
+!$OMP PARALLEL PRIVATE(i, j, cur_product, proc_extr_res_id, proc_extr_res_init, proc_extr_residue, cur_norm, true_j)
 
-        proc_min_res_init=.False.
+        proc_extr_res_init=.False.
 
 !$OMP DO
         do i=1, num_elements
@@ -442,7 +439,7 @@ integer:: true_j
                 do j=1, cur_orth_id
                     true_j=orthonorm_order(j)
                     cur_product=cur_product+sym_kernel_mat(true_j, i)&
-                            *orthonormalized_vectors(true_j, global_min_res_id)
+                            *orthonormalized_vectors(true_j, global_extr_res_id)
                 enddo
                 sqnorm_residue(i)=sqnorm_residue(i)-cur_product**2
                 cur_norm=sqnorm_residue(i)
@@ -458,34 +455,31 @@ integer:: true_j
                         true_j=orthonorm_order(j)
                         orthonormalized_vectors(true_j, i)=&
                             orthonormalized_vectors(true_j, i)-cur_product*&
-                            orthonormalized_vectors(true_j, global_min_res_id)
+                            orthonormalized_vectors(true_j, global_extr_res_id)
                     enddo
-                    if ((.not.proc_min_res_init).or.(proc_min_residue<cur_norm)) then
-                        proc_min_residue=cur_norm
-                        proc_min_res_id=i
-                        proc_min_res_init=.True.
-                    endif
+                    call compare_replace(ascending_residue_order,&
+                        proc_extr_residue, proc_extr_res_id, proc_extr_res_init,&
+                        cur_norm, i)
                 endif
             endif
         enddo
 !$OMP END DO
 
-        if (proc_min_res_init) then
+        if (proc_extr_res_init) then
 !$OMP CRITICAL
-            if ((.not.global_min_res_init).or.(global_min_residue<proc_min_residue)) then
-                global_min_residue=proc_min_residue
-                global_min_res_id=proc_min_res_id
-                global_min_res_init=.True.
-            endif
+            call compare_replace(ascending_residue_order,&
+                    global_extr_residue, global_extr_res_id, global_extr_res_init,&
+                    proc_extr_residue, proc_extr_res_id)
 !$OMP END CRITICAL
         endif
 
 !$OMP END PARALLEL
+
         if (matrix_unstable) then
-            indices_to_ignore(1)=-1
+            indices_to_ignore(1)=-2
             return
         endif
-        if (.not.global_min_res_init) exit
+        if (.not.global_extr_res_init) exit
         cur_orth_id=cur_orth_id+1
     enddo
 
@@ -496,7 +490,14 @@ integer:: true_j
         to_ignore(orthonorm_order(i))=.False.
     enddo
 !$OMP END PARALLEL DO
-    indices_to_ignore=0
+
+!$OMP PARALLEL DO PRIVATE(i)
+    do i=1, num_elements
+        if (to_ignore(i)) orthonormalized_vectors(:, i)=0.0
+    enddo
+!$OMP END PARALLEL DO
+
+    indices_to_ignore=-1
     ! Create a list with ignored indices.
     j=1
     do i=1, num_elements
@@ -507,3 +508,26 @@ integer:: true_j
         endif
     enddo
 END SUBROUTINE
+
+PURE SUBROUTINE compare_replace(leave_smaller_val, init_val, init_id, init_initialized, new_val, new_id)
+logical, intent(in):: leave_smaller_val
+double precision, intent(inout):: init_val
+integer, intent(inout):: init_id
+logical, intent(inout):: init_initialized
+double precision, intent(in):: new_val
+integer, intent(in):: new_id
+logical:: favorable
+
+    if (leave_smaller_val) then
+        favorable=(init_val>new_val)
+    else
+        favorable=(init_val<new_val)
+    endif
+    if (favorable.or.(.not.init_initialized)) then
+        init_initialized=.True.
+        init_val=new_val
+        init_id=new_id
+    endif
+
+END SUBROUTINE
+

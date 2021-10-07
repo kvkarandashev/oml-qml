@@ -96,16 +96,32 @@ def numba_linear_dependent_entries(train_kernel, residue_tol_coeff):
 class KernelUnstable(Exception):
     pass
 
-def linear_dependent_entries(train_kernel, residue_tol_coeff, use_Fortran=False, lambda_val=0.0):
+def linear_dependent_entries(train_kernel, residue_tol_coeff, use_Fortran=True, lambda_val=0.0,
+                                    return_orthonormalized=False, ascending_residue_order=True):
     if use_Fortran:
         num_elements=train_kernel.shape[0]
         output_indices=np.zeros(num_elements, dtype=np.int32)
-        flinear_dependent_entries(train_kernel, num_elements, residue_tol_coeff, lambda_val, output_indices)
-        if output_indices[0]==-1:
+        orthonormalized_vectors=np.zeros((num_elements, num_elements))
+        flinear_dependent_entries(train_kernel, orthonormalized_vectors.T, num_elements,
+                    residue_tol_coeff, lambda_val, ascending_residue_order, output_indices)
+        if output_indices[0]==-2:
             raise KernelUnstable
+        final_output=[]
         for i in range(num_elements):
-            if output_indices[i]==0:
-                return output_indices[:i]
+            if output_indices[i]==-1:
+                final_output=output_indices[:i]
+                break
+        if return_orthonormalized:
+            return final_output, orthonormalized_vectors
+        else:
+            return final_output
     else:
         return numba_linear_dependent_entries(train_kernel, residue_tol_coeff)
+
+
+def solve_Gram_Schmidt(sym_mat, vec, residue_tol_coeff, lambda_val=0.0, ascending_residue_order=False):
+    ignored_indices, orthonormalized_vectors=linear_dependent_entries(sym_mat, residue_tol_coeff, use_Fortran=True,
+                    lambda_val=lambda_val, return_orthonormalized=True, ascending_residue_order=ascending_residue_order)
+    return ignored_indices, np.matmul(orthonormalized_vectors.T, np.matmul(orthonormalized_vectors, vec))
+
 

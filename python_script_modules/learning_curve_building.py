@@ -11,6 +11,7 @@ import datetime
 import random
 from qml.active_learning import linear_dependent_entries
 from numba import njit, prange
+from numba.types import bool_
 
 byprod_result_ending=".brf"
 
