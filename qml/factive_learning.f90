@@ -356,11 +356,12 @@ END SUBROUTINE
 
 ! Deleting linear dependent entries.
 
-SUBROUTINE flinear_dependent_entries(sym_kernel_mat, num_elements, residue_tol_coeff, indices_to_ignore)
+SUBROUTINE flinear_dependent_entries(sym_kernel_mat, num_elements, residue_tol_coeff,&
+    lambda_val, indices_to_ignore)
 implicit none
 integer, intent(in):: num_elements
 double precision, intent(in), dimension(:, :):: sym_kernel_mat
-double precision, intent(in):: residue_tol_coeff
+double precision, intent(in):: residue_tol_coeff, lambda_val
 integer, intent(inout), dimension(:):: indices_to_ignore
 double precision, dimension(num_elements):: sqnorm_residue, residue_tolerance
 logical, dimension(num_elements):: to_ignore, considered
@@ -388,7 +389,7 @@ integer:: true_j
     do i=1, num_elements
         orthonormalized_vectors(i, i)=1.0
 
-        cur_norm=sym_kernel_mat(i, i)
+        cur_norm=sym_kernel_mat(i, i)+lambda_val
         sqnorm_residue(i)=cur_norm
         residue_tolerance(i)=cur_norm*residue_tol_coeff
 

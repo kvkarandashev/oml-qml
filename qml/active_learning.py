@@ -96,11 +96,11 @@ def numba_linear_dependent_entries(train_kernel, residue_tol_coeff):
 class KernelUnstable(Exception):
     pass
 
-def linear_dependent_entries(train_kernel, residue_tol_coeff, use_Fortran=False):
+def linear_dependent_entries(train_kernel, residue_tol_coeff, use_Fortran=False, lambda_val=0.0):
     if use_Fortran:
         num_elements=train_kernel.shape[0]
         output_indices=np.zeros(num_elements, dtype=np.int32)
-        flinear_dependent_entries(train_kernel, num_elements, residue_tol_coeff, output_indices)
+        flinear_dependent_entries(train_kernel, num_elements, residue_tol_coeff, lambda_val, output_indices)
         if output_indices[0]==-1:
             raise KernelUnstable
         for i in range(num_elements):

@@ -816,7 +816,7 @@ def final_print_learning_curve(mean_stderr_output_name, all_vals_output_name, tr
     if ((num_cut_closest_entries is not None) or (min_closest_sqdist is not None)):
         deleted_indices=kernel_exclude_nearest(train_kernel, min_closest_sqdist=min_closest_sqdist, num_cut_closest_entries=num_cut_closest_entries)
     if linear_dependence_cut_coeff is not None:
-        deleted_indices=linear_dependent_entries(train_kernel, linear_dependence_cut_coeff, use_Fortran=use_Fortran)
+        deleted_indices=linear_dependent_entries(train_kernel, linear_dependence_cut_coeff, use_Fortran=use_Fortran, lambda_val=lambda_val)
     if deleted_indices is not None:
         # TO-DO: I'm not sure that using delete/del really decreases the memory usage.
         new_train_kernel=np.delete(np.delete(train_kernel, deleted_indices, 0), deleted_indices, 1)
