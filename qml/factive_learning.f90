@@ -363,61 +363,138 @@ double precision, intent(in), dimension(:, :):: sym_kernel_mat
 double precision, intent(in):: residue_tol_coeff
 integer, intent(inout), dimension(:):: indices_to_ignore
 double precision, dimension(num_elements):: sqnorm_residue, residue_tolerance
-logical, dimension(num_elements):: to_ignore
+logical, dimension(num_elements):: to_ignore, considered
 double precision, dimension(num_elements, num_elements):: orthonormalized_vectors
 integer:: i, j, cur_orth_id
 double precision:: cur_norm, cur_product
+integer, dimension(num_elements):: orthonorm_order
+double precision:: proc_min_residue, global_min_residue
+integer:: proc_min_res_id, global_min_res_id
+logical:: proc_min_res_init, global_min_res_init
+logical:: matrix_unstable
+integer:: true_j
+
+    matrix_unstable=.False.
+
+    global_min_res_init=.False.
 
     orthonormalized_vectors=0.0
-    to_ignore=.False.
-!$OMP PARALLEL DO PRIVATE(i, cur_norm)
+    considered=.False.
+!$OMP PARALLEL PRIVATE(i, cur_norm, proc_min_res_id, proc_min_res_init, proc_min_residue)
+
+    proc_min_res_init=.False.
+
+!$OMP DO
     do i=1, num_elements
         orthonormalized_vectors(i, i)=1.0
 
         cur_norm=sym_kernel_mat(i, i)
         sqnorm_residue(i)=cur_norm
         residue_tolerance(i)=cur_norm*residue_tol_coeff
+
+        if ((.not.proc_min_res_init).or.(proc_min_residue<cur_norm)) then
+            proc_min_residue=cur_norm
+            proc_min_res_id=i
+            proc_min_res_init=.True.
+        endif
     enddo
-!$OMP END PARALLEL DO
+!$OMP END DO
+
+    if (proc_min_res_init) then
+!$OMP CRITICAL
+        if ((.not.global_min_res_init).or.(global_min_residue<proc_min_residue)) then
+            global_min_residue=proc_min_residue
+            global_min_res_id=proc_min_res_id
+            global_min_res_init=.True.
+        endif
+!$OMP END CRITICAL
+    endif
+
+!$OMP END PARALLEL
 
     cur_orth_id=1
 
-    do cur_orth_id=1, num_elements
-        if (to_ignore(cur_orth_id)) cycle
+    do
+        orthonorm_order(cur_orth_id)=global_min_res_id
+        considered(global_min_res_id)=.True.
         ! Normalize the vector.
-        cur_norm=sqrt(sqnorm_residue(cur_orth_id))
-!$OMP PARALLEL DO PRIVATE(i)
-        do i=1, cur_orth_id
-            orthonormalized_vectors(i, cur_orth_id)=orthonormalized_vectors(i,&
-                                                    cur_orth_id)/cur_norm
+        cur_norm=sqrt(global_min_residue)
+!$OMP PARALLEL DO PRIVATE(j, true_j)
+        do j=1, cur_orth_id
+            true_j=orthonorm_order(j)
+            orthonormalized_vectors(true_j, global_min_res_id)=&
+                orthonormalized_vectors(true_j, global_min_res_id)/cur_norm
         enddo
 !$OMP END PARALLEL DO
         ! Subtract projections of the normalized vector from all currently not orthonormalized vectors.
         ! Also check that their residue is above the corresponding threshold.
-!$OMP PARALLEL DO PRIVATE(i, j, cur_product)
-        do i=cur_orth_id+1, num_elements
-            if (.not.to_ignore(i)) then
+
+        global_min_res_init=.False.
+!$OMP PARALLEL PRIVATE(i, j, cur_product, proc_min_res_id, proc_min_res_init, proc_min_residue, cur_norm, true_j)
+
+        proc_min_res_init=.False.
+
+!$OMP DO
+        do i=1, num_elements
+            if (.not.considered(i)) then
                 cur_product=0.0
                 do j=1, cur_orth_id
-                    if (.not.to_ignore(j)) &
-                    cur_product=cur_product+sym_kernel_mat(j, i)&
-                                        *orthonormalized_vectors(j, cur_orth_id)
+                    true_j=orthonorm_order(j)
+                    cur_product=cur_product+sym_kernel_mat(true_j, i)&
+                            *orthonormalized_vectors(true_j, global_min_res_id)
                 enddo
                 sqnorm_residue(i)=sqnorm_residue(i)-cur_product**2
-                if (sqnorm_residue(i)<residue_tolerance(i)) then
-                    to_ignore(i)=.True.
+                cur_norm=sqnorm_residue(i)
+                if (cur_norm<residue_tolerance(i)) then
+                    considered(i)=.True.
+                    if (cur_norm<-residue_tolerance(i)) then
+!$OMP CRITICAL
+                        matrix_unstable=.True.
+!$OMP END CRITICAL
+                    endif
                 else
                     do j=1, cur_orth_id
-                        orthonormalized_vectors(j, i)=&
-                            orthonormalized_vectors(j, i)-cur_product*&
-                            orthonormalized_vectors(j, cur_orth_id)
+                        true_j=orthonorm_order(j)
+                        orthonormalized_vectors(true_j, i)=&
+                            orthonormalized_vectors(true_j, i)-cur_product*&
+                            orthonormalized_vectors(true_j, global_min_res_id)
                     enddo
+                    if ((.not.proc_min_res_init).or.(proc_min_residue<cur_norm)) then
+                        proc_min_residue=cur_norm
+                        proc_min_res_id=i
+                        proc_min_res_init=.True.
+                    endif
                 endif
             endif
         enddo
-!$OMP END PARALLEL DO
+!$OMP END DO
+
+        if (proc_min_res_init) then
+!$OMP CRITICAL
+            if ((.not.global_min_res_init).or.(global_min_residue<proc_min_residue)) then
+                global_min_residue=proc_min_residue
+                global_min_res_id=proc_min_res_id
+                global_min_res_init=.True.
+            endif
+!$OMP END CRITICAL
+        endif
+
+!$OMP END PARALLEL
+        if (matrix_unstable) then
+            indices_to_ignore(1)=-1
+            return
+        endif
+        if (.not.global_min_res_init) exit
+        cur_orth_id=cur_orth_id+1
     enddo
 
+
+    to_ignore=.True.
+!$OMP PARALLEL DO PRIVATE(i)
+    do i=1, cur_orth_id
+        to_ignore(orthonorm_order(i))=.False.
+    enddo
+!$OMP END PARALLEL DO
     indices_to_ignore=0
     ! Create a list with ignored indices.
     j=1
