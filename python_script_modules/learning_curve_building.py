@@ -9,7 +9,7 @@ from scipy.linalg import cho_solve as scipy_cho_solve
 from qml.python_parallelization import embarassingly_parallel
 import datetime
 import random
-from qml.active_learning import linear_dependent_entries
+from qml.active_learning import linear_dependent_entries, all_indices_except
 from numba import njit, prange
 from numba.types import bool_
 
@@ -703,7 +703,7 @@ def kernel2sqdist(train_kernel):
     return sqdist_mat
 
 @njit(fastmath=True)
-def min_id_sqdist(sqdist_row, to_ignore, entry_id):
+def min_id_sqdist(sqdist_row, to_include, entry_id):
     cur_min_sqdist=0.0
     cur_min_sqdist_id=0
     minimal_sqdist_init=False
@@ -712,7 +712,7 @@ def min_id_sqdist(sqdist_row, to_ignore, entry_id):
     for j in range(num_train):
         if entry_id != j:
             cur_sqdist=sqdist_row[j]
-            if (((cur_sqdist<cur_min_sqdist) or (not minimal_sqdist_init)) and (not to_ignore[j])):
+            if (((cur_sqdist<cur_min_sqdist) or (not minimal_sqdist_init)) and to_include[j]):
                 minimal_sqdist_init=True
                 cur_min_sqdist=cur_sqdist
                 cur_min_sqdist_id=j
@@ -726,15 +726,15 @@ def numba_kernel_exclude_nearest(train_kernel, min_sqdist, num_cut_closest_entri
 
     minimal_distance_ids=np.zeros(num_train, dtype=np.int32)
     minimal_distances=np.zeros(num_train)
-    to_ignore=np.zeros(num_train, dtype=bool_)
+    to_include=np.ones(num_train, dtype=bool_)
 
     for i in prange(num_train):
-        minimal_distance_ids[i], minimal_distances[i]=min_id_sqdist(sqdist_mat[i], to_ignore, i)
+        minimal_distance_ids[i], minimal_distances[i]=min_id_sqdist(sqdist_mat[i], to_include, i)
 
     num_ignored=0
 
     while True:
-        cur_min_id, cur_min_sqdist=min_id_sqdist(minimal_distances, to_ignore, -1)
+        cur_min_id, cur_min_sqdist=min_id_sqdist(minimal_distances, to_include, -1)
         if (cur_min_sqdist > min_sqdist) and (min_sqdist > 0.0):
             break
         if np.random.random()>0.5:
@@ -742,7 +742,7 @@ def numba_kernel_exclude_nearest(train_kernel, min_sqdist, num_cut_closest_entri
         else:
             new_ignored=minimal_distance_ids[cur_min_id]
 
-        to_ignore[new_ignored]=True
+        to_include[new_ignored]=False
         num_ignored+=1
         if num_ignored==1:
             print("Smallest ignored distance:", cur_min_sqdist)
@@ -750,10 +750,11 @@ def numba_kernel_exclude_nearest(train_kernel, min_sqdist, num_cut_closest_entri
             print("Largest ignored distance:", cur_min_sqdist)
             break
         for i in prange(num_train):
-            if minimal_distance_ids[i]==new_ignored:
-                minimal_distance_ids[i], minimal_distances[i]=min_id_sqdist(sqdist_mat[i], to_ignore, i)
+            if to_include[i]:
+                if (minimal_distance_ids[i]==new_ignored):
+                    minimal_distance_ids[i], minimal_distances[i]=min_id_sqdist(sqdist_mat[i], to_include, i)
 
-    return to_ignore
+    return all_indices_except(to_include)
 
 def default_if_None(val, default_val):
     if val is None:

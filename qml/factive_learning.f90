@@ -365,10 +365,10 @@ double precision, intent(in), dimension(:, :):: sym_kernel_mat
 double precision, intent(inout), dimension(:, :):: orthonormalized_vectors
 double precision, intent(in):: residue_tol_coeff, lambda_val
 integer, intent(inout), dimension(:):: indices_to_ignore
-double precision, dimension(num_elements):: sqnorm_residue, residue_tolerance
+double precision, dimension(num_elements):: sqnorm_residue, sqnorm_true
 logical, dimension(num_elements):: to_ignore, considered
 integer:: i, j, cur_orth_id
-double precision:: cur_norm, cur_product
+double precision:: cur_norm_ratio, cur_product, cur_norm
 integer, dimension(num_elements):: orthonorm_order
 double precision:: proc_extr_residue, global_extr_residue
 integer:: proc_extr_res_id, global_extr_res_id
@@ -382,7 +382,8 @@ integer:: true_j
 
     orthonormalized_vectors=0.0
     considered=.False.
-!$OMP PARALLEL PRIVATE(i, cur_norm, proc_extr_res_id, proc_extr_res_init, proc_extr_residue)
+
+!$OMP PARALLEL PRIVATE(i, cur_norm_ratio, proc_extr_res_id, proc_extr_res_init, proc_extr_residue)
 
     proc_extr_res_init=.False.
 
@@ -390,13 +391,12 @@ integer:: true_j
     do i=1, num_elements
         orthonormalized_vectors(i, i)=1.0
 
-        cur_norm=sym_kernel_mat(i, i)+lambda_val
-        sqnorm_residue(i)=cur_norm
-        residue_tolerance(i)=cur_norm*residue_tol_coeff
-
+        sqnorm_true(i)=sym_kernel_mat(i, i)
+        sqnorm_residue(i)=sqnorm_true(i)+lambda_val
+        cur_norm_ratio=sqnorm_residue(i)/sqnorm_true(i)
         call compare_replace(ascending_residue_order,&
             proc_extr_residue, proc_extr_res_id, proc_extr_res_init,&
-            cur_norm, i)
+            cur_norm_ratio, i)
     enddo
 !$OMP END DO
 
@@ -416,7 +416,7 @@ integer:: true_j
         orthonorm_order(cur_orth_id)=global_extr_res_id
         considered(global_extr_res_id)=.True.
         ! Normalize the vector.
-        cur_norm=sqrt(global_extr_residue)
+        cur_norm=sqrt(sqnorm_residue(global_extr_res_id))
 !$OMP PARALLEL DO PRIVATE(j, true_j)
         do j=1, cur_orth_id
             true_j=orthonorm_order(j)
@@ -428,7 +428,7 @@ integer:: true_j
         ! Also check that their residue is above the corresponding threshold.
 
         global_extr_res_init=.False.
-!$OMP PARALLEL PRIVATE(i, j, cur_product, proc_extr_res_id, proc_extr_res_init, proc_extr_residue, cur_norm, true_j)
+!$OMP PARALLEL PRIVATE(i, j, cur_product, proc_extr_res_id, proc_extr_res_init, proc_extr_residue, cur_norm_ratio, true_j)
 
         proc_extr_res_init=.False.
 
@@ -442,14 +442,15 @@ integer:: true_j
                             *orthonormalized_vectors(true_j, global_extr_res_id)
                 enddo
                 sqnorm_residue(i)=sqnorm_residue(i)-cur_product**2
-                cur_norm=sqnorm_residue(i)
-                if (cur_norm<residue_tolerance(i)) then
+                cur_norm_ratio=sqnorm_residue(i)/sqnorm_true(i)
+                if (cur_norm_ratio<residue_tol_coeff) then
                     considered(i)=.True.
-                    if (cur_norm<-residue_tolerance(i)) then
-!$OMP CRITICAL
-                        matrix_unstable=.True.
-!$OMP END CRITICAL
-                    endif
+!               TO-DO: check whether OMP CRITICAL slows down the code.
+!                    if (cur_norm_ratio<-residue_tol_coeff) then
+!!$OMP CRITICAL
+!                        matrix_unstable=.True.
+!!$OMP END CRITICAL
+!                    endif
                 else
                     do j=1, cur_orth_id
                         true_j=orthonorm_order(j)
@@ -459,7 +460,7 @@ integer:: true_j
                     enddo
                     call compare_replace(ascending_residue_order,&
                         proc_extr_residue, proc_extr_res_id, proc_extr_res_init,&
-                        cur_norm, i)
+                        cur_norm_ratio, i)
                 endif
             endif
         enddo

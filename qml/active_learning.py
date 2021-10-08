@@ -48,7 +48,7 @@ def all_indices_except(to_include):
             print("Skipped: ", el_id)
             output[arr_pos]=el_id
             arr_pos+=1
-    return output
+    return output[:arr_pos]
 
 @njit(fastmath=True, parallel=True)
 def numba_linear_dependent_entries(train_kernel, residue_tol_coeff):
