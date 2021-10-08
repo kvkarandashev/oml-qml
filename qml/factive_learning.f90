@@ -365,6 +365,7 @@ double precision, intent(in), dimension(:, :):: sym_kernel_mat
 double precision, intent(inout), dimension(:, :):: orthonormalized_vectors
 double precision, intent(in):: residue_tol_coeff, lambda_val
 integer, intent(inout), dimension(:):: indices_to_ignore
+double precision, dimension(num_elements, num_elements):: temp_kernel_mat
 double precision, dimension(num_elements):: sqnorm_residue, sqnorm_true
 logical, dimension(num_elements):: to_ignore, considered
 integer:: i, j, cur_orth_id
@@ -374,7 +375,6 @@ double precision:: proc_extr_residue, global_extr_residue
 integer:: proc_extr_res_id, global_extr_res_id
 logical:: proc_extr_res_init, global_extr_res_init
 logical:: matrix_unstable
-integer:: true_j
 
     matrix_unstable=.False.
 
@@ -383,14 +383,14 @@ integer:: true_j
     orthonormalized_vectors=0.0
     considered=.False.
 
+    orthonorm_order=0
+
 !$OMP PARALLEL PRIVATE(i, cur_norm_ratio, proc_extr_res_id, proc_extr_res_init, proc_extr_residue)
 
     proc_extr_res_init=.False.
 
 !$OMP DO
     do i=1, num_elements
-        orthonormalized_vectors(i, i)=1.0
-
         sqnorm_true(i)=sym_kernel_mat(i, i)
         sqnorm_residue(i)=sqnorm_true(i)+lambda_val
         cur_norm_ratio=sqnorm_residue(i)/sqnorm_true(i)
@@ -413,51 +413,40 @@ integer:: true_j
     cur_orth_id=1
 
     do
+        orthonormalized_vectors(cur_orth_id, global_extr_res_id)=1.0
         orthonorm_order(cur_orth_id)=global_extr_res_id
+        temp_kernel_mat(cur_orth_id, :)=sym_kernel_mat(global_extr_res_id, :)
         considered(global_extr_res_id)=.True.
         ! Normalize the vector.
         cur_norm=sqrt(sqnorm_residue(global_extr_res_id))
-!$OMP PARALLEL DO PRIVATE(j, true_j)
-        do j=1, cur_orth_id
-            true_j=orthonorm_order(j)
-            orthonormalized_vectors(true_j, global_extr_res_id)=&
-                orthonormalized_vectors(true_j, global_extr_res_id)/cur_norm
-        enddo
-!$OMP END PARALLEL DO
+        orthonormalized_vectors(1:cur_orth_id, global_extr_res_id)=&
+                orthonormalized_vectors(1:cur_orth_id, global_extr_res_id)/cur_norm
         ! Subtract projections of the normalized vector from all currently not orthonormalized vectors.
         ! Also check that their residue is above the corresponding threshold.
 
         global_extr_res_init=.False.
-!$OMP PARALLEL PRIVATE(i, j, cur_product, proc_extr_res_id, proc_extr_res_init, proc_extr_residue, cur_norm_ratio, true_j)
+!$OMP PARALLEL PRIVATE(i, cur_product, proc_extr_res_id, proc_extr_res_init, proc_extr_residue, cur_norm_ratio)
 
         proc_extr_res_init=.False.
 
 !$OMP DO
         do i=1, num_elements
             if (.not.considered(i)) then
-                cur_product=0.0
-                do j=1, cur_orth_id
-                    true_j=orthonorm_order(j)
-                    cur_product=cur_product+sym_kernel_mat(true_j, i)&
-                            *orthonormalized_vectors(true_j, global_extr_res_id)
-                enddo
+                cur_product=dot_product(orthonormalized_vectors(1:cur_orth_id, global_extr_res_id),&
+                                        temp_kernel_mat(1:cur_orth_id, i))
                 sqnorm_residue(i)=sqnorm_residue(i)-cur_product**2
                 cur_norm_ratio=sqnorm_residue(i)/sqnorm_true(i)
                 if (cur_norm_ratio<residue_tol_coeff) then
                     considered(i)=.True.
-!               TO-DO: check whether OMP CRITICAL slows down the code.
-!                    if (cur_norm_ratio<-residue_tol_coeff) then
-!!$OMP CRITICAL
-!                        matrix_unstable=.True.
-!!$OMP END CRITICAL
-!                    endif
+                    if (cur_norm_ratio<-residue_tol_coeff) then
+!$OMP CRITICAL
+                        matrix_unstable=.True.
+!$OMP END CRITICAL
+                    endif
                 else
-                    do j=1, cur_orth_id
-                        true_j=orthonorm_order(j)
-                        orthonormalized_vectors(true_j, i)=&
-                            orthonormalized_vectors(true_j, i)-cur_product*&
-                            orthonormalized_vectors(true_j, global_extr_res_id)
-                    enddo
+                    orthonormalized_vectors(1:cur_orth_id,i)=&
+                        orthonormalized_vectors(1:cur_orth_id,i)-cur_product*&
+                        orthonormalized_vectors(1:cur_orth_id, global_extr_res_id)
                     call compare_replace(ascending_residue_order,&
                         proc_extr_residue, proc_extr_res_id, proc_extr_res_init,&
                         cur_norm_ratio, i)
@@ -486,17 +475,15 @@ integer:: true_j
 
 
     to_ignore=.True.
+    temp_kernel_mat=0.0
 !$OMP PARALLEL DO PRIVATE(i)
     do i=1, cur_orth_id
         to_ignore(orthonorm_order(i))=.False.
+        temp_kernel_mat(orthonorm_order(i), :)=orthonormalized_vectors(i, :)
     enddo
 !$OMP END PARALLEL DO
 
-!$OMP PARALLEL DO PRIVATE(i)
-    do i=1, num_elements
-        if (to_ignore(i)) orthonormalized_vectors(:, i)=0.0
-    enddo
-!$OMP END PARALLEL DO
+    orthonormalized_vectors(:, :)=temp_kernel_mat(:, :)
 
     indices_to_ignore=-1
     ! Create a list with ignored indices.
