@@ -483,6 +483,12 @@ logical:: matrix_unstable
     enddo
 !$OMP END PARALLEL DO
 
+!$OMP PARALLEL DO PRIVATE(i)
+    do i=1, num_elements
+        if (to_ignore(i)) temp_kernel_mat(:, i)=0.0
+    enddo
+!$OMP END PARALLEL DO
+
     orthonormalized_vectors(:, :)=temp_kernel_mat(:, :)
 
     indices_to_ignore=-1
