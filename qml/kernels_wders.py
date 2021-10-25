@@ -24,6 +24,7 @@
 import numpy as np
 
 from .kernels import gaussian_kernel, laplacian_kernel
+from .fkernels_wders import fgaussian_pos_sum_restr_kernel
 
 def merge_save_indices(*arrays):
     output_array=[]
@@ -102,4 +103,28 @@ def gaussian_kernel_conv_wders(A, B, sigma_arr, with_ders=False):
 
 def laplacian_kernel_conv_wders(A, B, sigma_arr, with_ders=False):
     return  kernel_from_converted(A, B, sigma_arr[0], use_Gauss=False, with_ders=width_ders)
+
+
+# Kernel for representation vectors constrained by being normalized and undefined for negative values.
+# (e.g. mixed masses/mass fractions).
+def gaussian_pos_sum_restr_kernel(A, B, sigmas, with_ders=False):
+    nA=len(A)
+    nB=len(B)
+    dimf=len(sigmas)
+
+    A_conv=np.array(A)
+    B_conv=np.array(B)
+
+    kern_el_dim=1
+    if with_ders:
+        kern_el_dim+=dimf
+
+    kernel=np.zeros((nA, nB, kern_el_dim))
+
+    fgaussian_pos_sum_restr_kernel(A_conv.T, B_conv.T, sigmas, nA, nB, dimf, kern_el_dim, kernel.T)
+
+    if with_ders:
+        return kernel
+    else:
+        return kernel[:, :, 0]
 
