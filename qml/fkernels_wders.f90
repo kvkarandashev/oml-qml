@@ -21,8 +21,8 @@
 ! SOFTWARE.
 
 
-! Gaussian kernel quantities restricted by being normalized and 
-! 
+! Gaussian kernel for representation vectors restricted by being normalized and 
+! strictly positive.
 SUBROUTINE fgaussian_pos_sum_restr_kernel(A, B, sigmas, nA, nB, dimf, kern_el_dim, kernel_wders)
 implicit none
 integer, intent(in):: nA, nB, dimf, kern_el_dim

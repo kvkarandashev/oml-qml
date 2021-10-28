@@ -66,6 +66,15 @@ def CM_kernel_input(*compound_arrays, sorting="row-norm"):
         combined_array[compound_id].generate_coulomb_matrix(size=max_size, sorting=sorting)
     return merged_representation_arrays(combined_array, part_slices)
 
+def dummy_kernel_input(*rep_arr_lists):
+    output=[]
+    for rep_arr_list in rep_arr_lists:
+        output.append(np.array(rep_arr_list))
+    if len(output)==1:
+        return output[0]
+    else:
+        return output
+
 def kernel_from_converted(A, B, sigma, use_Gauss=True, with_ders=False):
     if use_Gauss:
         kernel=gaussian_kernel(A, B, sigma)
@@ -107,13 +116,13 @@ def laplacian_kernel_conv_wders(A, B, sigma_arr, with_ders=False):
 
 # Kernel for representation vectors constrained by being normalized and undefined for negative values.
 # (e.g. mixed masses/mass fractions).
-def gaussian_pos_sum_restr_kernel(A, B, sigmas, with_ders=False):
-    nA=len(A)
-    nB=len(B)
-    dimf=len(sigmas)
+def gaussian_pos_sum_restr_sym_kernel_wders(A, sigmas, with_ders=False):
+    return gaussian_pos_sum_restr_kernel_wders(A, A, sigmas, with_ders=with_ders)
 
-    A_conv=np.array(A)
-    B_conv=np.array(B)
+def gaussian_pos_sum_restr_kernel_wders(A, B, sigmas, use_Gauss=None, with_ders=False):
+    nA=A.shape[0]
+    nB=B.shape[0]
+    dimf=sigmas.shape[0]
 
     kern_el_dim=1
     if with_ders:
@@ -121,7 +130,7 @@ def gaussian_pos_sum_restr_kernel(A, B, sigmas, with_ders=False):
 
     kernel=np.zeros((nA, nB, kern_el_dim))
 
-    fgaussian_pos_sum_restr_kernel(A_conv.T, B_conv.T, sigmas, nA, nB, dimf, kern_el_dim, kernel.T)
+    fgaussian_pos_sum_restr_kernel(A.T, B.T, sigmas, nA, nB, dimf, kern_el_dim, kernel.T)
 
     if with_ders:
         return kernel

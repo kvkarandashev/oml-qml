@@ -466,12 +466,12 @@ class Reduced_hyperparam_func:
     def full_params_to_reduced(self, full_parameters):
         self.initiate_param_nums(full_parameters)
         return np.log(full_parameters)
-    def initial_reduced_parameter_guess(self, init_lambda, base_inv_sqwidth_params):
-        num_full_params=len(base_inv_sqwidth_params)+1
-        self.initiate_param_nums(len(base_inv_sqwidth_params)+1)
+    def initial_reduced_parameter_guess(self, init_lambda, sigmas):
+        num_full_params=len(sigmas)+1
+        self.initiate_param_nums(len(sigmas)+1)
         output=np.zeros((self.num_full_params,))
         output[0]=np.log(init_lambda)
-        output[-len(base_inv_sqwidth_params):]=np.log(base_inv_sqwidth_params)
+        output[-len(base_inv_sqwidth_params):]=np.log(sigmas)
         return output
     def jacobian(self, parameters):
         self.initiate_param_nums(parameters)
@@ -500,49 +500,41 @@ class Reduced_hyperparam_func:
 
 # For using a simple rescaling coefficient for sigmas.
 class Single_rescaling_rhf(Reduced_hyperparam_func):
-    def __init__(self, base_inv_sqwidth_params=None, use_Gauss=False, ang_mom_map=None,
-                    rep_params=None, use_global_mat_prop_coeffs=False, stddevs=None):
+    def __init__(self, use_Gauss=False, ang_mom_map=None, rep_params=None, use_global_mat_prop_coeffs=False, stddevs=None):
         if use_global_mat_prop_coeffs:
-            if stddevs is None:
-                if base_inv_sqwidth_params is None:
-                    raise Exception
-                else:
-                    stddevs=inv_sqwidth_params2stddevs(base_inv_sqwidth_params)
             coup_mat_prop_coeffs, prop_coeff_id=matrix_grouped_prop_coeffs(stddevs=stddevs,
                                 ang_mom_map=ang_mom_map, rep_params=rep_params)
-            base_inv_sqwidth_params=[]
+            coup_sigmas=[]
             for sigma_id, cur_prop_coeff_id in enumerate(prop_coeff_id):
-                base_inv_sqwidth_params.append(coup_mat_prop_coeffs[cur_prop_coeff_id])
-            self.base_inv_sqwidth_params=np.array(base_inv_sqwidth_params)
+                coup_sigmas.append(coup_mat_prop_coeffs[cur_prop_coeff_id])
+            self.coup_sigmas=np.array(coup_sigmas)
         else:
-            if base_inv_sqwidth_params is None:
-                base_inv_sqwidth_params=stddevs2inv_sqwidth_params(stddevs)
-            self.base_inv_sqwidth_params=base_inv_sqwidth_params
-        self.num_full_params=len(self.base_inv_sqwidth_params)+1
+            self.coup_sigmas=stddevs
+        self.num_full_params=len(self.coup_sigmas)+1
         self.num_reduced_params=2
         self.use_Gauss=use_Gauss
-        self.sigmas_start_id=1
+        self.coup_sigmas_start_id=1
         if self.use_Gauss:
             self.num_full_params+=1
             self.num_reduced_params+=1
-            self.sigmas_start_id+=1
+            self.coup_sigmas_start_id+=1
     def reduced_params_to_full(self, reduced_parameters):
         output=np.zeros((self.num_full_params,))
-        output[:self.sigmas_start_id]=np.exp(reduced_parameters[:self.sigmas_start_id])
-        output[self.sigmas_start_id:]=self.base_inv_sqwidth_params*np.exp(reduced_parameters[-1])
+        output[:self.coup_sigmas_start_id]=np.exp(reduced_parameters[:self.coup_sigmas_start_id])
+        output[self.coup_sigmas_start_id:]=self.coup_sigmas*np.exp(reduced_parameters[-1])
         return output
     def full_derivatives_to_reduced(self, full_derivatives, full_parameters):
         output=np.zeros((self.num_reduced_params,))
-        output[:self.sigmas_start_id]=full_derivatives[:self.sigmas_start_id]*full_parameters[:self.sigmas_start_id]
-        for sigma_id in range(self.sigmas_start_id, self.num_full_params):
+        output[:self.coup_sigmas_start_id]=full_derivatives[:self.coup_sigmas_start_id]*full_parameters[:self.coup_sigmas_start_id]
+        for sigma_id in range(self.coup_sigmas_start_id, self.num_full_params):
             output[-1]+=full_derivatives[sigma_id]*full_parameters[sigma_id]
         return output
     def full_params_to_reduced(self, full_parameters):
         output=np.zeros((self.num_reduced_params,))
-        output[:self.sigmas_start_id]=np.log(full_parameters[:self.sigmas_start_id])
+        output[:self.coup_sigmas_start_id]=np.log(full_parameters[:self.coup_sigmas_start_id])
         est_counter=0
-        for sigma_id in range(self.sigmas_start_id, self.num_full_params):
-            output[-1]+=np.log(full_parameters[sigma_id]/self.base_inv_sqwidth_params[sigma_id-self.sigmas_start_id])
+        for sigma_id in range(self.coup_sigmas_start_id, self.num_full_params):
+            output[-1]+=np.log(full_parameters[sigma_id]/self.coup_sigmas[sigma_id-self.coup_sigmas_start_id])
             est_counter+=1
         output[-1]/=est_counter
         return output
@@ -554,7 +546,7 @@ class Single_rescaling_rhf(Reduced_hyperparam_func):
     def __str__(self):
         vals_names={"num_full_params" : self.num_full_params,
                     "num_reduced_params" : self.num_reduced_params,
-                    "base_inv_sqwidth_params" : self.base_inv_sqwidth_params}
+                    "coup_sigmas" : self.coup_sigmas}
         return self.str_output_dict("Single_rescaling_rhf", vals_names)
         
 
@@ -614,7 +606,7 @@ def matrix_grouped_prop_coeffs(rep_params=None, stddevs=None, ang_mom_map=None, 
             cur_prop_coeff_id=prop_coeff_id[true_sigma_id]
             norm_coeffs[cur_prop_coeff_id]+=cur_sym_coeff
             coup_mat_prop_coeffs[cur_prop_coeff_id]+=stddev**2*cur_sym_coeff
-        coup_mat_prop_coeffs[coup_mat_true_start:]=0.25*(norm_coeffs[coup_mat_true_start:]/coup_mat_prop_coeffs[coup_mat_true_start:])
+        coup_mat_prop_coeffs[coup_mat_true_start:]=np.sqrt(coup_mat_prop_coeffs[coup_mat_true_start:]/norm_coeffs[coup_mat_true_start:])
 
     if return_sym_multipliers:
         return coup_mat_prop_coeffs, prop_coeff_id, sym_multipliers
@@ -669,8 +661,9 @@ class Ang_mom_classified_rhf(Reduced_hyperparam_func):
         output=np.repeat(1.0, self.num_full_params)
         for param_id in range(self.num_full_params):
             for red_param_id in self.reduced_param_id_lists[param_id]:
-                output[param_id]*=np.sqrt(self.coup_mat_prop_coeffs[self.prop_coeff_id[param_id]]
-                                    *self.sym_multipliers[param_id])*np.exp(reduced_parameters[red_param_id])
+                # TO-DO does this choice of sym_multipliers make sense?
+                output[param_id]*=np.sqrt(self.coup_mat_prop_coeffs[self.prop_coeff_id[param_id]]/
+                                    np.sqrt(self.sym_multipliers[param_id]))*np.exp(reduced_parameters[red_param_id])
         return output
 
     def full_derivatives_to_reduced(self, full_derivatives, full_parameters):
@@ -687,7 +680,7 @@ class Ang_mom_classified_rhf(Reduced_hyperparam_func):
             if (len(red_param_id_list)==2):
                 if red_param_id_list[0] != red_param_id_list[1]:
                     continue
-            output[red_param_id_list[0]]=np.log(param_val/self.sym_multipliers[param_id]/self.coup_mat_prop_coeffs[self.prop_coeff_id[param_id]])/len(red_param_id_list)
+            output[red_param_id_list[0]]=np.log(param_val*np.sqrt(self.sym_multipliers[param_id])/self.coup_mat_prop_coeffs[self.prop_coeff_id[param_id]])/len(red_param_id_list)
         return output
 
     def initial_reduced_parameter_guess(self, init_lambda, *other_args):
@@ -745,7 +738,8 @@ class Optimizer_state_generator:
 
 class GOO_randomized_iterator:
     def __init__(self, opt_GOO_ensemble, initial_reduced_parameter_vals, lambda_opt_tolerance=0.1, step_magnitudes=None, noise_level_prop_coeffs=None,
-                        lambda_max_num_scan_steps=10, default_step_magnitude=1.0, keep_init_lambda=False, bisec_lambda_opt=True, max_lambda_diag_el_ratio=None):
+                        lambda_max_num_scan_steps=256, default_step_magnitude=1.0, keep_init_lambda=False, bisec_lambda_opt=True, max_lambda_diag_el_ratio=None,
+                        min_lambda_diag_el_ratio=1e-12):
 
         self.optimizer_state_generator=Optimizer_state_generator(opt_GOO_ensemble)
 
@@ -755,6 +749,7 @@ class GOO_randomized_iterator:
 
         self.lambda_opt_tolerance=lambda_opt_tolerance
         self.keep_init_lambda=keep_init_lambda
+        self.negligible_lambda_log=-40.0
 
         self.num_reduced_params=self.optimizer_state_generator.goo_ensemble.reduced_hyperparam_func.num_reduced_params
 
@@ -783,6 +778,7 @@ class GOO_randomized_iterator:
         self.change_successful=None
         
         self.max_lambda_diag_el_ratio=max_lambda_diag_el_ratio
+        self.min_lambda_diag_el_ratio=min_lambda_diag_el_ratio
 
         # If initial lambda value is not large enough for the kernel matrix to be invertible,
         # use bisection to optimize it.
@@ -795,7 +791,7 @@ class GOO_randomized_iterator:
 
         trial_red_params=self.generate_trial_red_params(self.keep_init_lambda)
 
-        if self.lambda_exceeded(trial_red_params[0]):
+        if self.lambda_outside_bounds(trial_red_params[0]):
             trial_red_params=self.generate_trial_red_params(True)
 
         trial_optimizer_state=self.optimizer_state_generator(trial_red_params)
@@ -809,8 +805,8 @@ class GOO_randomized_iterator:
             if ((not self.keep_init_lambda) and self.bisec_lambda_opt):
                 self.bisection_lambda_optimization()
             self.noise_levels[:]=0.0
-            if self.lambda_exceeded():
-                self.decrease_lambda_until_normal()
+            if self.lambda_outside_bounds():
+                self.change_lambda_until_normal()
         else:
             self.noise_levels+=self.noise_level_prop_coeffs/np.sqrt(self.num_reduced_params)
 
@@ -834,17 +830,19 @@ class GOO_randomized_iterator:
 
         return trial_red_params
 
-    def decrease_lambda_until_normal(self):
+    def change_lambda_until_normal(self):
         scan_additive=np.abs(self.step_magnitudes[0])
+        if self.lambda_outside_bounds(sign_determinant=scan_additive):
+            scan_additive*=-1
         new_red_params=np.copy(self.cur_optimizer_state.red_parameters)
 
-        while self.lambda_exceeded(new_red_params[0]):
+        while self.lambda_outside_bounds(new_red_params[0]):
             trial_red_params=np.copy(new_red_params)
-            trial_red_params[0]-=scan_additive
+            trial_red_params[0]+=scan_additive
             trial_iteration=self.optimizer_state_generator(trial_red_params, recalc_global_matrices=False, lambda_der_only=True)
 
             trial_error_measure=trial_iteration.error_measure
-            print("Scanning lambda to decrease:", trial_red_params[0], trial_error_measure)
+            print("Scanning lambda to normalize:", trial_red_params[0], trial_error_measure)
 
             if trial_error_measure is None:
                 break
@@ -857,8 +855,8 @@ class GOO_randomized_iterator:
         self.cur_optimizer_state=self.optimizer_state_generator(new_red_params, recalc_global_matrices=recalc_global_matrices,
                                         lambda_der_only=lambda_der_only)
 
-    def lambda_exceeded(self, log_lambda_value=None):
-        if self.max_lambda_diag_el_ratio is None:
+    def lambda_outside_bounds(self, log_lambda_value=None, sign_determinant=None):
+        if (self.max_lambda_diag_el_ratio is None) and (self.min_lambda_diag_el_ratio is None):
             return False
         else:
             if log_lambda_value is None:
@@ -866,7 +864,22 @@ class GOO_randomized_iterator:
             lambda_value=np.exp(log_lambda_value)
             train_kernel_mat=self.optimizer_state_generator.goo_ensemble.global_matrix
             av_kernel_diag_el=np.mean(train_kernel_mat[np.diag_indices_from(train_kernel_mat)])
-            return (lambda_value>av_kernel_diag_el*self.max_lambda_diag_el_ratio)
+            if self.max_lambda_diag_el_ratio is None:
+                too_large=False
+            else:
+                too_large=(lambda_value>av_kernel_diag_el*self.max_lambda_diag_el_ratio)
+            if self.min_lambda_diag_el_ratio is None:
+                too_small=False
+            else:
+                too_small=(lambda_value<av_kernel_diag_el*self.min_lambda_diag_el_ratio)
+            
+            if sign_determinant is None:
+                return (too_small or too_large)
+            else:
+                if sign_determinant>0.0:
+                    return too_large
+                else:
+                    return too_small
 
     def bisection_lambda_optimization(self):
         print("Bisection optimization of lambda, starting position:", self.cur_optimizer_state.lambda_log_val(), self.cur_optimizer_state.error_measure)
@@ -884,7 +897,7 @@ class GOO_randomized_iterator:
             trial_red_params=np.copy(prev_iteration.red_parameters)
             trial_red_params[0]+=scan_additive
 
-            if (self.lambda_exceeded(trial_red_params[0]) and (scan_additive>0.0)):
+            if (self.lambda_outside_bounds(log_lambda_value=trial_red_params[0], sign_determinant=scan_additive)):
                 self.recalc_cur_opt_state(prev_iteration.red_parameters, recalc_global_matrices=False)
                 return
 
@@ -932,11 +945,11 @@ class GOO_randomized_iterator:
 
 list_supported_funcs=["default", "single_rescaling", "single_rescaling_global_mat_prop_coeffs", "ang_mom_classified"]
 
-def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=False, init_lambda=1e-3, max_iterations=None,
+def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=False, init_lambda=1e-3, max_iterations=256,
                                     init_param_guess=None, hyperparam_red_type="default", max_stagnating_iterations=1,
                                     use_MAE=True, rep_params=None, num_kfolds=16, other_opt_goo_ensemble_kwargs={}, randomized_iterator_kwargs={}, iter_dump_name_add=None,
                                     additional_BFGS_iters=None, iter_dump_name_add_BFGS=None, negligible_red_param_distance=1e-9, num_procs=None, num_threads=None,
-                                    kernel_input_converter=None, sym_kernel_func=None):
+                                    kernel_input_converter=None, sym_kernel_func=None, assumed_stddevs=None):
 
 #   TO-DO make array of ones created for single rescaling of scalar representation length? Add function for oml_representation? that determines length of representation
     if hyperparam_red_type != "default":
@@ -945,12 +958,13 @@ def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=Fa
         else:
             need_stddevs=(not rep_params.propagator_coup_mat)
         if need_stddevs:
-            avs, stddevs=oml_ensemble_avs_stddevs(compound_list)
+            if assumed_stddevs is None:
+                avs, stddevs=oml_ensemble_avs_stddevs(compound_list)
+            else:
+                stddevs=assumed_stddevs
             print("Found stddevs:", stddevs)
-            base_inv_sqwidth_params=inv_sqwidth_params2stddevs(stddevs)
         else:
-            stddevs=None
-            base_inv_sqwidth_params=np.repeat(1.0, scalar_rep_length(compound_list[0]))
+            stddevs=np.repeat(1.0, scalar_rep_length(compound_list[0]))
 
     if hyperparam_red_type not in list_supported_funcs:
         raise Exception
@@ -959,16 +973,16 @@ def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=Fa
     if hyperparam_red_type == "ang_mom_classified":
         red_hyperparam_func=Ang_mom_classified_rhf(rep_params=rep_params, stddevs=stddevs, use_Gauss=use_Gauss)
     if hyperparam_red_type=="single_rescaling":
-        red_hyperparam_func=Single_rescaling_rhf(base_inv_sqwidth_params=base_inv_sqwidth_params, use_Gauss=use_Gauss,
+        red_hyperparam_func=Single_rescaling_rhf(stddevs=stddevs, use_Gauss=use_Gauss,
                                             rep_params=rep_params, use_global_mat_prop_coeffs=False)
     if hyperparam_red_type=="single_rescaling_global_mat_prop_coeffs":
-        red_hyperparam_func=Single_rescaling_rhf(base_inv_sqwidth_params=base_inv_sqwidth_params, use_Gauss=use_Gauss,
+        red_hyperparam_func=Single_rescaling_rhf(stddevs=stddevs, use_Gauss=use_Gauss,
                                             rep_params=rep_params, use_global_mat_prop_coeffs=True)
 
     if init_param_guess is None:
         if hyperparam_red_type=="default":
-            base_inv_sqwidth_params=np.append(1.0, base_inv_sqwidth_params)
-        initial_reduced_parameter_vals=red_hyperparam_func.initial_reduced_parameter_guess(init_lambda, base_inv_sqwidth_params)
+            stddevs=np.append(1.0, stddevs)
+        initial_reduced_parameter_vals=red_hyperparam_func.initial_reduced_parameter_guess(init_lambda, stddevs)
     else:
         initial_reduced_parameter_vals=red_hyperparam_func.full_params_to_reduced(init_param_guess)
 
@@ -991,7 +1005,7 @@ def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=Fa
         if iter_dump_name_add is not None:
             cur_dump_name=iter_dump_name_add+"_"+str(num_iterations)+".pkl"
             dump2pkl(cur_opt_state, cur_dump_name)
-            
+
         print("Parameters:", cur_opt_state.parameters, "error measure:", cur_opt_state.error_measure)
         if max_iterations is not None:
             if num_iterations>=max_iterations:
@@ -1015,8 +1029,8 @@ def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=Fa
         print("BFGS corrected error measure:", finalized_result.fun)
         if finalized_result.fun < cur_opt_state.error_measure:
             finalized_params=red_hyperparam_func.reduced_params_to_full(finalized_result.x)
-            return {"inv_sqwidth_params" : finalized_params[1:], "lambda_val" : finalized_params[0], "error_measure" : finalized_result.fun}
-    return {"inv_sqwidth_params" : cur_opt_state.parameters[1:], "lambda_val" : cur_opt_state.parameters[0], "error_measure" :  cur_opt_state.error_measure}
+            return {"sigmas" : finalized_params[1:], "lambda_val" : finalized_params[0], "error_measure" : finalized_result.fun}
+    return {"sigmas" : cur_opt_state.parameters[1:], "lambda_val" : cur_opt_state.parameters[0], "error_measure" :  cur_opt_state.error_measure}
 
 
 ######
@@ -1048,14 +1062,6 @@ class GOO_standalone_error_measure_ders(GOO_standalone_error_measure):
     def result(self):
         return self.error_measure_ders
     
-# Standard functions.
-# For going between standard deviations and base inverse square width parameters.
-def stddevs2inv_sqwidth_params(stddevs):
-    return 0.25/stddevs**2
-
-def inv_sqwidth_params2stddevs(inv_sqwidth_params):
-    return 0.5/np.sqrt(inv_sqwidth_params)
-
 #####
 # Minor auxiliary functions.
 #####

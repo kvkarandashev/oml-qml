@@ -59,19 +59,19 @@ optimized_hyperparams=min_sep_IBO_random_walk_optimization(training_comps, train
 
 
 
-inv_sq_width_params=optimized_hyperparams["inv_sq_width_params"]
+sigmas=optimized_hyperparams["sigmas"]
 lambda_val=optimized_hyperparams["lambda_val"]
 
-print("Finalized parameters:", inv_sq_width_params)
+print("Finalized parameters:", sigmas)
 print("Finalized lambda:", lambda_val)
 
-K_train=gauss_sep_IBO_sym_kernel(training_comps, inv_sq_width_params)
+K_train=gauss_sep_IBO_sym_kernel(training_comps, sigmas)
 K_train[np.diag_indices_from(K_train)]+=lambda_val
 alphas=np_cho_solve_wcheck(K_train, training_quants, eigh_rcond=1e-9)
 del(K_train)
 
 check_comps, check_quants=get_quants_comps(xyz_list[-check_num:], quant, delta_learning_params, oml_representation_parameters)
-K_check=gauss_sep_IBO_kernel(check_comps, training_comps, inv_sq_width_params)
+K_check=gauss_sep_IBO_kernel(check_comps, training_comps, sigmas)
 predicted_quants=np.dot(K_check, alphas)
 MAE=np.mean(np.abs(predicted_quants-check_quants))
 print("Quantity: ", quant_name, ", MAE:", MAE)

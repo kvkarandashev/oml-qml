@@ -20,12 +20,12 @@ def model_MSE_MAE(K_train, K_check, train_quant, check_quant, lambda_val):
 def print_for_red_param_rep_der_id(param_func, A, B, der_id, init_red_param_guess):
     parameters=red_hyp_func.reduced_params_to_full(init_red_param_guess)
 
-    inv_sq_width_params=parameters[1:]
+    sigmas=parameters[1:]
     lambda_val=parameters[0]
 
-    K_train=gauss_sep_IBO_sym_kernel(A, inv_sq_width_params)
+    K_train=gauss_sep_IBO_sym_kernel(A, sigmas)
 
-    K_check=gauss_sep_IBO_kernel(B, A, inv_sq_width_params)
+    K_check=gauss_sep_IBO_kernel(B, A, sigmas)
 
     MSE_der=0.0
     MSE_der_lambda=0.0
