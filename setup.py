@@ -169,7 +169,7 @@ ext_factive_learning = Extension(name = 'factive_learning',
                           f2py_options=['--quiet'])
 
 ext_fkernels_wders = Extension(name = 'fkernels_wders',
-                          sources = ['qml/fkernels_wders.f90'],
+                          sources = ['qml/fkernels_wders.f90', 'qml/fkernels_wders_module.f90'],
                           extra_f90_compile_args = COMPILER_FLAGS,
                           extra_f77_compile_args = COMPILER_FLAGS,
                           extra_compile_args = COMPILER_FLAGS,
@@ -177,6 +177,15 @@ ext_fkernels_wders = Extension(name = 'fkernels_wders',
                           language = FORTRAN,
                           f2py_options=['--quiet'])
 
+
+ext_fkernels_wders_module=Extension(name = 'fkernels_wders_module',
+                          sources = ['qml/fkernels_wders_module.f90', 'qml/fkernels_wders.f90'],
+                          extra_f90_compile_args = COMPILER_FLAGS,
+                          extra_f77_compile_args = COMPILER_FLAGS,
+                          extra_compile_args = COMPILER_FLAGS,
+                          extra_link_args = LINKER_FLAGS+MATH_LINKER_FLAGS,
+                          language = FORTRAN,
+                          f2py_options=['--quiet'])
 
 # use README.md as long description
 def readme():
@@ -216,7 +225,8 @@ def setup_pepytools():
               ext_foml_representations,
               ext_foml_kernels,
               ext_factive_learning,
-              ext_fkernels_wders
+              ext_fkernels_wders,
+              ext_fkernels_wders_module
         ],
 )
 

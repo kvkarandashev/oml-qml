@@ -97,7 +97,7 @@ integer:: dim_id
 double precision:: exp1, exp2, cosh_val, prod_comp
 
     el_wders(1)=1.0
-    el_wders(2:kern_el_dim)=0.0
+    if (calc_ders) el_wders(2:kern_el_dim)=0.0
     do dim_id=1, dimf
         prod_comp=A_resc(dim_id, 1)*B_resc(dim_id, 1)
         exp1=exp(prod_comp)
@@ -115,3 +115,136 @@ double precision:: exp1, exp2, cosh_val, prod_comp
     endif
 
 END SUBROUTINE
+
+
+! Gaussian kernel for representation vectors restricted to being positive.
+SUBROUTINE fgaussian_pos_restr_sym_kernel(A_rescaled_wsqrt, A_self_prods, sigmas,&
+                                    nA, dimf, nsigmas, kern_el_dim, kernel_wders)
+use fkernels_wders_module
+implicit none
+integer, intent(in):: nA, dimf, kern_el_dim, nsigmas
+double precision, dimension(:), intent(in):: sigmas
+double precision, dimension(:, :, :), intent(in):: A_rescaled_wsqrt
+double precision, dimension(:, :), intent(in):: A_self_prods
+double precision, dimension(:, :, :), intent(inout):: kernel_wders
+integer:: i_A1, i_A2, lin_kern_el_dim
+logical:: calc_ders, single_sigma
+double precision:: inv_sq_sigma
+
+calc_ders=(kern_el_dim/=1)
+
+lin_kern_el_dim=kern_el_dim
+
+inv_sq_sigma=sigmas(1)**(-2)
+
+if (calc_ders) then
+    lin_kern_el_dim=lin_kern_el_dim-1
+    single_sigma=(nsigmas==2)
+endif
+
+!$OMP PARALLEL DO PRIVATE(i_A1, i_A2) SCHEDULE(DYNAMIC)
+do i_A1=1, nA
+    do i_A2=1, i_A1
+        call gaussian_pos_restr_kernel_element(A_rescaled_wsqrt(:, :, i_A1), A_rescaled_wsqrt(:, :, i_A2),&
+                            A_self_prods(:, i_A1), A_self_prods(:, i_A2), dimf, lin_kern_el_dim,&
+                            kern_el_dim, calc_ders, single_sigma, inv_sq_sigma, kernel_wders(:, i_A2, i_A1))
+        if (calc_ders) then
+            kernel_wders(2, i_A2, i_A1)=kernel_wders(2, i_A2, i_A1)/sigmas(1)*2
+            if (single_sigma) then
+                kernel_wders(3:kern_el_dim, i_A2, i_A1)=-kernel_wders(3:kern_el_dim, i_A2, i_A1)/sigmas(2)
+            else
+                kernel_wders(3:kern_el_dim, i_A2, i_A1)=-kernel_wders(3:kern_el_dim, i_A2, i_A1)/sigmas(2:lin_kern_el_dim)
+            endif
+        endif
+    enddo
+enddo
+!$OMP END PARALLEL DO
+
+!$OMP PARALLEL DO PRIVATE(i_A1, i_A2) SCHEDULE(DYNAMIC)
+do i_A1=1, nA
+    do i_A2=1, i_A1
+        kernel_wders(:, i_A1, i_A2)=kernel_wders(:, i_A2, i_A1)
+    enddo
+enddo
+!$OMP END PARALLEL DO
+
+
+END SUBROUTINE
+
+
+SUBROUTINE fgaussian_pos_restr_input_init(A, sigmas, nsigmas, nA, dimf,&
+                            kern_el_dim, calc_ders, A_rescaled_wsqrt, A_self_prods)
+use fkernels_wders_module
+implicit none
+logical, intent(in):: calc_ders
+integer, intent(in):: nA, dimf, kern_el_dim, nsigmas
+double precision, intent(in), dimension(:, :):: A
+double precision, dimension(:, :, :), intent(inout):: A_rescaled_wsqrt
+double precision, dimension(:, :), intent(inout):: A_self_prods
+double precision, dimension(:), intent(in):: sigmas
+integer:: i_A
+logical:: single_sigma
+
+single_sigma=(nsigmas==2)
+
+!$OMP PARALLEL DO PRIVATE(i_A)
+    do i_A=1, nA
+        if (single_sigma) then
+             A_rescaled_wsqrt(1, :, i_A)=A(:, i_A)/sigmas(2)
+        else
+             A_rescaled_wsqrt(1, :, i_A)=A(:, i_A)/sigmas(2:nsigmas)
+        endif
+        A_rescaled_wsqrt(2, :, i_A)=sqrt(A_rescaled_wsqrt(1, :, i_A))
+        call lin_pos_restr_kernel_element_self(A_rescaled_wsqrt(:, :, i_A),&
+                    dimf, kern_el_dim, calc_ders, single_sigma, A_self_prods(:, i_A))
+        A_self_prods(1, i_A)=sqrt(A_self_prods(1, i_A))
+        if (calc_ders) A_self_prods(2:kern_el_dim, i_A)=A_self_prods(2:kern_el_dim, i_A)/2
+    enddo
+!$OMP END PARALLEL DO
+
+END SUBROUTINE
+
+SUBROUTINE fgaussian_pos_restr_kernel(A_rescaled_wsqrt, B_rescaled_wsqrt, A_self_prods, B_self_prods, sigmas,&
+                nA, nB, dimf, nsigmas, kern_el_dim, kernel_wders)
+use fkernels_wders_module
+implicit none
+integer, intent(in):: nA, nB, dimf, kern_el_dim, nsigmas
+double precision, dimension(:), intent(in):: sigmas
+double precision, dimension(:, :, :), intent(in):: A_rescaled_wsqrt, B_rescaled_wsqrt
+double precision, dimension(:, :), intent(in):: A_self_prods, B_self_prods
+double precision, dimension(:, :, :), intent(inout):: kernel_wders
+integer:: i_A, i_B, lin_kern_el_dim
+logical:: calc_ders, single_sigma
+double precision:: inv_sq_sigma
+
+calc_ders=(kern_el_dim/=1)
+
+lin_kern_el_dim=kern_el_dim
+
+inv_sq_sigma=sigmas(1)**(-2)
+
+if (calc_ders) then
+    lin_kern_el_dim=lin_kern_el_dim-1
+    single_sigma=(nsigmas==2)
+endif
+
+!$OMP PARALLEL DO PRIVATE(i_A, i_B)
+do i_A=1, nA
+    do i_B=1, nB
+        call gaussian_pos_restr_kernel_element(A_rescaled_wsqrt(:, :, i_A), B_rescaled_wsqrt(:, :, i_B),&
+                            A_self_prods(:, i_A), B_self_prods(:, i_B), dimf, lin_kern_el_dim,&
+                            kern_el_dim, calc_ders, single_sigma, inv_sq_sigma, kernel_wders(:, i_B, i_A))
+        if (calc_ders) then
+            kernel_wders(2, i_B, i_A)=kernel_wders(2, i_B, i_A)/sigmas(1)*2
+            if (single_sigma) then
+                kernel_wders(3:kern_el_dim, i_B, i_A)=-kernel_wders(3:kern_el_dim, i_B, i_A)/sigmas(2)
+            else
+                kernel_wders(3:kern_el_dim, i_B, i_A)=-kernel_wders(3:kern_el_dim, i_B, i_A)/sigmas(2:lin_kern_el_dim)
+            endif
+        endif
+    enddo
+enddo
+!$OMP END PARALLEL DO
+
+END SUBROUTINE
+

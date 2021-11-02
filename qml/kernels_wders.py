@@ -24,7 +24,7 @@
 import numpy as np
 
 from .kernels import gaussian_kernel, laplacian_kernel
-from .fkernels_wders import fgaussian_pos_sum_restr_kernel
+from .fkernels_wders import fgaussian_pos_sum_restr_kernel, fgaussian_pos_restr_kernel, fgaussian_pos_restr_sym_kernel, fgaussian_pos_restr_input_init
 
 def merge_save_indices(*arrays):
     output_array=[]
@@ -136,4 +136,89 @@ def gaussian_pos_sum_restr_kernel_wders(A, B, sigmas, use_Gauss=None, with_ders=
         return kernel
     else:
         return kernel[:, :, 0]
+
+
+# Kernel for representation vectors constrained by being undefined for negative values.
+
+
+class gaussian_pos_restr_kernel_comp_converter():
+    def __init__(self, base_converter):
+        self.base_converter=base_converter
+    def __call__(self, comp_lists):
+        merged_rep_arrs=self.base_converter(comp_lists)
+        if isinstance(merged_rep_arrs, list):
+            return [Pos_restr_kernel_input(mra) for mra in merged_rep_arrs]
+        else:
+            return Pos_restr_kernel_input(merged_rep_arrs)
+
+class Pos_restr_kernel_input:
+    def __init__(self, merged_rep_vecs, sigmas, with_ders=False):
+        assert len(merged_rep_vecs.shape)==2
+        self.nvecs=merged_rep_vecs.shape[0]
+        self.dimf=merged_rep_vecs.shape[1]
+        self.nsigmas=len(sigmas)
+        self.sigmas=sigmas
+        self.lin_kern_el_dim=1
+        self.with_ders=with_ders
+        if self.with_ders:
+            self.lin_kern_el_dim+=self.nsigmas-1
+        self.resc_rep_wsqrt=np.zeros((self.nvecs, self.dimf, 2))
+        self.self_prods=np.zeros((self.nvecs, self.lin_kern_el_dim))
+        fgaussian_pos_restr_input_init(merged_rep_vecs.T, self.sigmas, self.nsigmas, self.nvecs, self.dimf,
+                            self.lin_kern_el_dim, self.with_ders, self.resc_rep_wsqrt.T, self.self_prods.T)
+
+def gaussian_pos_restr_sym_kernel_conv_wders(Ac, sigmas, with_ders=False, use_Gauss=None):
+    nsigmas=len(sigmas)
+    assert ((Ac.dimf+1==nsigmas) or (nsigmas==2))
+    assert (Ac.with_ders==with_ders)
+
+    kern_el_dim=1
+    if with_ders:
+        kern_el_dim+=nsigmas
+
+    kernel=np.zeros((Ac.nvecs, Ac.nvecs, kern_el_dim))
+
+    fgaussian_pos_restr_sym_kernel(Ac.resc_rep_wsqrt.T, Ac.self_prods.T, Ac.sigmas,
+                Ac.nvecs, Ac.dimf, nsigmas, kern_el_dim, kernel.T)
+
+    if with_ders:
+        return kernel
+    else:
+        return kernel[:, :, 0]
+    
+
+def gaussian_pos_restr_kernel_conv_wders(Ac, Bc, sigmas, with_ders=False, use_Gauss=None):
+    nsigmas=len(sigmas)
+    assert ((Ac.dimf+1==nsigmas) or (nsigmas==2))
+    assert (Bc.dimf==Ac.dimf)
+    assert (Ac.with_ders==with_ders)
+    assert (Bc.with_ders==with_ders)
+
+    kern_el_dim=1
+    if with_ders:
+        kern_el_dim+=nsigmas
+
+    kernel=np.zeros((Ac.nvecs, Bc.nvecs, kern_el_dim))
+
+    fgaussian_pos_restr_kernel(Ac.resc_rep_wsqrt.T, Bc.resc_rep_wsqrt.T, Ac.self_prods.T, Bc.self_prods.T, Ac.sigmas,
+                Ac.nvecs, Bc.nvecs, Ac.dimf, nsigmas, kern_el_dim, kernel.T)
+
+    if with_ders:
+        return kernel
+    else:
+        return kernel[:, :, 0]
+
+
+def gaussian_pos_restr_sym_kernel_wders(A, sigmas, with_ders=False, use_Gauss=None):
+    Ac=Pos_restr_kernel_input(A, sigmas, with_ders=with_ders)
+    return gaussian_pos_restr_sym_kernel_conv_wders(Ac, sigmas, with_ders=with_ders, use_Gauss=use_Gauss)
+
+def gaussian_pos_restr_kernel_wders(A, B, sigmas, use_Gauss=None, with_ders=False):
+    Ac=Pos_restr_kernel_input(A, sigmas, with_ders=with_ders)
+    Bc=Pos_restr_kernel_input(B, sigmas, with_ders=with_ders)
+    return gaussian_pos_restr_kernel_conv_wders(Ac, Bc, sigmas, with_ders=with_ders, use_Gauss=use_Gauss)
+
+
+
+
 
