@@ -18,10 +18,10 @@ __url__ = "https://github.com/qmlcode/qml"
 FORTRAN = "f90"
 
 # GNU (default)
-COMPILER_FLAGS = ["-O3", "-fopenmp", "-m64", "-march=native", "-fPIC",
-                    "-Wno-maybe-uninitialized", "-Wno-unused-function", "-Wno-cpp"]
-#COMPILER_FLAGS = ["-g", "-fcheck=all", "-Wall", "-fbacktrace", "-m64", "-march=native", "-fPIC",
+#COMPILER_FLAGS = ["-O3", "-fopenmp", "-m64", "-march=native", "-fPIC",
 #                    "-Wno-maybe-uninitialized", "-Wno-unused-function", "-Wno-cpp"]
+COMPILER_FLAGS = ["-g", "-fcheck=all", "-Wall", "-fbacktrace", "-m64", "-march=native", "-fPIC",
+                    "-Wno-maybe-uninitialized", "-Wno-unused-function", "-Wno-cpp"]
 LINKER_FLAGS = ["-lgomp"]
 MATH_LINKER_FLAGS = ["-lblas", "-llapack"]
 

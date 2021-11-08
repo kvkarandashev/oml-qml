@@ -484,7 +484,16 @@ class logfile:
             for id1, row in enumerate(matrix_in):
                 for id2, val in enumerate(row):
                     self.output.write(('{} {} '+def_float_format+'\n').format(id1, id2, val))
-
+    def randomized_export_3D_arr(self, mat_wders, seed):
+        random_generator=random.Random(seed)
+        format_string='{} {} '
+        for i in range(3):
+            format_string+=" "+def_float_format
+        format_string+='\n'
+        if self.not_empty:
+            for id1, row in enumerate(mat_wders):
+                for id2, kern_els in enumerate(row):
+                    self.output.write(format_string.format(id1, id2, kern_els[0], kern_els[1], random_generator.sample(list(kern_els[2:]), 1)[0]))
 
 #   Calculate MAE using first training_size entries of xyz_list and last check_size entries of xyz_list.
 def calculate_MAE(xyz_list, training_size, check_size, quantity, model, delta_learning_params=None, calc_logfile=logfile(None, None), quant_logfile=logfile(None, None),
