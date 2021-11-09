@@ -300,7 +300,7 @@ double precision, dimension(:), intent(in):: sigmas
 integer, intent(in), dimension(:, :):: A_ibo_atom_nums
 integer, intent(in), dimension(:):: A_ibo_nums
 integer, intent(in):: num_kern_comps
-logical, intent(in):: global_gauss
+logical, intent(in):: global_Gauss
 double precision, dimension(:, :, :), intent(inout):: kernel_mat
 double precision, dimension(:, :, :), allocatable:: A_orb_self_covs
 double precision, dimension(:, :), allocatable:: A_self_covs
@@ -313,12 +313,12 @@ call scalar_rep_resc_ibo_sep(A_ibo_atom_reps, sigmas(2:num_scalar_reps+1)*2.0, n
         A_max_num_ibos, A_num_mols, A_ibo_atom_sreps)
 
 allocate(A_orb_self_covs(num_kern_comps, A_max_num_ibos, A_num_mols))
-if (global_gauss) then
+if (global_Gauss) then
     allocate(A_self_covs(num_kern_comps, A_num_mols))
     call self_cov_prods(num_scalar_reps, A_ibo_atom_sreps,&
                     A_ibo_arep_rhos, A_ibo_atom_nums, A_ibo_nums,&
                     A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols,&
-                    A_orb_self_covs, num_kern_comps, A_self_covs)
+                    A_orb_self_covs, num_kern_comps, A_ibo_rhos, A_self_covs)
 else
     call self_cov_prods(num_scalar_reps, A_ibo_atom_sreps,&
                     A_ibo_arep_rhos, A_ibo_atom_nums, A_ibo_nums,&
@@ -329,7 +329,7 @@ endif
 !$OMP PARALLEL DO PRIVATE(A_mol_counter1, A_mol_counter2) SCHEDULE(DYNAMIC)
 do A_mol_counter1=1, A_num_mols
     do A_mol_counter2=1, A_mol_counter1
-        if (global_gauss) then
+        if (global_Gauss) then
             call fgmo_sep_ibo_kernel_element_wders(num_scalar_reps, A_ibo_atom_sreps(:,:,:,A_mol_counter2),&
                 A_ibo_arep_rhos(:,:,A_mol_counter2), A_ibo_rhos(:,A_mol_counter2),&
                 A_ibo_atom_nums(:, A_mol_counter2),A_ibo_nums(A_mol_counter2),&
@@ -407,11 +407,11 @@ if (global_gauss) then
     call self_cov_prods(num_scalar_reps, A_ibo_atom_sreps,&
                     A_ibo_arep_rhos, A_ibo_atom_nums, A_ibo_nums,&
                     A_max_num_ibo_atom_reps, A_max_num_ibos, A_num_mols,&
-                    A_orb_self_covs, num_kern_comps, A_self_covs)
+                    A_orb_self_covs, num_kern_comps, A_ibo_rhos, A_self_covs)
     call self_cov_prods(num_scalar_reps, B_ibo_atom_sreps,&
                     B_ibo_arep_rhos, B_ibo_atom_nums, B_ibo_nums,&
                     B_max_num_ibo_atom_reps, B_max_num_ibos, B_num_mols,&
-                    B_orb_self_covs, num_kern_comps, B_self_covs)
+                    B_orb_self_covs, num_kern_comps, B_ibo_rhos, B_self_covs)
 else
     call self_cov_prods(num_scalar_reps, A_ibo_atom_sreps,&
                     A_ibo_arep_rhos, A_ibo_atom_nums, A_ibo_nums,&
@@ -427,7 +427,7 @@ endif
 !$OMP PARALLEL DO PRIVATE(A_mol_counter, B_mol_counter) SCHEDULE(DYNAMIC)
 do A_mol_counter=1, A_num_mols
     do B_mol_counter=1, B_num_mols
-        if (global_gauss) then
+        if (global_Gauss) then
             call fgmo_sep_ibo_kernel_element_wders(num_scalar_reps, A_ibo_atom_sreps(:,:,:,A_mol_counter),&
                 A_ibo_arep_rhos(:,:,A_mol_counter), A_ibo_rhos(:,A_mol_counter),&
                 A_ibo_atom_nums(:, A_mol_counter), A_ibo_nums(A_mol_counter),&

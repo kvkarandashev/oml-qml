@@ -163,12 +163,14 @@ def MAE_bisection_optimization(initial_lambda_opt_step, train_kernel, train_vals
 #########
 class Gradient_optimization_obj:
     def __init__(self, training_compounds, training_quants, check_compounds, check_quants, use_Gauss=False, use_MAE=True,
-                    reduced_hyperparam_func=None, sym_kernel_func=None, kernel_func=None, kernel_input_converter=None):
+                    reduced_hyperparam_func=None, sym_kernel_func=None, kernel_func=None, kernel_input_converter=None, kernel_additional_args={}):
         self.init_kern_funcs(use_Gauss=use_Gauss, reduced_hyperparam_func=reduced_hyperparam_func, sym_kernel_func=sym_kernel_func,
                             kernel_func=kernel_func, kernel_input_converter=kernel_input_converter)
 
         self.training_compounds=GMO_sep_IBO_kern_input(training_compounds)
         self.check_compounds=GMO_sep_IBO_kern_input(check_compounds)
+
+        self.kernel_additional_args=kernel_additional_args
 
         self.training_quants=training_quants
         self.check_quants=check_quants
@@ -204,15 +206,15 @@ class Gradient_optimization_obj:
         self.all_parameters=parameters
         self.num_params=len(self.all_parameters)
         self.lambda_val=parameters[0]
-        self.inv_sqwidth_params=parameters[1:]
+        self.sigmas=parameters[1:]
 
     def recalculate_kernel_matrices(self):
-        self.train_kernel=self.sym_kern_func(self.training_compounds, self.inv_sqwidth_params)
-        self.check_kernel=self.def_kern_func(self.check_compounds, self.training_compounds, self.inv_sqwidth_params)
+        self.train_kernel=self.sym_kern_func(self.training_compounds, self.sigmas, **self.kernel_additional_args)
+        self.check_kernel=self.def_kern_func(self.check_compounds, self.training_compounds, self.sigmas, **self.kernel_additional_args)
 
     def recalculate_kernel_mats_ders(self):
-        train_kernel_wders=self.sym_kern_func(self.training_compounds, self.inv_sqwidth_params, with_ders=True)
-        check_kernel_wders=self.def_kern_func(self.check_compounds, self.training_compounds, self.inv_sqwidth_params, with_ders=True)
+        train_kernel_wders=self.sym_kern_func(self.training_compounds, self.sigmas, with_ders=True, **self.kernel_additional_args)
+        check_kernel_wders=self.def_kern_func(self.check_compounds, self.training_compounds, self.sigmas, with_ders=True, **self.kernel_additional_args)
 
         self.train_kernel=train_kernel_wders[:, :, 0]
         self.check_kernel=check_kernel_wders[:, :, 0]
@@ -337,10 +339,12 @@ class GOO_ensemble_subset(Gradient_optimization_obj):
 class GOO_ensemble(Gradient_optimization_obj):
     def __init__(self, all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=False, use_MAE=True,
                         reduced_hyperparam_func=None, num_procs=None, num_threads=None, kernel_input_converter=None,
-                        sym_kernel_func=None, num_kernel_params=None):
+                        sym_kernel_func=None, num_kernel_params=None, kernel_additional_args={}):
 
         self.init_kern_funcs(use_Gauss=use_Gauss, reduced_hyperparam_func=reduced_hyperparam_func,
                             sym_kernel_func=sym_kernel_func, kernel_func=None, kernel_input_converter=kernel_input_converter)
+
+        self.kernel_additional_args=kernel_additional_args
 
         self.all_compounds=self.kernel_input_converter(all_compounds)
 
@@ -397,7 +401,7 @@ class GOO_ensemble(Gradient_optimization_obj):
             return embarassingly_parallel(single_subset_error_measure_wders, self.goo_ensemble_subsets, (parameters, lambda_der_only), num_threads=self.num_threads, num_procs=self.num_procs)
 
     def recalculate_global_matrices(self, parameters):
-        global_kernel_wders=self.sym_kern_func(self.all_compounds, parameters[1:], with_ders=True)
+        global_kernel_wders=self.sym_kern_func(self.all_compounds, parameters[1:], with_ders=True, **self.kernel_additional_args)
         self.global_matrix=global_kernel_wders[:, :, 0]
         print("# GOO_ensemble: Kernel recalculated, average diagonal element:", np.mean(self.global_matrix[np.diag_indices_from(self.global_matrix)]))
         self.global_matrix_ders=one_diag_unity_tensor(self.tot_num_points, len(parameters))

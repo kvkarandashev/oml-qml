@@ -678,7 +678,7 @@ double precision:: dummy_inv_sq_sigma
                                 /A_orb_self_covs(1, ibo_id, mol_id)
             A_orb_self_covs(1, ibo_id, mol_id)=sqrt(A_orb_self_covs(1, ibo_id, mol_id))
         enddo
-        if (present(A_self_covs)) then
+        if (present(A_ibo_rhos)) then
             call flmo_sep_ibo_kernel_element_wders(num_scalar_reps,&
                 A_ibo_atom_sreps(:, :, :, mol_id), A_ibo_arep_rhos(:, :, mol_id),&
                 A_ibo_rhos(:, mol_id), A_ibo_atom_nums(:,mol_id), A_ibo_nums(mol_id),&

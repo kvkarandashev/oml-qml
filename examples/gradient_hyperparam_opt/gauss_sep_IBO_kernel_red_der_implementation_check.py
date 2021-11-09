@@ -17,15 +17,15 @@ def model_MSE_MAE(K_train, K_check, train_quant, check_quant, lambda_val):
     error_vals=check_quant-predictions
     return np.mean(error_vals**2), np.mean(np.abs(error_vals))
 
-def print_for_red_param_rep_der_id(param_func, A, B, der_id, init_red_param_guess):
+def print_for_red_param_rep_der_id(param_func, A, B, der_id, init_red_param_guess, global_Gauss):
     parameters=red_hyp_func.reduced_params_to_full(init_red_param_guess)
 
     sigmas=parameters[1:]
     lambda_val=parameters[0]
 
-    K_train=gauss_sep_IBO_sym_kernel(A, sigmas)
+    K_train=gauss_sep_IBO_sym_kernel(A, sigmas, global_Gauss=global_Gauss)
 
-    K_check=gauss_sep_IBO_kernel(B, A, sigmas)
+    K_check=gauss_sep_IBO_kernel(B, A, sigmas, global_Gauss=global_Gauss)
 
     MSE_der=0.0
     MSE_der_lambda=0.0
@@ -43,8 +43,8 @@ def print_for_red_param_rep_der_id(param_func, A, B, der_id, init_red_param_gues
         cur_inv_sq_width_params=cur_parameters[1:]
         cur_lambda_val=cur_parameters[0]
 
-        cur_K_train=gauss_sep_IBO_sym_kernel(A, cur_inv_sq_width_params)
-        cur_K_check=gauss_sep_IBO_kernel(B, A, cur_inv_sq_width_params)
+        cur_K_train=gauss_sep_IBO_sym_kernel(A, cur_inv_sq_width_params, global_Gauss=global_Gauss)
+        cur_K_check=gauss_sep_IBO_kernel(B, A, cur_inv_sq_width_params, global_Gauss=global_Gauss)
 
         MSE_fd, MAE_fd=model_MSE_MAE(cur_K_train, cur_K_check, train_quant, check_quant, cur_lambda_val)
 
@@ -58,7 +58,10 @@ def print_for_red_param_rep_der_id(param_func, A, B, der_id, init_red_param_gues
     MSE_ref, MAE_ref=model_MSE_MAE(K_train, K_check, train_quant, check_quant, lambda_val)
 
     # For MSE.
-    GOO=Gradient_optimization_obj(A, train_quant, B, check_quant, use_MAE=False, use_Gauss=True, reduced_hyperparam_func=red_hyp_func)
+    goo_args=[A, train_quant, B, check_quant]
+    goo_kwargs={"use_Gauss" : True, "reduced_hyperparam_func" : red_hyp_func, "kernel_additional_args" : {"global_Gauss" : global_Gauss}}
+
+    GOO=Gradient_optimization_obj(*goo_args, use_MAE=False, **goo_kwargs)
 
     MSE_GOO=GOO.error_measure(parameters)
     print("MSE diffs", MSE_ref, MSE_GOO, MSE_ref-MSE_GOO)
@@ -69,7 +72,7 @@ def print_for_red_param_rep_der_id(param_func, A, B, der_id, init_red_param_gues
     print("MSE_der diffs", MSE_der, MSE_der_GOO, MSE_der_GOO-MSE_der)
 
     # For MAE.
-    GOO=Gradient_optimization_obj(A, train_quant, B, check_quant, use_Gauss=True, reduced_hyperparam_func=red_hyp_func)
+    GOO=Gradient_optimization_obj(*goo_args, **goo_kwargs)
 
     MAE_GOO=GOO.error_measure(parameters)
     print("MAE diffs", MAE_ref, MAE_GOO, MAE_ref-MAE_GOO)
@@ -79,7 +82,7 @@ def print_for_red_param_rep_der_id(param_func, A, B, der_id, init_red_param_gues
     MAE_der_GOO=MAE_der_GOO_all[der_id]
     print("MAE_der diffs", MAE_der, MAE_der_GOO, MAE_der_GOO-MAE_der)
 
-def print_for_red_param_representation(red_hyp_func, A, B):
+def print_for_red_param_representation(red_hyp_func, A, B, global_Gauss):
     num_params=red_hyp_func.num_reduced_params
 
     init_red_param_guess=[]
@@ -98,7 +101,7 @@ def print_for_red_param_representation(red_hyp_func, A, B):
 
     for der_id in range(num_params):
         print("der_id", der_id)
-        print_for_red_param_rep_der_id(red_hyp_func, A, B, der_id, init_red_param_guess)
+        print_for_red_param_rep_der_id(red_hyp_func, A, B, der_id, init_red_param_guess, global_Gauss)
 
 xyz_list=glob.glob("../../tests/qm7/*.xyz")
 
@@ -138,6 +141,8 @@ red_hyp_funcs.append(Single_rescaling_rhf(stddevs=stddevs, use_Gauss=use_Gauss,
 
 for red_hyp_func in red_hyp_funcs:
     print("red_hyp_func:", red_hyp_func)
-    print_for_red_param_representation(red_hyp_func, A, B)
+    for global_Gauss in [False, True]:
+        print("global_Gauss", global_Gauss)
+        print_for_red_param_representation(red_hyp_func, A, B, global_Gauss)
 
 
