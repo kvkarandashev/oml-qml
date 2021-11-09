@@ -163,7 +163,7 @@ def MAE_bisection_optimization(initial_lambda_opt_step, train_kernel, train_vals
 #########
 class Gradient_optimization_obj:
     def __init__(self, training_compounds, training_quants, check_compounds, check_quants, use_Gauss=False, use_MAE=True,
-                    reduced_hyperparam_func=None, sym_kernel_func=None, kernel_func=None, kernel_input_converter=None, kernel_additional_args={}):
+                    reduced_hyperparam_func=None, sym_kernel_func=None, kernel_func=None, kernel_input_converter=None, **kernel_additional_args):
         self.init_kern_funcs(use_Gauss=use_Gauss, reduced_hyperparam_func=reduced_hyperparam_func, sym_kernel_func=sym_kernel_func,
                             kernel_func=kernel_func, kernel_input_converter=kernel_input_converter)
 
@@ -339,7 +339,7 @@ class GOO_ensemble_subset(Gradient_optimization_obj):
 class GOO_ensemble(Gradient_optimization_obj):
     def __init__(self, all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=False, use_MAE=True,
                         reduced_hyperparam_func=None, num_procs=None, num_threads=None, kernel_input_converter=None,
-                        sym_kernel_func=None, num_kernel_params=None, kernel_additional_args={}):
+                        sym_kernel_func=None, num_kernel_params=None, **kernel_additional_args):
 
         self.init_kern_funcs(use_Gauss=use_Gauss, reduced_hyperparam_func=reduced_hyperparam_func,
                             sym_kernel_func=sym_kernel_func, kernel_func=None, kernel_input_converter=kernel_input_converter)
@@ -418,7 +418,7 @@ def single_subset_error_measure_wders(subset, parameters, lambda_der_only):
     return subset.error_measure_wders(parameters, lambda_der_only=lambda_der_only)
 
 def generate_random_GOO_ensemble(all_compounds, all_quantities, num_kfolds=16, training_set_ratio=0.5, use_Gauss=False, use_MAE=True,
-        reduced_hyperparam_func=None, num_procs=None, num_threads=None, kernel_input_converter=None, sym_kernel_func=None):
+        reduced_hyperparam_func=None, num_procs=None, num_threads=None, kernel_input_converter=None, sym_kernel_func=None, **other_kwargs):
     num_points=len(all_quantities)
     train_point_num=int(num_points*training_set_ratio)
 
@@ -446,7 +446,7 @@ def generate_random_GOO_ensemble(all_compounds, all_quantities, num_kfolds=16, t
         check_id_lists.append(check_id_list)
 
     return GOO_ensemble(all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=use_Gauss, use_MAE=use_MAE, reduced_hyperparam_func=reduced_hyperparam_func,
-                                num_procs=num_procs, num_threads=num_threads, kernel_input_converter=kernel_input_converter, sym_kernel_func=sym_kernel_func)
+                                num_procs=num_procs, num_threads=num_threads, kernel_input_converter=kernel_input_converter, sym_kernel_func=sym_kernel_func, **other_kwargs)
     
 
 #   For going between the full hyperparameter set (lambda, global sigma, and other sigmas)
@@ -475,7 +475,7 @@ class Reduced_hyperparam_func:
         self.initiate_param_nums(len(sigmas)+1)
         output=np.zeros((self.num_full_params,))
         output[0]=np.log(init_lambda)
-        output[-len(base_inv_sqwidth_params):]=np.log(sigmas)
+        output[-len(sigmas):]=np.log(sigmas*np.sqrt(len(sigmas)))
         return output
     def jacobian(self, parameters):
         self.initiate_param_nums(parameters)
@@ -543,10 +543,11 @@ class Single_rescaling_rhf(Reduced_hyperparam_func):
         output[-1]/=est_counter
         return output
     def initial_reduced_parameter_guess(self, init_lambda, *other_args):
+        init_resc_param_guess=np.log(self.num_full_params-2)
         if self.use_Gauss:
-            return np.array([np.log(init_lambda), 1.0, 1.0])
+            return np.array([np.log(init_lambda), 0.0, init_resc_param_guess])
         else:
-            return np.array([np.log(init_lambda), 1.0])
+            return np.array([np.log(init_lambda), init_resc_param_guess])
     def __str__(self):
         vals_names={"num_full_params" : self.num_full_params,
                     "num_reduced_params" : self.num_reduced_params,

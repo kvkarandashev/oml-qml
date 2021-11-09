@@ -59,7 +59,7 @@ def print_for_red_param_rep_der_id(param_func, A, B, der_id, init_red_param_gues
 
     # For MSE.
     goo_args=[A, train_quant, B, check_quant]
-    goo_kwargs={"use_Gauss" : True, "reduced_hyperparam_func" : red_hyp_func, "kernel_additional_args" : {"global_Gauss" : global_Gauss}}
+    goo_kwargs={"use_Gauss" : True, "reduced_hyperparam_func" : red_hyp_func, "global_Gauss" : global_Gauss}
 
     GOO=Gradient_optimization_obj(*goo_args, use_MAE=False, **goo_kwargs)
 
