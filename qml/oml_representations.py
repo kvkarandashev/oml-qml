@@ -37,7 +37,8 @@ class OML_rep_params:
 #   l_max               - maximal value of angular momentum.
     def __init__(self, tol_orb_cutoff=0.0,  ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
                     propagator_coup_mat=False, num_prop_times=1, prop_delta_t=1.0,
-                    ibo_fidelity_rep=False, add_global_ibo_couplings=False):
+                    ibo_fidelity_rep=False, add_global_ibo_couplings=False, atom_sorted_pseudo_ibos=False,
+                    ofd_coup_mats=False, orb_en_adj=False):
         self.tol_orb_cutoff=tol_orb_cutoff
         self.ibo_atom_rho_comp=ibo_atom_rho_comp
         self.max_angular_momentum=max_angular_momentum
@@ -46,6 +47,10 @@ class OML_rep_params:
         self.num_prop_times=num_prop_times
         self.prop_delta_t=prop_delta_t
         self.add_global_ibo_couplings=add_global_ibo_couplings
+
+        self.atom_sorted_pseudo_ibos=atom_sorted_pseudo_ibos
+        self.ofd_coup_mats=ofd_coup_mats
+        self.orb_en_adj=orb_en_adj
 
         self.ibo_fidelity_rep=ibo_fidelity_rep
     def __str__(self):
@@ -76,6 +81,25 @@ def gen_propagator_based_coup_mats(rep_params, hf_orb_coeffs, hf_orb_energies):
                 output=(*output, new_mat)
         return output
 
+def reconstr_mat(inv_hf_orb_coeffs, mo_energy=None, mo_occ=None, mat_type="ovlp"):
+    naos=inv_hf_orb_coeffs.shape[0]
+    mo_rep_mat=np.eye(naos)
+    for ao_id in range(naos):
+        if mat_type=="density":
+            if mo_occ[ao_id]<0.5:
+                mo_rep_mat[ao_id, ao_id]=0.0
+        if mat_type=="Fock":
+            mo_rep_mat[ao_id, ao_id]=mo_energy[ao_id]
+    return np.matmul(inv_hf_orb_coeffs.T, np.matmul(mo_rep_mat, inv_hf_orb_coeffs))
+
+
+def reconstr_mats(mo_coeff, mo_energy=None, mo_occ=None, mat_types=["ovlp"]):
+    inv_hf_orb_coeffs=np.linalg.inv(mo_coeff)
+    output=()
+    for mat_type in mat_types:
+        output=(*output, reconstr_mat(inv_hf_orb_coeffs, mo_energy=mo_energy, mo_occ=mo_occ, mat_type=mat_type))
+    return output
+
 #   Representation of contribution of a single atom to an IBO.
 
 class OML_ibo_atom_rep:
@@ -89,6 +113,7 @@ class OML_ibo_atom_rep:
         else:
             self.scalar_reps, self.rho=ang_mom_descr(self.atom_ao_range, coeffs, angular_momenta, ovlp_mat, rep_params.max_angular_momentum)
         self.pre_renorm_rho=self.rho
+        self.atom_id=None
     def completed_scalar_reps(self, coeffs, rep_params, angular_momenta, coup_mats):
         if rep_params.use_Fortran:
             couplings=np.zeros(scalar_coup_length(rep_params, coup_mats))
@@ -108,9 +133,13 @@ class OML_ibo_atom_rep:
                             couplings.append(cur_coupling)
         self.scalar_reps=np.append(self.scalar_reps, couplings)
         self.scalar_reps/=self.pre_renorm_rho
-        if rep_params.propagator_coup_mat:
+        if (rep_params.propagator_coup_mat or rep_params.ofd_coup_mats):
             # The parts corresponding to the angular momentum distribution are duplicated, remove:
             self.scalar_reps=self.scalar_reps[rep_params.max_angular_momentum:]
+    def energy_readjustment(self, energy_shift, rep_params):
+        nam=num_ang_mom(rep_params)
+        coup_mat_comp_num=(nam*(3*nam+1))//2
+        self.scalar_reps[coup_mat_comp_num:2*coup_mat_comp_num]-=self.scalar_reps[:coup_mat_comp_num]*energy_shift
     def __str__(self):
         return "OML_ibo_atom_rep,rho:"+str(self.rho)
     def __repr__(self):
@@ -166,7 +195,8 @@ def component_id_ang_mom_map(rep_params):
         num_coup_matrices=rep_params.num_prop_times*2+1
     else:
         # Components corresponding to the angular momentum distribution.
-        num_coup_matrices=3 # F, J, and K
+        num_coup_matrices=3 # F, J, and K; or overlap, F, and density
+    if not (rep_params.propagator_coup_mat or rep_params.ofd_coup_mats):
         for ang_mom in range(1, num_ang_mom(rep_params)):
             output.append([ang_mom, ang_mom, -1, True])
     for coup_mat_id in range(num_coup_matrices):
@@ -212,7 +242,8 @@ def generate_atom_ao_ranges(mol):
     return np.array(output)
 
 def placeholder_ibo_rep(rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coupling_mats):
-    placeholder_ibo_coeffs=np.repeat(1.0, len(ovlp_mat))
+    placeholder_ibo_coeffs=np.zeros(len(ovlp_mat))
+    placeholder_ibo_coeffs[0]=1.0
     placeholder_rep=OML_ibo_rep(placeholder_ibo_coeffs, rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coupling_mats)
     placeholder_rep.virtual=True
     return placeholder_rep
@@ -225,35 +256,45 @@ def generate_ibo_rep_array(ibo_mat, rep_params, aos, atom_ao_ranges, ovlp_mat, *
         return [placeholder_ibo_rep(rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coupling_mats)]
     # It's important that ovlp_mat appears first in this array.
     ibo_tmat=ibo_mat.T
-    output=[OML_ibo_rep(ibo_coeffs, rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coupling_mats) for ibo_coeffs in ibo_tmat]
+    output=[OML_ibo_rep_from_coeffs(ibo_coeffs, rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coupling_mats) for ibo_coeffs in ibo_tmat]
     # TO-DO add definition of add_global_couplings?
     if rep_params.add_global_ibo_couplings:
         for ibo_id in range(len(output)):
             output[ibo_id].add_global_couplings(ibo_tmat, ibo_id, rep_params, atom_ids, angular_momenta, coupling_mats)
     return output
 
+def gen_atom_sorted_pseudo_ibos(ibo_rep_arr):
+    backup_placeholder_arr=[]
+    atom_sorted_areps={}
+    ibo_occ=None
+    for ibo_rep in ibo_rep_arr:
+        if ibo_rep.virtual:
+            backup_placeholder_arr.append(ibo_rep)
+        else:
+            if ibo_occ is None:
+                ibo_occ=ibo_rep.rho
+            for ibo_atom_rep in ibo_rep.ibo_atom_reps:
+                cur_atom_id=ibo_atom_rep.atom_id
+                if cur_atom_id in atom_sorted_areps:
+                    atom_sorted_areps[cur_atom_id].append(ibo_atom_rep)
+                else:
+                    atom_sorted_areps[cur_atom_id]=[ibo_atom_rep]
+    output=[]
+    for atom_id in atom_sorted_areps:
+        output.append(OML_ibo_rep(None, atom_sorted_areps[atom_id]))
+        output[-1].rho=ibo_occ
+    if len(output)==0:
+        return backup_placeholder_arr
+    else:
+        return output
+
 #   Representation of an IBO from atomic contributions.
 class OML_ibo_rep:
-    def __init__(self, ibo_coeffs, rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coup_mats):
-        from .oml_representations import weighted_array
+    def __init__(self, ibo_coeffs, ibo_atom_reps):
         self.rho=0.0
         self.full_coeffs=ibo_coeffs
         self.virtual=False
-        atom_list=[]
-        prev_atom=-1
-        for atom_id, ao_coeff in zip(atom_ids, self.full_coeffs):
-            if abs(ao_coeff)>rep_params.tol_orb_cutoff:
-                if prev_atom != atom_id:
-                    atom_list.append(atom_id)
-                    prev_atom=atom_id
-        # Each of the resulting groups of AOs is represented with OML_ibo_atom_rep object.
-        self.ibo_atom_reps=weighted_array([OML_ibo_atom_rep(atom_ao_range, self.full_coeffs, rep_params, angular_momenta, ovlp_mat)
-                                for atom_ao_range in atom_ao_ranges])
-        self.ibo_atom_reps.normalize_sort_rhos()
-        # Try to decrease the number of atomic representations, leaving only the most relevant ones.
-        self.ibo_atom_reps.cutoff_minor_weights(remaining_rho=rep_params.ibo_atom_rho_comp)
-        for ibo_arep_counter in range(len(self.ibo_atom_reps)):
-            self.ibo_atom_reps[ibo_arep_counter].completed_scalar_reps(self.full_coeffs, rep_params, angular_momenta, coup_mats)
+        self.ibo_atom_reps=ibo_atom_reps
     def add_global_ibo_couplings(self, all_ibo_coeffs, ibo_id, rep_params, atom_ids, angular_momenta, coup_mats):
         global_ibo_couplings=np.zeros(len(coup_mats)*((max_angular_momentum+1)*(3*max_angular_momentum+4))/2)
         fgen_ibo_global_couplings(all_ibo_coeffs, ibo_id, angular_momenta, rep_params.max_angular_momentum,
@@ -262,6 +303,34 @@ class OML_ibo_rep:
         for ibo_arep_counter in range(len(self.ibo_atom_reps)):
             self.ibo_atom_reps[ibo_arep_counter].scalar_reps=np.append(self.ibo_atom_reps[ibo_arep_counter].scalar_reps,
                                         global_ibo_couplings)
+    def orbital_energy_readjustment(self, Fock_mat, rep_params):
+        energy_shift=np.dot(self.full_coeffs, np.matmul(Fock_mat, self.full_coeffs))
+        for ibo_arep_counter in range(len(self.ibo_atom_reps)):
+            self.ibo_atom_reps[ibo_arep_counter].energy_readjustment(energy_shift, rep_params)
+
+
+def OML_ibo_rep_from_coeffs(ibo_coeffs, rep_params, atom_ids, atom_ao_ranges, angular_momenta, ovlp_mat, coup_mats):
+    atom_list=[]
+    prev_atom=-1
+    for atom_id, ao_coeff in zip(atom_ids, ibo_coeffs):
+        if abs(ao_coeff)>rep_params.tol_orb_cutoff:
+            if prev_atom != atom_id:
+                atom_list.append(atom_id)
+                prev_atom=atom_id
+    # Each of the resulting groups of AOs is represented with OML_ibo_atom_rep object.
+    ibo_atom_reps=[]
+    for atom_id, atom_ao_range in enumerate(atom_ao_ranges):
+        cur_ibo_atom_rep=OML_ibo_atom_rep(atom_ao_range, ibo_coeffs, rep_params, angular_momenta, ovlp_mat)
+        cur_ibo_atom_rep.atom_id=atom_id
+        ibo_atom_reps.append(cur_ibo_atom_rep)
+    ibo_atom_reps=weighted_array(ibo_atom_reps)
+    
+    ibo_atom_reps.normalize_sort_rhos()
+    # Try to decrease the number of atomic representations, leaving only the most relevant ones.
+    ibo_atom_reps.cutoff_minor_weights(remaining_rho=rep_params.ibo_atom_rho_comp)
+    for ibo_arep_counter in range(len(ibo_atom_reps)):
+        ibo_atom_reps[ibo_arep_counter].completed_scalar_reps(ibo_coeffs, rep_params, angular_momenta, coup_mats)
+    return OML_ibo_rep(ibo_coeffs, ibo_atom_reps)
 
 class weighted_array(list):
     def normalize_rhos(self, normalization_constant=None):

@@ -23,7 +23,9 @@
 # TO-DO change the way the default spin is chosen? Get rid of IAOs?
 
 from .compound import Compound
-from .oml_representations import generate_ibo_rep_array, gen_propagator_based_coup_mats, weighted_array, generate_ibo_fidelity_rep
+from .oml_representations import generate_ibo_rep_array, gen_propagator_based_coup_mats,\
+                            weighted_array, generate_ibo_fidelity_rep, reconstr_mats,\
+                            gen_atom_sorted_pseudo_ibos
 import jax.numpy as jnp
 import numpy as np
 import copy
@@ -262,20 +264,30 @@ class OML_compound(Compound):
             self.ibo_occ=orb_occ_prop_coeff(self)
             self.orb_reps=generate_ibo_fidelity_rep(self, rep_params)
         else:
-
             self.orb_reps=[]
             for spin in range(self.num_spins()):
             #   Generate the array of orbital representations.
+                coupling_matrices=None
                 if rep_params.propagator_coup_mat:
                     coupling_matrices=gen_propagator_based_coup_mats(rep_params, self.mo_coeff[spin], self.mo_energy[spin])
                     coupling_matrices=(self.ovlp_mat, *coupling_matrices)
-                else:
+                if rep_params.ofd_coup_mats:
+                    cur_Fock_mat, cur_density_mat=reconstr_mats(self.mo_coeff[spin], mo_energy=self.mo_energy[spin],
+                                                        mo_occ=self.mo_occ[spin], mat_types=["Fock", "density"])
+                    coupling_matrices=(self.ovlp_mat, cur_Fock_mat, cur_density_mat)
+                if coupling_matrices is None:
                     coupling_matrices=(self.fock_mat[spin], self.j_mat[spin]/orb_occ_prop_coeff(self), self.k_mat[spin]/orb_occ_prop_coeff(self))
-                self.orb_reps+=generate_ibo_rep_array(self.ibo_mat[spin], rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)
+                cur_ibo_rep_array=generate_ibo_rep_array(self.ibo_mat[spin], rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)
+                if (rep_params.ofd_coup_mats and rep_params.orb_en_adj):
+                    for ibo_id in range(len(cur_ibo_rep_array)):
+                        cur_ibo_rep_array[ibo_id].orbital_energy_readjustment(cur_Fock_mat, rep_params)
+                self.orb_reps+=cur_ibo_rep_array
             ibo_occ=orb_occ_prop_coeff(self)
             for orb_rep_counter in range(len(self.orb_reps)):
                 if not self.orb_reps[orb_rep_counter].virtual:
                     self.orb_reps[orb_rep_counter].rho=ibo_occ
+            if rep_params.atom_sorted_pseudo_ibos:
+                self.orb_reps=gen_atom_sorted_pseudo_ibos(self.orb_reps)
     #   Find maximal value of angular momentum for AOs of current molecule.
     def find_max_angular_momentum(self):
         if not self.mats_created:
@@ -325,13 +337,10 @@ class OML_compound(Compound):
             mf.with_solvent.eps=self.solvent_eps
         # TO-DO why this does not work???
         if initial_guess_comp is not None:
-            mf.mo_coeff=self.mf_spin_adj_copy(initial_guess_comp.mo_coeff)
-            mf.mo_occ=self.mf_spin_adj_copy(initial_guess_comp.mo_occ)
-            mf.init_guess=mf.make_rdm1()
-            print(type(mf.init_guess), mf.init_guess.shape)
-            mf.mo_occ=None
-            mf.mo_coeff=None
-        mf.run()
+            dm_init_guess=create_dm_init_guess(mf.make_rdm1, initial_guess_comp, self.num_spins())
+            mf.kernel(dm_init_guess)
+        else:
+            mf.run()
         if not (mf.converged or self.use_Huckel):
             mf=scf.newton(mf)
             mf.run()
@@ -407,26 +416,26 @@ class OML_compound(Compound):
             return jnp.array([matrices])
         else:
             return jnp.array(matrices)
-    def mf_spin_adj_copy(self, matrix_in):
-        matrix_nspins=matrix_in.shape[0]
-        nspins=self.num_spins()
-        if matrix_nspins==1:
-            true_matrix=np.array(matrix_in[0])
-        else:
-            true_matrix=np.array(matrix_in)
-        if nspins==matrix_nspins:
-            return np.copy(true_matrix)
-        else:
-            if nspins==1: # TO-DO would it be better to return an error instead???
-                return np.copy(true_matrix[0])
-            else:
-                return np.array([np.copy(true_matrix), np.copy(true_matrix)])
-
     def num_spins(self):
         if is_restricted[self.calc_type]:
             return 1
         else:
             return 2
+
+def create_dm_init_guess(rdm_maker, initial_guess_comp, nspins):
+    copied_nspins=initial_guess_comp.num_spins()
+    dm=[]
+    for spin_id in range(nspins):
+        if copied_nspins==1:
+            copied_spin_id=0
+        else:
+            copied_spin_id=spin_id
+        dm.append(rdm_maker(mo_coeff=np.array(initial_guess_comp.mo_coeff[copied_spin_id]),
+                                mo_occ=np.array(initial_guess_comp.mo_occ[copied_spin_id])))
+    if nspins==1:
+        return dm[0]
+    else:
+        return np.array(dm)
 
 def remove_HOMO(oml_comp):
     used_orb_type=oml_comp.used_orb_type
@@ -472,10 +481,13 @@ class OML_pyscf_calc_params:
 
 #   TO-DO replace the growing number of "second_" arguments with "second_kwarg_override" or something similarly named.
 class OML_Slater_pair:
-    def __init__(self, second_calc_type="HF", second_charge=0, second_orb_type="standard_IBO", second_spin=None, second_xyz=None, second_mats_savefile=None, initial_guess_from_first=False, **oml_comp_kwargs):
+    def __init__(self, second_calc_type="HF", second_charge=None, second_orb_type=None, second_spin=None,
+                        second_xyz=None, second_mats_savefile=None, initial_guess_from_first=False,
+                        second_solvent_eps=None,**oml_comp_kwargs):
         self.initial_guess_from_first=initial_guess_from_first
         comp1=OML_compound(**oml_comp_kwargs)
-        second_special_kwarg_dict={"calc_type" : second_calc_type, "charge" : second_charge, "used_orb_type" : second_orb_type, "spin" : second_spin, "xyz" : second_xyz, "mats_savefile" : second_mats_savefile}
+        second_special_kwarg_dict={"calc_type" : second_calc_type, "charge" : second_charge, "used_orb_type" : second_orb_type,
+                        "spin" : second_spin, "xyz" : second_xyz, "mats_savefile" : second_mats_savefile, "solvent_eps" : second_solvent_eps}
         second_oml_comp_kwargs=copy.copy(oml_comp_kwargs)
         for special_key in second_special_kwarg_dict:
             special_val=second_special_kwarg_dict[special_key]
