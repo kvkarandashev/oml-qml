@@ -25,7 +25,7 @@
 from .compound import Compound
 from .oml_representations import generate_ibo_rep_array, gen_propagator_based_coup_mats,\
                             weighted_array, generate_ibo_fidelity_rep, reconstr_mats,\
-                            gen_atom_sorted_pseudo_ibos
+                            gen_atom_sorted_pseudo_ibos, gen_odf_based_coup_mats
 import jax.numpy as jnp
 import numpy as np
 import copy
@@ -272,14 +272,13 @@ class OML_compound(Compound):
                     coupling_matrices=gen_propagator_based_coup_mats(rep_params, self.mo_coeff[spin], self.mo_energy[spin])
                     coupling_matrices=(self.ovlp_mat, *coupling_matrices)
                 if rep_params.ofd_coup_mats:
-                    cur_Fock_mat, cur_density_mat=reconstr_mats(self.mo_coeff[spin], mo_energy=self.mo_energy[spin],
-                                                        mo_occ=self.mo_occ[spin], mat_types=["Fock", "density"])
-                    coupling_matrices=(self.ovlp_mat, cur_Fock_mat, cur_density_mat)
+                    coupling_matrices=gen_odf_based_coup_mats(rep_params, self.mo_coeff[spin], self.mo_energy[spin], self.mo_occ[spin])
                 if coupling_matrices is None:
                     coupling_matrices=(self.fock_mat[spin], self.j_mat[spin]/orb_occ_prop_coeff(self), self.k_mat[spin]/orb_occ_prop_coeff(self))
                 cur_ibo_rep_array=generate_ibo_rep_array(self.ibo_mat[spin], rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)
                 if (rep_params.ofd_coup_mats and rep_params.orb_en_adj):
                     for ibo_id in range(len(cur_ibo_rep_array)):
+                        cur_Fock_mat=coupling_matrices[1]
                         cur_ibo_rep_array[ibo_id].orbital_energy_readjustment(cur_Fock_mat, rep_params)
                 self.orb_reps+=cur_ibo_rep_array
             ibo_occ=orb_occ_prop_coeff(self)

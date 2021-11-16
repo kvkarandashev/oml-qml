@@ -24,7 +24,7 @@
 import numpy as np
 import jax.numpy as jnp
 from jax import jit
-import math
+import math, copy
 
 from .foml_representations import fgen_ibo_atom_scalar_rep, fgen_ft_coup_mats, fang_mom_descr, fgen_ibo_global_couplings
 
@@ -38,7 +38,7 @@ class OML_rep_params:
     def __init__(self, tol_orb_cutoff=0.0,  ibo_atom_rho_comp=None, max_angular_momentum=3, use_Fortran=True,
                     propagator_coup_mat=False, num_prop_times=1, prop_delta_t=1.0,
                     ibo_fidelity_rep=False, add_global_ibo_couplings=False, atom_sorted_pseudo_ibos=False,
-                    ofd_coup_mats=False, orb_en_adj=False):
+                    ofd_coup_mats=False, orb_en_adj=False, ofd_num_powers=1, ofd_extra_inversions=True, ofd_extra_transpose=False):
         self.tol_orb_cutoff=tol_orb_cutoff
         self.ibo_atom_rho_comp=ibo_atom_rho_comp
         self.max_angular_momentum=max_angular_momentum
@@ -51,6 +51,9 @@ class OML_rep_params:
         self.atom_sorted_pseudo_ibos=atom_sorted_pseudo_ibos
         self.ofd_coup_mats=ofd_coup_mats
         self.orb_en_adj=orb_en_adj
+        self.ofd_num_powers=ofd_num_powers
+        self.ofd_extra_inversions=ofd_extra_inversions
+        self.ofd_extra_transpose=ofd_extra_transpose
 
         self.ibo_fidelity_rep=ibo_fidelity_rep
     def __str__(self):
@@ -81,8 +84,37 @@ def gen_propagator_based_coup_mats(rep_params, hf_orb_coeffs, hf_orb_energies):
                 output=(*output, new_mat)
         return output
 
-def reconstr_mat(inv_hf_orb_coeffs, mo_energy=None, mo_occ=None, mat_type="ovlp"):
-    naos=inv_hf_orb_coeffs.shape[0]
+def gen_odf_based_coup_mats(rep_params, mo_coeff, mo_energy, mo_occ):
+    reconstr_mats_kwargs={"mo_energy" : mo_energy, "mo_occ" : mo_occ}
+    coupling_matrices=()
+    coeff_mat_mult=[]
+    coeff_mat_mult.append(np.linalg.inv(mo_coeff).T)
+    coeff_mat_mult.append(mo_coeff)
+    coeff_mats=copy.deepcopy(coeff_mat_mult)
+    if rep_params.ofd_extra_inversions:
+        mat_types_list=[["ovlp", "Fock", "density"] for i in range(2)]
+    else:
+        mat_types_list=[["ovlp", "Fock"], ["density"]]
+    transpose_vals=[False]
+    if rep_params.ofd_extra_transpose:
+        transpose_vals.append([True])
+    for coeff_power in range(rep_params.ofd_num_powers):
+        for coeff_mat_id, mat_types in enumerate(mat_types_list):
+            for extra_transpose in transpose_vals:
+                final_coeff_mat=coeff_mats[coeff_mat_id]
+                if extra_transpose:
+                    final_coeff_mat=final_coeff_mat.T
+                added_mats=reconstr_mats(final_coeff_mat, **reconstr_mats_kwargs,
+                                        mat_types=mat_types, use_inv=False)
+                if len(mat_types)==1:
+                    coupling_matrices=(*coupling_matrices, added_mats)
+                else:
+                    coupling_matrices=(*coupling_matrices, *added_mats)
+            coeff_mats[coeff_mat_id]*=coeff_mat_mult[coeff_mat_id]
+    return coupling_matrices
+
+def reconstr_mat(coeff_mat, mo_energy=None, mo_occ=None, mat_type="ovlp"):
+    naos=coeff_mat.shape[0]
     mo_rep_mat=np.eye(naos)
     for ao_id in range(naos):
         if mat_type=="density":
@@ -90,15 +122,21 @@ def reconstr_mat(inv_hf_orb_coeffs, mo_energy=None, mo_occ=None, mat_type="ovlp"
                 mo_rep_mat[ao_id, ao_id]=0.0
         if mat_type=="Fock":
             mo_rep_mat[ao_id, ao_id]=mo_energy[ao_id]
-    return np.matmul(inv_hf_orb_coeffs.T, np.matmul(mo_rep_mat, inv_hf_orb_coeffs))
+    return np.matmul(coeff_mat, np.matmul(mo_rep_mat, coeff_mat.T))
 
 
-def reconstr_mats(mo_coeff, mo_energy=None, mo_occ=None, mat_types=["ovlp"]):
-    inv_hf_orb_coeffs=np.linalg.inv(mo_coeff)
+def reconstr_mats(mo_coeffs, mo_energy=None, mo_occ=None, mat_types=["ovlp"], use_inv=True):
+    if use_inv:
+        coeff_mat=np.linalg.inv(mo_coeffs).T
+    else:
+        coeff_mat=mo_coeffs
     output=()
     for mat_type in mat_types:
-        output=(*output, reconstr_mat(inv_hf_orb_coeffs, mo_energy=mo_energy, mo_occ=mo_occ, mat_type=mat_type))
-    return output
+        output=(*output, reconstr_mat(coeff_mat, mo_energy=mo_energy, mo_occ=mo_occ, mat_type=mat_type))
+    if len(mat_types)==1:
+        return output[0]
+    else:
+        return output
 
 #   Representation of contribution of a single atom to an IBO.
 
@@ -139,6 +177,7 @@ class OML_ibo_atom_rep:
     def energy_readjustment(self, energy_shift, rep_params):
         nam=num_ang_mom(rep_params)
         coup_mat_comp_num=(nam*(3*nam+1))//2
+        
         self.scalar_reps[coup_mat_comp_num:2*coup_mat_comp_num]-=self.scalar_reps[:coup_mat_comp_num]*energy_shift
     def __str__(self):
         return "OML_ibo_atom_rep,rho:"+str(self.rho)
@@ -195,7 +234,14 @@ def component_id_ang_mom_map(rep_params):
         num_coup_matrices=rep_params.num_prop_times*2+1
     else:
         # Components corresponding to the angular momentum distribution.
-        num_coup_matrices=3 # F, J, and K; or overlap, F, and density
+        if rep_params.ofd_coup_mats:
+            num_coup_matrices=3*rep_params.ofd_num_powers
+            if rep_params.ofd_extra_inversions:
+                num_coup_matrices*=2
+            if rep_params.ofd_extra_transpose:
+                num_coup_matrices*=2
+        else:
+            num_coup_matrices=3 # F, J, and K; or overlap, F, and density
     if not (rep_params.propagator_coup_mat or rep_params.ofd_coup_mats):
         for ang_mom in range(1, num_ang_mom(rep_params)):
             output.append([ang_mom, ang_mom, -1, True])
