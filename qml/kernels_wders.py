@@ -22,7 +22,7 @@
 
 
 import numpy as np
-
+from numba import njit, prange
 from .kernels import gaussian_kernel, laplacian_kernel
 from .fkernels_wders import fgaussian_pos_sum_restr_kernel, fgaussian_pos_restr_kernel, fgaussian_pos_restr_sym_kernel, fgaussian_pos_restr_input_init
 
@@ -45,6 +45,20 @@ def merged_representation_arrays(total_compound_array, indices):
         return output[0]
     else:
         return output
+
+# Useful for hyperparameter guessing.
+@njit(fastmath=True, parallel=True)
+def max_dist_in_vec_list(representation_array):
+    num_reps=representation_array.shape[0]
+    max_sqdists=np.zeros(num_reps)
+    temp_sqdists=np.zeros(num_reps)
+    for i in prange(num_reps):
+        for j in range(i):
+            temp_sqdists[i]=np.sum((representation_array[i, :]-representation_array[j, :])**2)
+            if temp_sqdists[i]>max_sqdists[i]:
+                max_sqdists[i]=temp_sqdists[i]
+    return np.sqrt(np.max(max_sqdists))
+
 
 def SLATM_kernel_input(*compound_arrays):
     from .representations import get_slatm_mbtypes
