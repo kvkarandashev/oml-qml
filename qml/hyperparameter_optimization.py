@@ -623,7 +623,7 @@ class Ang_mom_classified_rhf(Reduced_hyperparam_func):
     def __init__(self, rep_params=None, stddevs=None, ang_mom_map=None, use_Gauss=False):
         if ang_mom_map is None:
             if rep_params is None:
-                raise Exception
+                raise Exception("No rep_params defined for Ang_mom_classified_rhf class.")
             else:
                 ang_mom_map=component_id_ang_mom_map(rep_params)
 

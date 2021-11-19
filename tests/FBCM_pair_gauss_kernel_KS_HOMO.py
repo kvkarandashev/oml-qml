@@ -28,6 +28,8 @@ width_params=qml.oml_kernels.oml_ensemble_widths_estimate(oml_samp_orbs)
 logfile.write("Width params")
 logfile.write(width_params)
 
+width_params+=0.1
+
 kernel_params=qml.oml_kernels.GMO_kernel_params(width_params=width_params, use_Fortran=True, normalize_lb_kernel=True, use_Gaussian_kernel=True)
 
 logfile.write("xyz list 1")
