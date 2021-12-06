@@ -162,8 +162,9 @@ def MAE_bisection_optimization(initial_lambda_opt_step, train_kernel, train_vals
 # Procedures for general gradient-based optimization.
 #########
 class Gradient_optimization_obj:
-    def __init__(self, training_compounds, training_quants, check_compounds, check_quants, use_Gauss=False, use_MAE=True,
-                    reduced_hyperparam_func=None, sym_kernel_func=None, kernel_func=None, kernel_input_converter=None, **kernel_additional_args):
+    def __init__(self, training_compounds, training_quants, check_compounds, check_quants, training_quants_ignore=None, check_quants_ignore=None, 
+                            use_Gauss=False, use_MAE=True, reduced_hyperparam_func=None, sym_kernel_func=None, kernel_func=None,
+                            kernel_input_converter=None, **kernel_additional_args):
         self.init_kern_funcs(use_Gauss=use_Gauss, reduced_hyperparam_func=reduced_hyperparam_func, sym_kernel_func=sym_kernel_func,
                             kernel_func=kernel_func, kernel_input_converter=kernel_input_converter)
 
@@ -174,6 +175,9 @@ class Gradient_optimization_obj:
 
         self.training_quants=training_quants
         self.check_quants=check_quants
+
+        self.training_quants_ignore=training_quants_ignore
+        self.check_quants_ignore=check_quants_ignore
 
         self.use_MAE=use_MAE
 
@@ -219,7 +223,7 @@ class Gradient_optimization_obj:
         self.train_kernel=train_kernel_wders[:, :, 0]
         self.check_kernel=check_kernel_wders[:, :, 0]
 
-        num_train_compounds=self.training_compounds.num_mols
+        num_train_compounds=self.train_kernel.shape[0]
 
         self.train_kernel_ders=one_diag_unity_tensor(num_train_compounds, self.num_params)
         self.check_kernel_ders=np.zeros((self.check_compounds.num_mols, num_train_compounds, self.num_params))
@@ -235,14 +239,15 @@ class Gradient_optimization_obj:
         modified_train_kernel=np.copy(self.train_kernel)
         modified_train_kernel[np.diag_indices_from(modified_train_kernel)]+=self.lambda_val
         try:
-            self.train_cho_decomp=cho_factor(modified_train_kernel)
+            self.train_cho_decomp=cho_multi_factors(modified_train_kernel, indices_to_ignore=self.training_quants_ignore)
         except np.linalg.LinAlgError: # means mod_train_kernel is not invertible
             self.train_cho_decomp=None
         self.train_kern_invertible=(self.train_cho_decomp is not None)
         if self.train_kern_invertible:
-            self.alphas=cho_solve(self.train_cho_decomp, self.training_quants)
-            self.predictions=np.matmul(self.check_kernel, self.alphas)
+            self.alphas=cho_multi_solve(self.train_cho_decomp, self.training_quants, indices_to_ignore=self.training_quants_ignore)
+            self.predictions=np.matmul(self.alphas, self.check_kernel.T)
             self.prediction_errors=self.predictions-self.check_quants
+            nullify_ignored(self.prediction_errors, self.check_quants_ignore)
 
     def reinitiate_error_measures(self):
         if self.train_kern_invertible:
@@ -253,10 +258,10 @@ class Gradient_optimization_obj:
             self.cur_MSE=None
 
     def der_predictions(self, train_der, check_der):
-        output=np.matmul(train_der, self.alphas)
-        output=cho_solve(self.train_cho_decomp, output)
-        output=-np.matmul(self.check_kernel, output)
-        output+=np.matmul(check_der, self.alphas)
+        output=np.matmul(self.alphas, train_der)
+        output=cho_multi_solve(self.train_cho_decomp, output, indices_to_ignore=self.training_quants_ignore)
+        output=-np.matmul(output, self.check_kernel.T)
+        output+=np.matmul(self.alphas, check_der.T)
         return output
 
     def reinitiate_error_measure_ders(self, lambda_der_only=False):
@@ -269,6 +274,7 @@ class Gradient_optimization_obj:
             self.cur_MAE_der=np.zeros((num_ders,))
             for der_id in range(num_ders):
                 cur_der_predictions=self.der_predictions(self.train_kernel_ders[:, :, der_id], self.check_kernel_ders[:, :, der_id])
+                nullify_ignored(cur_der_predictions, self.check_quants_ignore)
                 self.cur_MSE_der[der_id]=2*np.mean(self.prediction_errors*cur_der_predictions)   
                 self.cur_MAE_der[der_id]=np.mean(cur_der_predictions*np.sign(self.prediction_errors))
         else:
@@ -317,12 +323,23 @@ def non_invertible_default_log_der():
     return np.array([-1.0]) # we only have derivative for lambda value
 
 class GOO_ensemble_subset(Gradient_optimization_obj):
-    def __init__(self, training_indices, check_indices, all_quantities, use_MAE=True):
+    def __init__(self, training_indices, check_indices, all_quantities, use_MAE=True, quants_ignore=None):
         self.training_indices=training_indices
         self.check_indices=check_indices
 
-        self.training_quants=all_quantities[self.training_indices]
-        self.check_quants=all_quantities[self.check_indices]
+        if (len(all_quantities.shape)==1):
+            self.training_quants=all_quantities[self.training_indices]
+            self.check_quants=all_quantities[self.check_indices]
+        else:
+            self.training_quants=all_quantities[:, self.training_indices]
+            self.check_quants=all_quantities[:, self.check_indices]
+
+        if quants_ignore is None:
+            self.training_quants_ignore=None
+            self.check_quants_ignore=None
+        else:
+            self.training_quants_ignore=quants_ignore[:, self.training_indices]
+            self.check_quants_ignore=quants_ignore[:, self.check_indices]
         
         self.use_MAE=use_MAE
     def recalculate_kernel_matrices(self, global_matrix=None, global_matrix_ders=None):
@@ -337,7 +354,7 @@ class GOO_ensemble_subset(Gradient_optimization_obj):
 
 # This class was introduced to enable multiple cross-validation.
 class GOO_ensemble(Gradient_optimization_obj):
-    def __init__(self, all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=False, use_MAE=True,
+    def __init__(self, all_compounds, all_quantities, train_id_lists, check_id_lists, quants_ignore=None, use_Gauss=False, use_MAE=True,
                         reduced_hyperparam_func=None, num_procs=None, num_threads=None, kernel_input_converter=None,
                         sym_kernel_func=None, num_kernel_params=None, **kernel_additional_args):
 
@@ -354,7 +371,7 @@ class GOO_ensemble(Gradient_optimization_obj):
         self.goo_ensemble_subsets=[]
         for train_id_list, check_id_list in zip(train_id_lists, check_id_lists):
             self.goo_ensemble_subsets.append(GOO_ensemble_subset(train_id_list, check_id_list,
-                                                        all_quantities, use_MAE=use_MAE))
+                                                        all_quantities, quants_ignore=quants_ignore, use_MAE=use_MAE))
         self.num_subsets=len(self.goo_ensemble_subsets)
 
         self.presaved_parameters=None
@@ -417,9 +434,9 @@ class GOO_ensemble(Gradient_optimization_obj):
 def single_subset_error_measure_wders(subset, parameters, lambda_der_only):
     return subset.error_measure_wders(parameters, lambda_der_only=lambda_der_only)
 
-def generate_random_GOO_ensemble(all_compounds, all_quantities, num_kfolds=16, training_set_ratio=0.5, use_Gauss=False, use_MAE=True,
+def generate_random_GOO_ensemble(all_compounds, all_quantities, quants_ignore=None, num_kfolds=16, training_set_ratio=0.5, use_Gauss=False, use_MAE=True,
         reduced_hyperparam_func=None, num_procs=None, num_threads=None, kernel_input_converter=None, sym_kernel_func=None, **other_kwargs):
-    num_points=len(all_quantities)
+    num_points=len(all_compounds)
     train_point_num=int(num_points*training_set_ratio)
 
     all_indices=list(range(num_points))
@@ -445,8 +462,9 @@ def generate_random_GOO_ensemble(all_compounds, all_quantities, num_kfolds=16, t
         train_id_lists.append(train_id_list)
         check_id_lists.append(check_id_list)
 
-    return GOO_ensemble(all_compounds, all_quantities, train_id_lists, check_id_lists, use_Gauss=use_Gauss, use_MAE=use_MAE, reduced_hyperparam_func=reduced_hyperparam_func,
-                                num_procs=num_procs, num_threads=num_threads, kernel_input_converter=kernel_input_converter, sym_kernel_func=sym_kernel_func, **other_kwargs)
+    return GOO_ensemble(all_compounds, all_quantities, train_id_lists, check_id_lists, quants_ignore=quants_ignore, use_Gauss=use_Gauss, use_MAE=use_MAE,
+                            reduced_hyperparam_func=reduced_hyperparam_func, num_procs=num_procs, num_threads=num_threads,
+                            kernel_input_converter=kernel_input_converter, sym_kernel_func=sym_kernel_func, **other_kwargs)
     
 
 #   For going between the full hyperparameter set (lambda, global sigma, and other sigmas)
@@ -950,7 +968,7 @@ class GOO_randomized_iterator:
 
 list_supported_funcs=["default", "single_rescaling", "single_rescaling_global_mat_prop_coeffs", "ang_mom_classified"]
 
-def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=False, init_lambda=1e-3, max_iterations=256,
+def min_sep_IBO_random_walk_optimization(compound_list, quant_list, quant_ignore_list=None, use_Gauss=False, init_lambda=1e-3, max_iterations=256,
                                     init_param_guess=None, hyperparam_red_type="default", max_stagnating_iterations=1,
                                     use_MAE=True, rep_params=None, num_kfolds=16, other_opt_goo_ensemble_kwargs={}, randomized_iterator_kwargs={}, iter_dump_name_add=None,
                                     additional_BFGS_iters=None, iter_dump_name_add_BFGS=None, negligible_red_param_distance=1e-9, num_procs=None, num_threads=None,
@@ -991,7 +1009,7 @@ def min_sep_IBO_random_walk_optimization(compound_list, quant_list, use_Gauss=Fa
     else:
         initial_reduced_parameter_vals=red_hyperparam_func.full_params_to_reduced(init_param_guess)
 
-    opt_GOO_ensemble=generate_random_GOO_ensemble(compound_list, quant_list, use_Gauss=use_Gauss, use_MAE=use_MAE, num_kfolds=num_kfolds,
+    opt_GOO_ensemble=generate_random_GOO_ensemble(compound_list, quant_list, quants_ignore=quant_ignore_list, use_Gauss=use_Gauss, use_MAE=use_MAE, num_kfolds=num_kfolds,
                                                   reduced_hyperparam_func=red_hyperparam_func, **other_opt_goo_ensemble_kwargs,
                                                   num_procs=num_procs, num_threads=num_threads, kernel_input_converter=kernel_input_converter,
                                                   sym_kernel_func=sym_kernel_func)
@@ -1068,11 +1086,51 @@ class GOO_standalone_error_measure_ders(GOO_standalone_error_measure):
         return self.error_measure_ders
     
 #####
-# Minor auxiliary functions.
+# Auxiliary functions.
 #####
 
 def one_diag_unity_tensor(dim12, dim3):
     output=np.zeros((dim12, dim12, dim3))
     for mol_id in range(dim12):
         output[mol_id, mol_id, 0]=1.0
+    return output
+    
+# For dealing with several Cholesky decompositions at once.
+def where2slice(indices_to_ignore):
+    return np.where(np.logical_not(indices_to_ignore))[0]
+
+def nullify_ignored(arr, indices_to_ignore):
+    if indices_to_ignore is not None:
+        for row_id, cur_ignore_indices in enumerate(indices_to_ignore):
+            arr[row_id][where2slice(np.logical_not(cur_ignore_indices))]=0.0
+
+def cho_multi_factors(train_kernel, indices_to_ignore=None):
+    single_cho_decomp=(indices_to_ignore is None)
+    if not single_cho_decomp:
+        single_cho_decomp=(not indices_to_ignore.any())
+    if single_cho_decomp:
+        output=cho_factor(train_kernel)
+    else:
+        output=[]
+        for cur_ignore_ids in indices_to_ignore:
+            s=where2slice(cur_ignore_ids)
+            output.append(cho_factor(train_kernel[s, :][:, s]))
+    return output
+        
+def cho_multi_solve(cho_factors, rhs, indices_to_ignore=None):
+    if len(rhs.shape)==1:
+        output=cho_solve(cho_factors, rhs)
+    else:
+        single_cho_decomp=(not isinstance(cho_factors, list))
+        output=np.zeros(rhs.shape)
+        for rhs_id, rhs_component in enumerate(rhs):
+            if single_cho_decomp:
+                cur_factor=cho_factors
+            else:
+                cur_factor=cho_factors[rhs_id]
+            if indices_to_ignore is None:
+                included_indices=np.array(range(len(rhs_component)))
+            else:
+                included_indices=where2slice(indices_to_ignore[rhs_id])
+            output[rhs_id][included_indices]=cho_solve(cur_factor, rhs_component[included_indices])
     return output
