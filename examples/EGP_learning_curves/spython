@@ -1,0 +1,91 @@
+#!/bin/bash
+
+# KK: I keep this script as a proper shell command and use "spython" instead of "python"
+# if I want to submit a script to SLURM but feel too lazy to extensively modify it.
+# It creates a folder for the data where it copies the python script,
+# then creates a BATCH script that runs the copied python script in a scratch
+# folder and copies the results into the data folder.
+# 1st argument - python script name.
+# 2nd argument - how the SLURM job is named.
+# Arguments starting from third (if present) - arguments for the python script.
+
+NCPUs=$(cat /etc/slurm-llnl/slurm.conf | tr ' ' '\n' | awk 'BEGIN {FS="="} {if ($1=="CPUs") print $2}')
+JOB_OMP_NUM_THREADS=$NCPUs
+
+while [[ "$1" == --* ]]
+do
+    if [ "$1" == "--update" ]
+    then
+        update_commands="qmlrec"
+    fi
+    if [[ "$1" == --CPUs=* ]]
+    then
+        NCPUs=$(echo $1 | cut -d'=' -f2)
+    fi
+    if [[ "$1" == --OMP_NUM_THREADS=* ]]
+    then
+        JOB_OMP_NUM_THREADS=$(echo $1 | cut -d'=' -f2)
+    fi
+    shift
+done
+
+py_script=$1
+
+if [ "$py_script" == "" ]
+then
+	echo "Python script name should be the first argument."
+	exit
+fi
+
+job_name=$2
+
+if [ "$job_name" == "" ]
+then
+	echo "Name of the job should be the second argument."
+	exit
+fi
+
+data_dir=$(pwd)/data_$job_name
+
+if [ -d $data_dir ]
+then
+	echo "Job has already been done."
+	exit
+fi
+mkdir $data_dir
+
+cp $py_script $data_dir
+scripts=($(ls $data_dir/*.py | tr '\n' ' '))
+
+if [ ${#scripts[@]} != 1 ]
+then
+	echo "Something is wrong."
+	exit
+fi
+script_path=${scripts[0]}
+
+cd $data_dir
+
+cat > ex_$job_name.sh << EOF
+#!/bin/bash
+#SBATCH -J $job_name
+#SBATCH -o $job_name.stdout_%j
+#SBATCH -e $job_name.stderr_%j
+#SBATCH --nodelist=$(hostname)
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=$NCPUs
+
+$(mod_load_string)
+
+$update_commands
+export OMP_NUM_THREADS=$JOB_OMP_NUM_THREADS
+export OML_NUM_PROCS=$NCPUs
+cd \$SCRATCH_DIR
+echo "Started: \$(date)" > execution_time.txt
+python $script_path ${@:3}
+echo "Finished: \$(date)" >> execution_time.txt
+cp -r * $data_dir
+
+EOF
+
+sbatch ex_$job_name.sh
