@@ -245,7 +245,7 @@ class Gradient_optimization_obj:
         self.train_kern_invertible=(self.train_cho_decomp is not None)
         if self.train_kern_invertible:
             self.alphas=cho_multi_solve(self.train_cho_decomp, self.training_quants, indices_to_ignore=self.training_quants_ignore)
-            self.predictions=np.matmul(self.alphas, self.check_kernel.T)
+            self.predictions=np.matmul(self.check_kernel, self.alphas)
             self.prediction_errors=self.predictions-self.check_quants
             nullify_ignored(self.prediction_errors, self.check_quants_ignore)
 
@@ -258,10 +258,10 @@ class Gradient_optimization_obj:
             self.cur_MSE=None
 
     def der_predictions(self, train_der, check_der):
-        output=np.matmul(self.alphas, train_der)
+        output=np.matmul(train_der, self.alphas)
         output=cho_multi_solve(self.train_cho_decomp, output, indices_to_ignore=self.training_quants_ignore)
-        output=-np.matmul(output, self.check_kernel.T)
-        output+=np.matmul(self.alphas, check_der.T)
+        output=-np.matmul(self.check_kernel, output)
+        output+=np.matmul(check_der, self.alphas)
         return output
 
     def reinitiate_error_measure_ders(self, lambda_der_only=False):
@@ -331,15 +331,15 @@ class GOO_ensemble_subset(Gradient_optimization_obj):
             self.training_quants=all_quantities[self.training_indices]
             self.check_quants=all_quantities[self.check_indices]
         else:
-            self.training_quants=all_quantities[:, self.training_indices]
-            self.check_quants=all_quantities[:, self.check_indices]
+            self.training_quants=all_quantities[self.training_indices, :]
+            self.check_quants=all_quantities[self.check_indices, :]
 
         if quants_ignore is None:
             self.training_quants_ignore=None
             self.check_quants_ignore=None
         else:
-            self.training_quants_ignore=quants_ignore[:, self.training_indices]
-            self.check_quants_ignore=quants_ignore[:, self.check_indices]
+            self.training_quants_ignore=quants_ignore[self.training_indices, :]
+            self.check_quants_ignore=quants_ignore[self.check_indices, :]
         
         self.use_MAE=use_MAE
     def recalculate_kernel_matrices(self, global_matrix=None, global_matrix_ders=None):
@@ -1112,7 +1112,7 @@ def cho_multi_factors(train_kernel, indices_to_ignore=None):
         output=cho_factor(train_kernel)
     else:
         output=[]
-        for cur_ignore_ids in indices_to_ignore:
+        for cur_ignore_ids in indices_to_ignore.T:
             s=where2slice(cur_ignore_ids)
             output.append(cho_factor(train_kernel[s, :][:, s]))
     return output
@@ -1123,7 +1123,7 @@ def cho_multi_solve(cho_factors, rhs, indices_to_ignore=None):
     else:
         single_cho_decomp=(not isinstance(cho_factors, list))
         output=np.zeros(rhs.shape)
-        for rhs_id, rhs_component in enumerate(rhs):
+        for rhs_id, rhs_component in enumerate(rhs.T):
             if single_cho_decomp:
                 cur_factor=cho_factors
             else:
@@ -1131,6 +1131,6 @@ def cho_multi_solve(cho_factors, rhs, indices_to_ignore=None):
             if indices_to_ignore is None:
                 included_indices=np.array(range(len(rhs_component)))
             else:
-                included_indices=where2slice(indices_to_ignore[rhs_id])
-            output[rhs_id][included_indices]=cho_solve(cur_factor, rhs_component[included_indices])
+                included_indices=where2slice(indices_to_ignore[:, rhs_id])
+            output[included_indices, rhs_id]=cho_solve(cur_factor, rhs_component[included_indices])
     return output

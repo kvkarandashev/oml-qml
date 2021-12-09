@@ -125,3 +125,84 @@ def solve_Gram_Schmidt(sym_mat, vec, residue_tol_coeff, lambda_val=0.0, ascendin
     return ignored_indices, np.matmul(orthonormalized_vectors.T, np.matmul(orthonormalized_vectors, vec))
 
 
+# For distance-based cutting off redundant entries from the kernel matrix.
+@njit(fastmath=True, parallel=True)
+def kernel2sqdist(train_kernel):
+    num_train=train_kernel.shape[0]
+    sqdist_mat=np.zeros((num_train, num_train))
+    for i in prange(num_train):
+        for j in range(num_train):
+            sqdist_mat[i,j]=train_kernel[i,i]+train_kernel[j,j]-2*train_kernel[i,j]
+    return sqdist_mat
+
+@njit(fastmath=True)
+def min_id_sqdist(sqdist_row, to_include, entry_id):
+    cur_min_sqdist=0.0
+    cur_min_sqdist_id=0
+    minimal_sqdist_init=False
+    num_train=sqdist_row.shape[0]
+
+    for j in range(num_train):
+        if entry_id != j:
+            cur_sqdist=sqdist_row[j]
+            if (((cur_sqdist<cur_min_sqdist) or (not minimal_sqdist_init)) and to_include[j]):
+                minimal_sqdist_init=True
+                cur_min_sqdist=cur_sqdist
+                cur_min_sqdist_id=j
+    return cur_min_sqdist_id, cur_min_sqdist
+
+
+@njit(fastmath=True, parallel=True)
+def numba_rep_sqdist_mat(rep_arr):
+    num_vecs=rep_arr.shape[0]
+    sqdist_mat=np.zeros((num_vecs, num_vecs))
+    for i in prange(num_vecs):
+        for j in range(i):
+            sqdist_mat[i, j]=np.sum(np.square(rep_arr[i]-rep_arr[j]))
+            sqdist_mat[j, i]=sqdist_mat[i, j]
+    return sqdist_mat
+
+@njit(fastmath=True, parallel=True)
+def numba_sqdist_exclude_nearest(sqdist_mat, min_sqdist, num_cut_closest_entries):
+    num_train=sqdist_mat.shape[0]
+
+    minimal_distance_ids=np.zeros(num_train, dtype=np.int32)
+    minimal_distances=np.zeros(num_train)
+    to_include=np.ones(num_train, dtype=bool_)
+
+    for i in prange(num_train):
+        minimal_distance_ids[i], minimal_distances[i]=min_id_sqdist(sqdist_mat[i], to_include, i)
+
+    num_ignored=0
+
+    while True:
+        cur_min_id, cur_min_sqdist=min_id_sqdist(minimal_distances, to_include, -1)
+        if (cur_min_sqdist > min_sqdist) and (min_sqdist > 0.0):
+            break
+        if np.random.random()>0.5:
+            new_ignored=cur_min_id
+        else:
+            new_ignored=minimal_distance_ids[cur_min_id]
+
+        to_include[new_ignored]=False
+        num_ignored+=1
+        if num_ignored==1:
+            print("Smallest ignored distance:", cur_min_sqdist)
+        if num_ignored==num_cut_closest_entries:
+            print("Largest ignored distance:", cur_min_sqdist)
+            break
+        for i in prange(num_train):
+            if to_include[i]:
+                if (minimal_distance_ids[i]==new_ignored):
+                    minimal_distance_ids[i], minimal_distances[i]=min_id_sqdist(sqdist_mat[i], to_include, i)
+
+    return all_indices_except(to_include)
+
+
+
+@njit(fastmath=True, parallel=True)
+def numba_kernel_exclude_nearest(train_kernel, min_sqdist, num_cut_closest_entries):
+    sqdist_mat=kernel2sqdist(train_kernel)
+    return numba_sqdist_exclude_nearest(sqdist_mat, min_sqdist, num_cut_closest_entries)
+
+

@@ -14,7 +14,7 @@ def model_MSE_MAE(K_train, K_check, train_quant, check_quant, train_quant_ignore
     K_train_mod[np.diag_indices_from(K_train_mod)]+=lambda_val
     cho_factors=cho_multi_factors(K_train_mod, indices_to_ignore=train_quant_ignore)
     alphas=cho_multi_solve(cho_factors, train_quant, indices_to_ignore=train_quant_ignore)
-    predictions=np.matmul(alphas, K_check.T)
+    predictions=np.matmul(K_check, alphas)
     error_vals=check_quant-predictions
     dim1=error_vals.shape[0]
     dim2=error_vals.shape[1]
@@ -139,13 +139,16 @@ def ignore_array(real_arr):
     output=np.zeros((dim1, dim2), dtype=bool)
     if unavailable_ratio>0.0:
         for i in range(dim1):
-            for j in range(dim2):
-                if random.random()<unavailable_ratio:
+            for j in range(1, dim2):
+                if output[i, j-1]:
                     output[i, j]=True
+                else:
+                    if random.random()<unavailable_ratio:
+                        output[i, j]=True
     return output
 
-train_quant=np.zeros((num_quants, num_A_mols))
-check_quant=np.zeros((num_quants, num_B_mols))
+train_quant=np.zeros((num_A_mols, num_quants))
+check_quant=np.zeros((num_B_mols, num_quants))
 
 train_quant_ignore=ignore_array(train_quant)
 check_quant_ignore=ignore_array(check_quant)

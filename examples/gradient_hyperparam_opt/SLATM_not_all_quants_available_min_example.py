@@ -33,7 +33,7 @@ dump2pkl(xyz_list, "shuffled_list.pkl")
 
 os.environ["OML_NUM_PROCS"]=os.environ["OMP_NUM_THREADS"] # OML_NUM_PROCS says how many processes to use during joblib-parallelized parts; by default most of the latter disable OpenMP parallelization.
 
-unavailable_ratio=0.25 #-0.1 #0.25
+unavailable_ratio=0.5 #-0.1 #0.25
 
 none_ignored=False #True
 
@@ -46,7 +46,7 @@ def ignore_array(real_arr):
         output=np.zeros((dim1, dim2), dtype=bool)
         if unavailable_ratio>0.0:
             for i in range(dim1):
-                for j in range(dim2):
+                for j in range(1, dim2):
                     if unavailable_ratio>0.0:
                         if random.random()<unavailable_ratio:
                             output[i, j]=True
@@ -57,7 +57,8 @@ def get_quants_comps(xyz_list, quantities, dl_params):
     for quantity in quantities:
         quant_vals.append(import_quantity_array(xyz_list, quantity, dl_params))
     comps=[Compound(xyz_file) for xyz_file in xyz_list]
-    return comps, np.array(quant_vals)
+    quant_vals=np.array(quant_vals)
+    return comps, quant_vals.T
 
 quantities=[Quantity(quant_name) for quant_name in quant_names]
 training_comps, training_quants=get_quants_comps(xyz_list[:train_num], quantities, delta_learning_params)
@@ -86,10 +87,10 @@ K_train[np.diag_indices_from(K_train)]+=lambda_val
 
 
 for quant_id in range(len(quant_names)):
-    alphas=np_cho_solve_wcheck(K_train, training_quants[quant_id], eigh_rcond=1e-9)
+    alphas=np_cho_solve_wcheck(K_train, training_quants[:, quant_id], eigh_rcond=1e-9)
 
     check_comps, check_quants=get_quants_comps(xyz_list[-check_num:], [quantities[quant_id]], delta_learning_params)
     K_check=SLATM_kernel(check_comps, training_comps, sigma, use_Gauss=use_Gauss)
     predicted_quants=np.dot(K_check, alphas)
-    MAE=np.mean(np.abs(predicted_quants-check_quants))
+    MAE=np.mean(np.abs(predicted_quants-check_quants[:, 0]))
     print("Quantity: ", quant_names[quant_id], ", MAE:", MAE)
