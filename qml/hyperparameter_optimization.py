@@ -168,9 +168,11 @@ class Gradient_optimization_obj:
         self.init_kern_funcs(use_Gauss=use_Gauss, reduced_hyperparam_func=reduced_hyperparam_func, sym_kernel_func=sym_kernel_func,
                             kernel_func=kernel_func, kernel_input_converter=kernel_input_converter)
 
-        self.training_compounds=GMO_sep_IBO_kern_input(training_compounds)
-        self.check_compounds=GMO_sep_IBO_kern_input(check_compounds)
-
+        if kernel_input_converter is None:
+            self.training_compounds=GMO_sep_IBO_kern_input(training_compounds)
+            self.check_compounds=GMO_sep_IBO_kern_input(check_compounds)
+        else:
+            self.training_compounds, self.check_compounds=kernel_input_converter(training_compounds, check_compounds)
         self.kernel_additional_args=kernel_additional_args
 
         self.training_quants=training_quants
@@ -224,9 +226,10 @@ class Gradient_optimization_obj:
         self.check_kernel=check_kernel_wders[:, :, 0]
 
         num_train_compounds=self.train_kernel.shape[0]
+        num_check_compounds=self.check_kernel.shape[0]
 
         self.train_kernel_ders=one_diag_unity_tensor(num_train_compounds, self.num_params)
-        self.check_kernel_ders=np.zeros((self.check_compounds.num_mols, num_train_compounds, self.num_params))
+        self.check_kernel_ders=np.zeros((num_check_compounds, num_train_compounds, self.num_params))
 
         self.train_kernel_ders[:, :, 1:]=train_kernel_wders[:, :, 1:]
         self.check_kernel_ders[:, :, 1:]=check_kernel_wders[:, :, 1:]

@@ -23,7 +23,6 @@
 
 import numpy as np
 from numba import njit, prange
-from .kernels import gaussian_kernel, laplacian_kernel
 from .fkernels_wders import fgaussian_pos_sum_restr_kernel, fgaussian_pos_restr_kernel, fgaussian_pos_restr_sym_kernel, fgaussian_pos_restr_input_init
 
 def merge_save_indices(*arrays):
@@ -89,20 +88,45 @@ def dummy_kernel_input(*rep_arr_lists):
     else:
         return output
 
-def kernel_from_converted(A, B, sigma, use_Gauss=True, with_ders=False):
-    if use_Gauss:
-        kernel=gaussian_kernel(A, B, sigma)
-    else:
-        kernel=laplacian_kernel(A, B, sigma)
+
+@njit(fastmath=True)
+def numba_kernel_element_from_converted(A_rep, B_rep, sigma, use_Gauss, with_ders):
+    diff_vec=A_rep-B_rep
     if with_ders:
-        output=np.empty((*kernel.shape, 2))
-        output[:, :, 0]=kernel
-        output[:, :, 1]=-np.log(kernel)/sigma
+        output=np.zeros((2,))
+    else:
+        output=np.zeros((1,))
+    if use_Gauss:
+        exp_arg=np.sum(np.square(diff_vec))/2/sigma**2
+    else:
+        exp_arg=np.sum(np.abs(diff_vec))/sigma
+    output[0]=np.exp(-exp_arg)
+    if with_ders:
+        output[1]=exp_arg*output[0]/sigma
         if use_Gauss:
-            output[:, :, 1]*=2
+            output[1]*=2
+    return output
+
+@njit(fastmath=True, parallel=True)
+def numba_kernel_from_converted(A, B, sigma, use_Gauss, with_ders):
+    if with_ders:
+        num_kern_els=2
+    else:
+        num_kern_els=1
+    nA=A.shape[0]
+    nB=B.shape[0]
+    output=np.zeros((nA, nB, num_kern_els))
+    for i in prange(nA):
+        for j in range(nB):
+            output[i, j, :]=numba_kernel_element_from_converted(A[i], B[j], sigma, use_Gauss, with_ders)
+    return output
+
+def kernel_from_converted(A, B, sigma, use_Gauss=True, with_ders=False):
+    output=numba_kernel_from_converted(A, B, sigma, use_Gauss, with_ders)
+    if with_ders:
         return output
     else:
-        return kernel
+        return output[:, :, 0]
 
 def CM_kernel(A, B, sigma, use_Gauss=True, with_ders=False):
     Ac, Bc=CM_kernel_input(A, B)
@@ -122,10 +146,10 @@ def laplacian_sym_kernel_conv_wders(A, sigma_arr, with_ders=False):
     return  kernel_from_converted(A, A, sigma_arr[0], use_Gauss=False, with_ders=with_ders)
 
 def gaussian_kernel_conv_wders(A, B, sigma_arr, with_ders=False):
-    return  kernel_from_converted(A, B, sigma_arr[0], use_Gauss=True, with_ders=width_ders)
+    return  kernel_from_converted(A, B, sigma_arr[0], use_Gauss=True, with_ders=with_ders)
 
 def laplacian_kernel_conv_wders(A, B, sigma_arr, with_ders=False):
-    return  kernel_from_converted(A, B, sigma_arr[0], use_Gauss=False, with_ders=width_ders)
+    return  kernel_from_converted(A, B, sigma_arr[0], use_Gauss=False, with_ders=with_ders)
 
 
 # Kernel for representation vectors constrained by being normalized and undefined for negative values.

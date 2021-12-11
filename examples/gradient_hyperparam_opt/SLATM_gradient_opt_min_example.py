@@ -45,7 +45,7 @@ quant=Quantity(quant_name)
 training_comps, training_quants=get_quants_comps(xyz_list[:train_num], quant, delta_learning_params)
 
 optimized_hyperparams=min_sep_IBO_random_walk_optimization(training_comps, training_quants, init_lambda=1e-6,
-                    init_param_guess=np.array([1.0, 1.0]), max_stagnating_iterations=8, hyperparam_red_type="default",
+                    init_param_guess=np.array([1.0, 1000.0]), max_stagnating_iterations=8, hyperparam_red_type="default",
                     randomized_iterator_kwargs={"default_step_magnitude" : 0.25}, iter_dump_name_add="test_min_SLATM",
                     additional_BFGS_iters=8, iter_dump_name_add_BFGS="test_min_BFGS",
                     sym_kernel_func=laplacian_sym_kernel_conv_wders, kernel_input_converter=SLATM_kernel_input)
