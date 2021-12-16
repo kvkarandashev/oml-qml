@@ -6,7 +6,7 @@ from qml.oml_kernels import gauss_sep_IBO_sym_kernel, gauss_sep_IBO_kernel, oml_
 from qml.oml_compound_list import OML_compound_list_from_xyzs
 from qml.oml_representations import OML_rep_params
 import numpy as np
-from qml.hyperparameter_optimization import Gradient_optimization_obj, Reduced_hyperparam_func, cho_multi_solve, cho_multi_factors
+from qml.hyperparameter_optimization import Gradient_optimization_obj, Reduced_hyperparam_func, Cho_multi_factors
 from learning_curve_building import np_cho_solve
 from qml.kernels_wders import gaussian_sym_kernel_conv_wders, laplacian_sym_kernel_conv_wders, CM_kernel_input, SLATM_kernel_input,\
                                     gaussian_kernel_conv_wders, laplacian_kernel_conv_wders
@@ -20,12 +20,14 @@ kernel_input_generators={"SLATM" : SLATM_kernel_input, "CM" : CM_kernel_input}
 red_hyp_func=Reduced_hyperparam_func()
 red_hyp_func.initiate_param_nums(2)
 
+ignored_orderable=True # False
+
 def model_MSE_MAE(K_train, K_check, train_quant, check_quant, train_quant_ignore, check_quant_ignore, lambda_val):
     K_train_mod=copy.deepcopy(K_train)
     K_train_mod[np.diag_indices_from(K_train_mod)]+=lambda_val
-    cho_factors=cho_multi_factors(K_train_mod, indices_to_ignore=train_quant_ignore)
-    alphas=cho_multi_solve(cho_factors, train_quant, indices_to_ignore=train_quant_ignore)
-    predictions=np.matmul(K_check, alphas)
+    cho_factors=Cho_multi_factors(K_train_mod, indices_to_ignore=train_quant_ignore, ignored_orderable=ignored_orderable)
+    alphas=cho_factors.solve_with(train_quant)
+    predictions=np.matmul(K_check, alphas.T)
     error_vals=check_quant-predictions
     dim1=error_vals.shape[0]
     dim2=error_vals.shape[1]
@@ -88,7 +90,7 @@ def print_for_red_param_rep_der_id(kernel_type, rep_type, A, B, train_quant, che
     # For MSE.
     goo_args=[A, train_quant, B, check_quant]
     goo_kwargs={"reduced_hyperparam_func" : red_hyp_func,
-                "training_quants_ignore" : train_quant_ignore, "check_quants_ignore" : check_quant_ignore,
+                "training_quants_ignore" : train_quant_ignore, "check_quants_ignore" : check_quant_ignore, "quants_ignore_orderable" : ignored_orderable, 
                 "sym_kernel_func" : sym_kernel_func, "kernel_func" : kernel_func, "kernel_input_converter" : kernel_input_generator}
 
     GOO=Gradient_optimization_obj(*goo_args, use_MAE=False, **goo_kwargs)
@@ -146,7 +148,7 @@ num_B_mols=20
 xyz_list_A=xyz_list[:num_A_mols]
 xyz_list_B=xyz_list[num_A_mols:num_B_mols+num_A_mols]
 
-change_irrelevant_train_quant=True #False # to compare results obtained with both values; should be same
+change_irrelevant_quant=False #False # to compare results obtained with both values; should be same
 
 num_quants=3
 
@@ -174,7 +176,7 @@ check_quant_ignore=ignore_array(check_quant)
 cur_val=1.0
 
 # Generate quantity arrays.
-for (q, q_ignore, q_change_zero) in [(train_quant, train_quant_ignore, change_irrelevant_train_quant), (check_quant, check_quant_ignore, True)]:
+for (q, q_ignore, q_change_zero) in [(train_quant, train_quant_ignore, change_irrelevant_quant), (check_quant, check_quant_ignore, change_irrelevant_quant)]:
     dim1=q.shape[0]
     dim2=q.shape[1]
     for i1 in range(dim1):

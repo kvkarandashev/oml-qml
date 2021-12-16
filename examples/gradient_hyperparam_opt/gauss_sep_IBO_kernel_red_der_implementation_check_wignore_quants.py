@@ -6,15 +6,15 @@ from qml.oml_kernels import gauss_sep_IBO_sym_kernel, gauss_sep_IBO_kernel, oml_
 from qml.oml_compound_list import OML_compound_list_from_xyzs
 from qml.oml_representations import OML_rep_params
 import numpy as np
-from qml.hyperparameter_optimization import Gradient_optimization_obj, Ang_mom_classified_rhf, Single_rescaling_rhf, cho_multi_solve, cho_multi_factors
+from qml.hyperparameter_optimization import Gradient_optimization_obj, Ang_mom_classified_rhf, Single_rescaling_rhf, Cho_multi_factors
 from learning_curve_building import np_cho_solve
 
 def model_MSE_MAE(K_train, K_check, train_quant, check_quant, train_quant_ignore, check_quant_ignore, lambda_val):
     K_train_mod=copy.deepcopy(K_train)
     K_train_mod[np.diag_indices_from(K_train_mod)]+=lambda_val
-    cho_factors=cho_multi_factors(K_train_mod, indices_to_ignore=train_quant_ignore)
-    alphas=cho_multi_solve(cho_factors, train_quant, indices_to_ignore=train_quant_ignore)
-    predictions=np.matmul(K_check, alphas)
+    cho_factors=Cho_multi_factors(K_train_mod, indices_to_ignore=train_quant_ignore)
+    alphas=cho_factors.solve_with(train_quant)
+    predictions=np.matmul(K_check, alphas.T)
     error_vals=check_quant-predictions
     dim1=error_vals.shape[0]
     dim2=error_vals.shape[1]

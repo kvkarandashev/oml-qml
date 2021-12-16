@@ -1,7 +1,8 @@
 # Implements several optimization techniques based on stochastic gradient descent for conventient hyperparameter optimization.
 
-# TO-DO may be better to use as a hyperparameter not the logarithm of lambda, but logarithm of the ratio of lambda 
+# TO-DO 1. may be better to use as a hyperparameter not the logarithm of lambda, but logarithm of the ratio of lambda 
 # and average diagonal element of the training kernel matrix. Would be more covenient for setting an upper limit for the corresponding ratio.
+# 2. Frequent rewrites resulted in a lot of "transpose" functions present. Perhaps get rid of some?
 
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
@@ -164,7 +165,7 @@ def MAE_bisection_optimization(initial_lambda_opt_step, train_kernel, train_vals
 class Gradient_optimization_obj:
     def __init__(self, training_compounds, training_quants, check_compounds, check_quants, training_quants_ignore=None, check_quants_ignore=None, 
                             use_Gauss=False, use_MAE=True, reduced_hyperparam_func=None, sym_kernel_func=None, kernel_func=None,
-                            kernel_input_converter=None, **kernel_additional_args):
+                            kernel_input_converter=None, quants_ignore_orderable=False, **kernel_additional_args):
         self.init_kern_funcs(use_Gauss=use_Gauss, reduced_hyperparam_func=reduced_hyperparam_func, sym_kernel_func=sym_kernel_func,
                             kernel_func=kernel_func, kernel_input_converter=kernel_input_converter)
 
@@ -180,6 +181,7 @@ class Gradient_optimization_obj:
 
         self.training_quants_ignore=training_quants_ignore
         self.check_quants_ignore=check_quants_ignore
+        self.quants_ignore_orderable=quants_ignore_orderable
 
         self.use_MAE=use_MAE
 
@@ -242,13 +244,13 @@ class Gradient_optimization_obj:
         modified_train_kernel=np.copy(self.train_kernel)
         modified_train_kernel[np.diag_indices_from(modified_train_kernel)]+=self.lambda_val
         try:
-            self.train_cho_decomp=cho_multi_factors(modified_train_kernel, indices_to_ignore=self.training_quants_ignore)
+            self.train_cho_decomp=Cho_multi_factors(modified_train_kernel, indices_to_ignore=self.training_quants_ignore, ignored_orderable=self.quants_ignore_orderable)
         except np.linalg.LinAlgError: # means mod_train_kernel is not invertible
             self.train_cho_decomp=None
         self.train_kern_invertible=(self.train_cho_decomp is not None)
         if self.train_kern_invertible:
-            self.alphas=cho_multi_solve(self.train_cho_decomp, self.training_quants, indices_to_ignore=self.training_quants_ignore)
-            self.predictions=np.matmul(self.check_kernel, self.alphas)
+            self.talphas=self.train_cho_decomp.solve_with(self.training_quants).T
+            self.predictions=np.matmul(self.check_kernel, self.talphas)
             self.prediction_errors=self.predictions-self.check_quants
             nullify_ignored(self.prediction_errors, self.check_quants_ignore)
 
@@ -261,10 +263,10 @@ class Gradient_optimization_obj:
             self.cur_MSE=None
 
     def der_predictions(self, train_der, check_der):
-        output=np.matmul(train_der, self.alphas)
-        output=cho_multi_solve(self.train_cho_decomp, output, indices_to_ignore=self.training_quants_ignore)
+        output=np.matmul(train_der, self.talphas)
+        output=self.train_cho_decomp.solve_with(output).T
         output=-np.matmul(self.check_kernel, output)
-        output+=np.matmul(check_der, self.alphas)
+        output+=np.matmul(check_der, self.talphas)
         return output
 
     def reinitiate_error_measure_ders(self, lambda_der_only=False):
@@ -326,7 +328,7 @@ def non_invertible_default_log_der():
     return np.array([-1.0]) # we only have derivative for lambda value
 
 class GOO_ensemble_subset(Gradient_optimization_obj):
-    def __init__(self, training_indices, check_indices, all_quantities, use_MAE=True, quants_ignore=None):
+    def __init__(self, training_indices, check_indices, all_quantities, use_MAE=True, quants_ignore=None, quants_ignore_orderable=False):
         self.training_indices=training_indices
         self.check_indices=check_indices
 
@@ -345,6 +347,7 @@ class GOO_ensemble_subset(Gradient_optimization_obj):
             self.check_quants_ignore=quants_ignore[self.check_indices, :]
         
         self.use_MAE=use_MAE
+        self.quants_ignore_orderable=quants_ignore_orderable
     def recalculate_kernel_matrices(self, global_matrix=None, global_matrix_ders=None):
         if global_matrix is not None:
             self.train_kernel=global_matrix[self.training_indices, :][:, self.training_indices]
@@ -359,7 +362,7 @@ class GOO_ensemble_subset(Gradient_optimization_obj):
 class GOO_ensemble(Gradient_optimization_obj):
     def __init__(self, all_compounds, all_quantities, train_id_lists, check_id_lists, quants_ignore=None, use_Gauss=False, use_MAE=True,
                         reduced_hyperparam_func=None, num_procs=None, num_threads=None, kernel_input_converter=None,
-                        sym_kernel_func=None, num_kernel_params=None, **kernel_additional_args):
+                        sym_kernel_func=None, num_kernel_params=None, quants_ignore_orderable=False, **kernel_additional_args):
 
         self.init_kern_funcs(use_Gauss=use_Gauss, reduced_hyperparam_func=reduced_hyperparam_func,
                             sym_kernel_func=sym_kernel_func, kernel_func=None, kernel_input_converter=kernel_input_converter)
@@ -370,11 +373,10 @@ class GOO_ensemble(Gradient_optimization_obj):
 
         self.tot_num_points=len(all_compounds)
 
-
         self.goo_ensemble_subsets=[]
         for train_id_list, check_id_list in zip(train_id_lists, check_id_lists):
             self.goo_ensemble_subsets.append(GOO_ensemble_subset(train_id_list, check_id_list,
-                                                        all_quantities, quants_ignore=quants_ignore, use_MAE=use_MAE))
+                                                        all_quantities, quants_ignore=quants_ignore, use_MAE=use_MAE, quants_ignore_orderable=quants_ignore_orderable))
         self.num_subsets=len(self.goo_ensemble_subsets)
 
         self.presaved_parameters=None
@@ -1107,33 +1109,59 @@ def nullify_ignored(arr, indices_to_ignore):
         for row_id, cur_ignore_indices in enumerate(indices_to_ignore):
             arr[row_id][where2slice(np.logical_not(cur_ignore_indices))]=0.0
 
-def cho_multi_factors(train_kernel, indices_to_ignore=None):
-    single_cho_decomp=(indices_to_ignore is None)
-    if not single_cho_decomp:
-        single_cho_decomp=(not indices_to_ignore.any())
-    if single_cho_decomp:
-        output=cho_factor(train_kernel)
-    else:
-        output=[]
-        for cur_ignore_ids in indices_to_ignore.T:
-            s=where2slice(cur_ignore_ids)
-            output.append(cho_factor(train_kernel[s, :][:, s]))
-    return output
-        
-def cho_multi_solve(cho_factors, rhs, indices_to_ignore=None):
-    if len(rhs.shape)==1:
-        output=cho_solve(cho_factors, rhs)
-    else:
-        single_cho_decomp=(not isinstance(cho_factors, list))
-        output=np.zeros(rhs.shape)
-        for rhs_id, rhs_component in enumerate(rhs.T):
-            if single_cho_decomp:
-                cur_factor=cho_factors
+class Cho_multi_factors:
+    def __init__(self, train_kernel, indices_to_ignore=None, ignored_orderable=False):
+        self.indices_to_ignore=indices_to_ignore
+        self.ignored_orderable=ignored_orderable
+        self.single_cho_decomp=(indices_to_ignore is None)
+        if not self.single_cho_decomp:
+            self.single_cho_decomp=(not self.indices_to_ignore.any())
+        if self.single_cho_decomp:
+            self.cho_factors=[cho_factor(train_kernel)]
+        else:
+            if self.ignored_orderable:
+                ignored_nums=[]
+                for i, cur_ignored in enumerate(self.indices_to_ignore):
+                    ignored_nums.append((i, np.sum(cur_ignored)))
+                ignored_nums.sort(key = lambda x : x[1])
+                self.availability_order=np.array([i[0] for i in ignored_nums])
+                self.avail_quant_nums=[self.indices_to_ignore.shape[0]-np.sum(cur_ignored) for cur_ignored in self.indices_to_ignore.T]
+                self.cho_factors=[cho_factor(train_kernel[self.availability_order, :][:, self.availability_order])]
             else:
-                cur_factor=cho_factors[rhs_id]
-            if indices_to_ignore is None:
+                self.cho_factors=[]
+                for cur_ignore_ids in self.indices_to_ignore.T:
+                    s=where2slice(cur_ignore_ids)
+                    self.cho_factors.append(cho_factor(train_kernel[s, :][:, s]))
+    def solve_with(self, rhs):
+        if len(rhs.shape)==1:
+            assert(self.single_cho_decomp)
+            cycled_rhs=np.array([rhs])
+        else:
+            if not self.single_cho_decomp:
+                if self.ignored_orderable:
+                    assert(len(self.avail_quant_nums)==rhs.shape[1])
+                else:
+                    assert(len(self.cho_factors)==rhs.shape[1])
+            cycled_rhs=rhs.T
+        output=np.zeros(cycled_rhs.shape)
+        for rhs_id, rhs_component in enumerate(cycled_rhs):
+            if self.indices_to_ignore is None:
                 included_indices=np.array(range(len(rhs_component)))
             else:
-                included_indices=where2slice(indices_to_ignore[:, rhs_id])
-            output[included_indices, rhs_id]=cho_solve(cur_factor, rhs_component[included_indices])
-    return output
+                if self.ignored_orderable:
+                    included_indices=self.availability_order[:self.avail_quant_nums[rhs_id]]
+                else:
+                    included_indices=where2slice(self.indices_to_ignore[:, rhs_id])
+            if self.single_cho_decomp:
+                cur_decomp=self.cho_factors[0]
+            else:
+                if self.ignored_orderable:
+                    cur_decomp=(self.cho_factors[0][0][:self.avail_quant_nums[rhs_id], :][:, :self.avail_quant_nums[rhs_id]], self.cho_factors[0][1])
+                else:
+                    cur_decomp=self.cho_factors[rhs_id]
+            output[rhs_id, included_indices]=cho_solve(cur_decomp, rhs_component[included_indices])
+        if len(rhs.shape)==1:
+            return output[0]
+        else:
+            return output
+
