@@ -114,8 +114,17 @@ class GMO_kernel_params:
         self.width_params=jnp.array(width_params)
         self.inv_sq_width_params=self.width_params**(-2)
 
-#   TO-DO rename scalar reps!!!
+# Mainly used in hyperparameter_optimization module.
+def gen_GMO_kernel_input(*arrs, **other_kwargs):
+    output=[]
+    for arr in arrs:
+        output.append(GMO_kernel_input(oml_compound_array=arr, **other_kwargs))
+    if len(arr)==1:
+        return output[0]
+    else:
+        return output
 
+#   TO-DO rename scalar reps!!!
 class GMO_kernel_input:
     def __init__(self, oml_compound_array=None, **other_kwargs):
         if oml_compound_array is None:

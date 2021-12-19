@@ -7,7 +7,8 @@
 import numpy as np
 from scipy.linalg import cho_factor, cho_solve
 import math, random, copy
-from .oml_kernels import lin_sep_IBO_kernel_conv, lin_sep_IBO_sym_kernel_conv, GMO_sep_IBO_kern_input, oml_ensemble_avs_stddevs, gauss_sep_IBO_kernel_conv, gauss_sep_IBO_sym_kernel_conv
+from .oml_kernels import lin_sep_IBO_kernel_conv, lin_sep_IBO_sym_kernel_conv, GMO_sep_IBO_kern_input, oml_ensemble_avs_stddevs,\
+                            gauss_sep_IBO_kernel_conv, gauss_sep_IBO_sym_kernel_conv, gen_GMO_kernel_input
 from .oml_representations import component_id_ang_mom_map, scalar_rep_length
 from .utils import dump2pkl
 from scipy.optimize import minimize
@@ -165,15 +166,11 @@ def MAE_bisection_optimization(initial_lambda_opt_step, train_kernel, train_vals
 class Gradient_optimization_obj:
     def __init__(self, training_compounds, training_quants, check_compounds, check_quants, training_quants_ignore=None, check_quants_ignore=None, 
                             use_Gauss=False, use_MAE=True, reduced_hyperparam_func=None, sym_kernel_func=None, kernel_func=None,
-                            kernel_input_converter=None, quants_ignore_orderable=False, **kernel_additional_args):
+                            kernel_input_converter=gen_GMO_kernel_input, quants_ignore_orderable=False, **kernel_additional_args):
         self.init_kern_funcs(use_Gauss=use_Gauss, reduced_hyperparam_func=reduced_hyperparam_func, sym_kernel_func=sym_kernel_func,
                             kernel_func=kernel_func, kernel_input_converter=kernel_input_converter)
 
-        if kernel_input_converter is None:
-            self.training_compounds=GMO_sep_IBO_kern_input(training_compounds)
-            self.check_compounds=GMO_sep_IBO_kern_input(check_compounds)
-        else:
-            self.training_compounds, self.check_compounds=kernel_input_converter(training_compounds, check_compounds)
+        self.training_compounds, self.check_compounds=kernel_input_converter(training_compounds, check_compounds)
         self.kernel_additional_args=kernel_additional_args
 
         self.training_quants=training_quants
@@ -973,7 +970,7 @@ class GOO_randomized_iterator:
 
 list_supported_funcs=["default", "single_rescaling", "single_rescaling_global_mat_prop_coeffs", "ang_mom_classified"]
 
-def min_sep_IBO_random_walk_optimization(compound_list, quant_list, quant_ignore_list=None, use_Gauss=False, init_lambda=1e-3, max_iterations=256,
+def min_sep_IBO_random_walk_optimization(compound_list, quant_list, quant_ignore_list=None, use_Gauss=False, quants_ignore_orderable=False, init_lambda=1e-3, max_iterations=256,
                                     init_param_guess=None, hyperparam_red_type="default", max_stagnating_iterations=1,
                                     use_MAE=True, rep_params=None, num_kfolds=16, other_opt_goo_ensemble_kwargs={}, randomized_iterator_kwargs={}, iter_dump_name_add=None,
                                     additional_BFGS_iters=None, iter_dump_name_add_BFGS=None, negligible_red_param_distance=1e-9, num_procs=None, num_threads=None,
@@ -1015,7 +1012,7 @@ def min_sep_IBO_random_walk_optimization(compound_list, quant_list, quant_ignore
         initial_reduced_parameter_vals=red_hyperparam_func.full_params_to_reduced(init_param_guess)
 
     opt_GOO_ensemble=generate_random_GOO_ensemble(compound_list, quant_list, quants_ignore=quant_ignore_list, use_Gauss=use_Gauss, use_MAE=use_MAE, num_kfolds=num_kfolds,
-                                                  reduced_hyperparam_func=red_hyperparam_func, **other_opt_goo_ensemble_kwargs,
+                                                  reduced_hyperparam_func=red_hyperparam_func, **other_opt_goo_ensemble_kwargs, quants_ignore_orderable=quants_ignore_orderable,
                                                   num_procs=num_procs, num_threads=num_threads, kernel_input_converter=kernel_input_converter,
                                                   sym_kernel_func=sym_kernel_func)
 
