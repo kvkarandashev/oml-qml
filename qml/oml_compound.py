@@ -33,6 +33,7 @@ from .utils import dump2pkl, loadpkl
 from pyscf import lo, gto, scf, dft
 from os.path import isfile
 from .molpro_interface import OptionUnavailableError
+from .data import NUCLEAR_CHARGE
 
 mf_creator={"HF" : scf.RHF, "UHF" : scf.UHF, "KS" : dft.RKS, "UKS" : dft.UKS}
 
@@ -72,10 +73,18 @@ class OML_compound(Compound):
                           or saved to the file otherwise.
         calc_type       - type of the calculation (for now only HF with IBO localization and the default basis set are supported).
     """
-    def __init__(self, xyz = None, mats_savefile = None, calc_type="HF", basis="sto-3g", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False,
+    def __init__(self, xyz = None, coordinates=None, nuclear_charges=None, atomtypes=None, mats_savefile = None, calc_type="HF", basis="sto-3g", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False,
             charge=0, spin=None, dft_xc='lda,vwn', dft_nlc='', software="pySCF", pyscf_calc_params=None, use_pyscf_localization=True, full_pyscf_chkfile=False, solvent_eps=None,
             localization_procedure="IBO"):
         super().__init__(xyz=xyz)
+        if coordinates is not None:
+            self.coordinates=coordinates
+        if nuclear_charges is not None:
+            self.nuclear_charges=nuclear_charges
+        if atomtypes is not None:
+            self.atomtypes=atomtypes
+            if self.nuclear_charges is None:
+                self.nuclear_charges=np.array([NUCLEAR_CHARGE[atomtype] for atomtype in self.atomtypes], dtype=int)
 
         if used_orb_type not in available_IBO_types:
             raise Exception
@@ -508,3 +517,9 @@ class OML_Slater_pair:
         else:
             initial_guess_comp=None
         self.comps[1].generate_orb_reps(rep_params, initial_guess_comp=initial_guess_comp)
+
+# Additional constructors.
+
+def ASE2OML_compound(ase_in, **other_kwargs):
+    return OML_compound(coordinates=ase_in.get_positions(), atomtypes=ase_in.get_chemical_symbols(), **other_kwargs)
+

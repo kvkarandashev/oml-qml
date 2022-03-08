@@ -21,19 +21,19 @@
 # SOFTWARE.
 
 
-from .oml_compound import OML_compound, OML_Slater_pair
+from .oml_compound import OML_compound, OML_Slater_pair, ASE2OML_compound
 from .python_parallelization import embarassingly_parallel
 import os
 
 class OML_compound_list(list):
     """ The class was created to allow easy embarassing parallelization of operations with lists of OML_compound objects.
     """
-    def run_calcs(self, disable_openmp=True):
-        self.embarassingly_parallelize(after_run_calcs, (), disable_openmp=disable_openmp)
-    def generate_orb_reps(self, rep_params, disable_openmp=True):
-        self.embarassingly_parallelize(after_gen_orb_reps, rep_params, disable_openmp=disable_openmp)
-    def embarassingly_parallelize(self, func_in, other_args, disable_openmp=True):
-        new_vals=embarassingly_parallel(func_in, self, other_args, disable_openmp=disable_openmp)
+    def run_calcs(self, **emb_paral_kwargs):
+        self.embarassingly_parallelize(after_run_calcs, (), **emb_paral_kwargs)
+    def generate_orb_reps(self, rep_params, **emb_paral_kwargs):
+        self.embarassingly_parallelize(after_gen_orb_reps, rep_params, **emb_paral_kwargs)
+    def embarassingly_parallelize(self, func_in, other_args, **emb_paral_kwargs):
+        new_vals=embarassingly_parallel(func_in, self, other_args, **emb_paral_kwargs)
         for i in range(len(self)):
             self[i]=new_vals[i]
 
@@ -54,3 +54,6 @@ def OML_Slater_pair_list_from_xyzs(xyz_files, **slater_pair_kwargs):
 
 def OML_Slater_pair_list_from_xyz_pairs(xyz_file_pairs, **slater_pair_kwargs):
     return OML_compound_list([OML_Slater_pair(xyz = xyz_file_pair[0], mats_savefile = xyz_file_pair[0], second_xyz=xyz_file_pair[1], second_mats_savefile=xyz_file_pair[1], **slater_pair_kwargs) for xyz_file in xyz_files])
+
+def OML_compound_list_from_ASEs(ase_list, **oml_comp_kwargs):
+    return OML_compound_list([ASE2OML_compound(ase_obj, **oml_comp_kwargs) for ase_obj in ase_list])

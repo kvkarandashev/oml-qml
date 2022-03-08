@@ -136,6 +136,9 @@ NUCLEAR_CHARGE = {
  'Uuq':   114, 
  'Uuh':   116}
 
+# TO-DO: is it a good way to do it?
+#ATOMTYPE={nuclear_charge: atom_type for atom_type, nuclear_charge in NUCLEAR_CHARGE.items()}}
+
 # Periodic table indexes
 PTP = {
          1  :[1,1] ,2:  [1,8] #Row1
