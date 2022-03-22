@@ -25,23 +25,24 @@
 from .compound import Compound
 from .oml_representations import generate_ibo_rep_array, gen_propagator_based_coup_mats,\
                             weighted_array, generate_ibo_fidelity_rep, reconstr_mats,\
-                            gen_atom_sorted_pseudo_ibos, gen_odf_based_coup_mats
+                            gen_atom_sorted_pseudo_ibos, gen_odf_based_coup_mats,\
+                            generate_atom_ao_ranges
+from .aux_abinit_classes import generate_ao_arr
 import jax.numpy as jnp
 import numpy as np
 import copy
-from .utils import dump2pkl, loadpkl
+from .utils import dump2pkl, loadpkl, OptionUnavailableError
 from pyscf import lo, gto, scf, dft
 from os.path import isfile
-from .molpro_interface import OptionUnavailableError
 from .data import NUCLEAR_CHARGE
 
 mf_creator={"HF" : scf.RHF, "UHF" : scf.UHF, "KS" : dft.RKS, "UKS" : dft.UKS}
 
-is_restricted={"HF" : True, "UHF" : False, "KS" : True, "UKS" : False}
+is_restricted={"HF" : True, "UHF" : False, "KS" : True, "UKS" : False, "xTB" : True}
 
-is_HF={"HF" : True, "UHF" : True, "KS" : False, "UKS" : False}
+is_HF={"HF" : True, "UHF" : True, "KS" : False, "UKS" : False, "xTB" : False}
 
-is_KS={"HF" : False, "UHF" : False, "KS" : True, "UKS" : True}
+is_KS={"HF" : False, "UHF" : False, "KS" : True, "UKS" : True, "xTB" : False}
 
 neglect_orb_occ=0.1
 
@@ -49,6 +50,8 @@ neglect_orb_occ=0.1
 available_IBO_types=["standard_IBO", "IBO_HOMO_removed", "IBO_LUMO_added", "IBO_first_excitation"]
 
 available_localization_procedures=["Boys", "IBO"]
+
+available_software=["pySCF", "molpro", "xTB"]
 
 def pySCFNotConvergedErrorMessage(oml_comp=None):
     if oml_comp is None:
@@ -73,9 +76,8 @@ class OML_compound(Compound):
                           or saved to the file otherwise.
         calc_type       - type of the calculation (for now only HF with IBO localization and the default basis set are supported).
     """
-    def __init__(self, xyz = None, coordinates=None, nuclear_charges=None, atomtypes=None, mats_savefile = None, calc_type="HF", basis="sto-3g", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False,
-            charge=0, spin=None, dft_xc='lda,vwn', dft_nlc='', software="pySCF", pyscf_calc_params=None, use_pyscf_localization=True, full_pyscf_chkfile=False, solvent_eps=None,
-            localization_procedure="IBO"):
+    def __init__(self, xyz = None, coordinates=None, nuclear_charges=None, atomtypes=None, mats_savefile=None, calc_type="HF", basis="sto-3g", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False,
+            charge=0, spin=None, dft_xc='lda,vwn', dft_nlc='', software="pySCF", pyscf_calc_params=None, use_pyscf_localization=True, full_pyscf_chkfile=False, solvent_eps=None, localization_procedure="IBO"):
         super().__init__(xyz=xyz)
         if coordinates is not None:
             self.coordinates=coordinates
@@ -103,7 +105,12 @@ class OML_compound(Compound):
         self.used_orb_type=used_orb_type
         self.use_Huckel=use_Huckel
         self.optimize_geometry=optimize_geometry
-        self.software=software
+        if software in available_software:
+            self.software=software
+            if software is "xTB":
+                self.calc_type="xTB"
+        else:
+            raise OptionUnavailableError
         self.use_pyscf_localization=use_pyscf_localization
         self.solvent_eps=solvent_eps
         self.localization_procedure=localization_procedure
@@ -204,7 +211,6 @@ class OML_compound(Compound):
                 self.create_mats_savefile()
                 return
             # Run the pySCF calculations.
-            from qml.oml_representations import generate_ao_arr, generate_atom_ao_ranges
             mf, pyscf_mol=self.generate_pyscf_mf_mol(initial_guess_comp=initial_guess_comp)
             ### Special operations.
             if self.used_orb_type != "standard_IBO":
@@ -216,14 +222,13 @@ class OML_compound(Compound):
             self.aos=generate_ao_arr(pyscf_mol)
             self.atom_ao_ranges=generate_atom_ao_ranges(pyscf_mol)
             self.e_tot=mf.e_tot
+            self.ovlp_mat=pyscf_mol.intor_symmetric('int1e_ovlp')
 
             if (is_HF[self.calc_type] and (self.solvent_eps is None)):
                 self.j_mat=self.adjust_spin_mat_dimen(mf.get_j())
                 self.k_mat=self.adjust_spin_mat_dimen(mf.get_k())
                 self.fock_mat=self.adjust_spin_mat_dimen(mf.get_fock())
-                self.ovlp_mat=jnp.array(mf.get_ovlp())
-            else:
-                self.ovlp_mat=generate_ovlp_mat(pyscf_mol)
+
             self.iao_mat, self.ibo_mat=self.create_iao_ibo(pyscf_mol=pyscf_mol)
             self.create_mats_savefile()
     # TO-DO rename? Get rid of IAO?
@@ -360,6 +365,9 @@ class OML_compound(Compound):
         return mf
 
     def generate_pyscf_mf_mol(self, initial_guess_comp=None):
+        if self.software == "xTB":
+            from .xtb_interface import generate_pyscf_mf_mol
+            return generate_pyscf_mf_mol(self)
         if ext_isfile(self.full_pyscf_chkfile):
             return loadpkl(self.full_pyscf_chkfile)
         pyscf_mol=self.generate_pyscf_mol()

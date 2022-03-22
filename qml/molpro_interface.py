@@ -2,9 +2,7 @@ import numpy as np
 from .oml_representations import AO
 import subprocess, os
 from .utils import rmdir, mktmpdir
-
-class OptionUnavailableError(Exception):
-    pass
+from .aux_classes import OptionUnavailableError
 
 
 def check_els(l1, l2):

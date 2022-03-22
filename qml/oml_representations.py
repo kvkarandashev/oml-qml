@@ -27,7 +27,7 @@ from jax import jit
 import math, copy
 
 from .foml_representations import fgen_ibo_atom_scalar_rep, fgen_ft_coup_mats, fang_mom_descr, fgen_ibo_global_couplings
-
+from .aux_abinit_classes import AO
 
 class OML_rep_params:
 #   Parameters defining how IBO's are represented and biased.
@@ -254,31 +254,6 @@ def component_id_ang_mom_map(rep_params):
     return output
 
 
-# Internal format for processing AOs created by pySCF.
-orb_ang_mom={"s" : 0, "p" : 1, "d" : 2, "f" : 3, "g" : 4, "h" : 5, "i" : 6}
-
-class AO:
-    def __init__(self, ao_label, atom_id=None):
-        if atom_id is None:
-            info=ao_label.split()
-            self.ao_type=info[2]
-            self.atom_id=int(info[0])
-        else:
-            self.atom_id=atom_id
-            self.ao_type=ao_label
-        for char in self.ao_type:
-            try:
-                int(char)
-            except ValueError:
-                self.angular=orb_ang_mom[char]
-                break
-    def __str__(self):
-        return self.__repr__()
-    def __repr__(self):
-        return ":atom_id:"+str(self.atom_id)+":ao_type:"+self.ao_type+":ang_momentum:"+str(self.angular)
-
-def generate_ao_arr(mol):
-    return [AO(ao_label) for ao_label in mol.ao_labels()]
 
 def generate_atom_ao_ranges(mol):
     ao_sliced_with_shells=mol.aoslice_by_atom()

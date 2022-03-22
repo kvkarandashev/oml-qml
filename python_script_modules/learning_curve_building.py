@@ -167,11 +167,11 @@ class SLATM_representation(representation):
 class OML_representation(representation):
     def __init__(self,  use_Huckel=False, optimize_geometry=False, calc_type="HF",
                     basis="sto-3g", software="pySCF", pyscf_calc_params=None, use_pyscf_localization=True,
-                    **rep_params_kwargs):
+                    localization_procedure="IBO", **rep_params_kwargs):
         self.rep_params=qml.oml_representations.OML_rep_params(**rep_params_kwargs)
         self.OML_compound_kwargs={"use_Huckel" : use_Huckel, "optimize_geometry" : optimize_geometry, "calc_type" : calc_type,
                             "software" : software, "pyscf_calc_params" : pyscf_calc_params, "use_pyscf_localization" : use_pyscf_localization,
-                            "basis" : basis}
+                            "basis" : basis, "localization_procedure" : localization_procedure}
     def xyz2compound(self, xyz=None):
         return qml.oml_compound.OML_compound(xyz = xyz, mats_savefile = xyz, **self.OML_compound_kwargs)
     def compound_list(self, xyz_list):
