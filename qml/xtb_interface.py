@@ -2,7 +2,7 @@ import numpy as np
 from pyscf.tools import molden
 import subprocess, os
 from .utils import rmdir, mktmpdir, write_compound_to_xyz_file, write_bytes
-from .aux_classes import OptionUnavailableError, Pseudo_MF
+from .aux_abinit_classes import Pseudo_MF
 
 unknown_field_list=["[Title]"]
 
@@ -51,11 +51,6 @@ def generate_pyscf_mf_mol(oml_compound, temp_dir_name=None):
     delete_unknown_fields(molden_init, molden_new, unknown_field_list)
 
     pyscf_mol, mo_energy, mo_coeff, mo_occ, syms, spins=molden.load(molden_new)
-    print("asdf", mo_coeff.shape, mo_occ.shape, mo_energy.shape, len(pyscf_mol.ao_labels())) 
-    print("QQQQ", pyscf_mol.ao_labels())
-    if (mo_coeff.shape[0] != mo_coeff.shape[1]):
-        print(os.getcwd())
-        quit()
     mf_out=Pseudo_MF(e_tot=e_tot, mo_energy=mo_energy, mo_coeff=mo_coeff, mo_occ=mo_occ)
     os.chdir("..")
     if temp_dir_name is None:
