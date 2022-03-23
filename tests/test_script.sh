@@ -21,7 +21,7 @@ for script in FJK_Gauss_kernel FJK_pair_Gauss_kernel_HOMO FJK_pair_linear_kernel
              FJK_pair_Gauss_kernel_UHF_LUMO FBCM_pair_linear_kernel_UHF_HOMO FBCM_pair_gauss_kernel_UHF_gap\
             FBCM_pair_gauss_kernel_KS_HOMO FBCM_pair_linear_kernel_UKS_gap FJK_sep_ibo_kernel FJK_pair_sep_ibo_kernel_HOMO\
             pair_Gauss_oxidation_molpro FJK_pair_sep_ibo_kernel_spin_change_UHF FJK_sep_Gauss_kernel_wders\
-            FJK_pair_sep_global_Gauss_kernel_wders
+            FJK_pair_sep_global_Gauss_kernel_wders FBCM_sep_Gauss_kernel_wders_xTB OFD_sep_Gauss_kernel_wders_xTB 
 do
 	python $script.py $script.log
 	bench=benchmark_data/$script.dat

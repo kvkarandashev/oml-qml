@@ -186,9 +186,9 @@ END SUBROUTINE
 
 !   orb_coeffs - first index - basis function, second - molecular orbital.
 SUBROUTINE fgen_ft_coup_mats(inv_orb_coeffs, orb_energies, prop_delta_t,&
-                                    num_orbs, num_prop_times, ft_mats)
+                                    naos, num_orbs, num_prop_times, ft_mats)
 implicit none
-integer, intent(in):: num_orbs, num_prop_times
+integer, intent(in):: naos, num_orbs, num_prop_times
 double precision, intent(in), dimension(:, :):: inv_orb_coeffs
 double precision, intent(in), dimension(:):: orb_energies
 double precision, intent(in):: prop_delta_t
@@ -201,7 +201,7 @@ integer:: time_point_counter, cos_or_sin, mat_counter
         propagation_time=time_point_counter*prop_delta_t
         do cos_or_sin=0, 1
             call fgen_ft_coup_mat(inv_orb_coeffs, orb_energies, propagation_time,&
-                                   (cos_or_sin==0), num_orbs, ft_mats(:, :, mat_counter))
+                                   (cos_or_sin==0), naos, num_orbs, ft_mats(:, :, mat_counter))
             mat_counter=mat_counter+1
         enddo
     enddo
@@ -209,14 +209,14 @@ integer:: time_point_counter, cos_or_sin, mat_counter
 END SUBROUTINE
 
 SUBROUTINE fgen_ft_coup_mat(inv_orb_coeffs, orb_energies,&
-                                    propagation_time, use_cos, num_orbs, ft_mat)
+                        propagation_time, use_cos, naos, num_orbs, ft_mat)
 implicit none
-integer, intent(in):: num_orbs
-double precision, dimension(num_orbs, num_orbs), intent(in):: inv_orb_coeffs
+integer, intent(in):: naos, num_orbs
+double precision, dimension(num_orbs, naos), intent(in):: inv_orb_coeffs
 double precision, dimension(num_orbs), intent(in):: orb_energies
 double precision, intent(in):: propagation_time
 logical, intent(in):: use_cos
-double precision, dimension(num_orbs, num_orbs), intent(inout):: ft_mat
+double precision, dimension(naos, naos), intent(inout):: ft_mat
 integer:: i1, i2, orb_counter
 double precision, dimension(num_orbs):: propagator_coeffs
 
@@ -231,7 +231,7 @@ double precision, dimension(num_orbs):: propagator_coeffs
 !$OMP END PARALLEL DO
 ft_mat=0.0
 !$OMP PARALLEL DO
-    do i2=1, num_orbs
+    do i2=1, naos
         do i1=1, i2
             do orb_counter=1, num_orbs
                 ft_mat(i1, i2)=ft_mat(i1, i2)+propagator_coeffs(orb_counter)*&
@@ -241,8 +241,8 @@ ft_mat=0.0
     enddo
 !$OMP END PARALLEL DO
 !$OMP PARALLEL DO
-    do i2=1, num_orbs-1
-        do i1=i2+1, num_orbs
+    do i2=1, naos-1
+        do i1=i2+1, naos
             ft_mat(i1, i2)=ft_mat(i2, i1)
         enddo
     enddo

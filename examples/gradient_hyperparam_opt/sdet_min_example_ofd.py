@@ -42,7 +42,7 @@ dump2pkl(xyz_list, "shuffled_list.pkl")
 os.environ["OML_NUM_PROCS"]=os.environ["OMP_NUM_THREADS"] # OML_NUM_PROCS says how many processes to use during joblib-parallelized parts; by default most of the latter disable OpenMP parallelization.
 
 oml_representation_parameters=OML_rep_params(ibo_atom_rho_comp=0.95, max_angular_momentum=max_angular_momentum,
-                    use_Fortran=True, ofd_coup_mats=True, ofd_num_powers=1, ofd_extra_inversions=False)
+                    use_Fortran=True, ofd_coup_mats=True, ofd_extra_inversions=False)
 
 
 def get_quants_comps(xyz_list, quantity, dl_params, oml_representation_parameters):

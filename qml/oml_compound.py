@@ -107,7 +107,7 @@ class OML_compound(Compound):
         self.optimize_geometry=optimize_geometry
         if software in available_software:
             self.software=software
-            if software is "xTB":
+            if software == "xTB":
                 self.calc_type="xTB"
         else:
             raise OptionUnavailableError
@@ -283,10 +283,10 @@ class OML_compound(Compound):
             #   Generate the array of orbital representations.
                 coupling_matrices=None
                 if rep_params.propagator_coup_mat:
-                    coupling_matrices=gen_propagator_based_coup_mats(rep_params, self.mo_coeff[spin], self.mo_energy[spin])
+                    coupling_matrices=gen_propagator_based_coup_mats(rep_params, self.mo_coeff[spin], self.mo_energy[spin], self.ovlp_mat)
                     coupling_matrices=(self.ovlp_mat, *coupling_matrices)
                 if rep_params.ofd_coup_mats:
-                    coupling_matrices=gen_odf_based_coup_mats(rep_params, self.mo_coeff[spin], self.mo_energy[spin], self.mo_occ[spin])
+                    coupling_matrices=gen_odf_based_coup_mats(rep_params, self.mo_coeff[spin], self.mo_energy[spin], self.mo_occ[spin], self.ovlp_mat)
                 if coupling_matrices is None:
                     coupling_matrices=(self.fock_mat[spin], self.j_mat[spin]/orb_occ_prop_coeff(self), self.k_mat[spin]/orb_occ_prop_coeff(self))
                 cur_ibo_rep_array=generate_ibo_rep_array(self.ibo_mat[spin], rep_params, self.aos, self.atom_ao_ranges, self.ovlp_mat, *coupling_matrices)
