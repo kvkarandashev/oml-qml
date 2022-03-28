@@ -77,7 +77,7 @@ class OML_compound(Compound):
         calc_type       - type of the calculation (for now only HF with IBO localization and the default basis set are supported).
     """
     def __init__(self, xyz = None, coordinates=None, nuclear_charges=None, atomtypes=None, mats_savefile=None, calc_type="HF", basis="sto-3g", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False,
-            charge=0, spin=None, dft_xc='lda,vwn', dft_nlc='', software="pySCF", pyscf_calc_params=None, use_pyscf_localization=True, full_pyscf_chkfile=False, solvent_eps=None, localization_procedure="IBO"):
+            charge=0, spin=None, dft_xc='lda,vwn', dft_nlc='', software="pySCF", pyscf_calc_params=None, use_pyscf_localization=True, write_full_pyscf_chkfile=False, solvent_eps=None, localization_procedure="IBO"):
         super().__init__(xyz=xyz)
         if coordinates is not None:
             self.coordinates=coordinates
@@ -95,11 +95,10 @@ class OML_compound(Compound):
         self.charge=charge
 
         self.spin=self.charge%2
-        default_spin_chosen=True
-        if spin is not None:
-            if spin != self.spin:
-                self.spin=spin
-                default_spin_chosen=False
+        if spin is None:
+            self.spin=self.default_spin_val()
+        else:
+            self.spin=spin
         self.mats_savefile=mats_savefile
         self.basis=basis
         self.used_orb_type=used_orb_type
@@ -119,6 +118,8 @@ class OML_compound(Compound):
         self.pyscf_chkfile=None
         self.full_pyscf_chkfile=None
 
+        self.write_full_pyscf_chkfile=write_full_pyscf_chkfile
+
         if pyscf_calc_params is None:
             self.pyscf_calc_params=OML_pyscf_calc_params()
         else:
@@ -126,55 +127,30 @@ class OML_compound(Compound):
         if is_KS[self.calc_type]:
             self.dft_xc=dft_xc
             self.dft_nlc=dft_nlc
-        if self.mats_savefile is not None:
-            if self.mats_savefile.endswith(".pkl"):
-                self.pyscf_chkfile=self.mats_savefile[:-3]+"chkfile"
-            else:
-                savefile_prename=self.mats_savefile+"."+self.calc_type+"."+self.basis
-                if self.use_Huckel:
-                    savefile_prename+=".Huckel"
-                if self.optimize_geometry:
-                    savefile_prename+=".geom_opt"
-                if self.charge != 0:
-                    savefile_prename+=".charge_"+str(self.charge)
-                if not default_spin_chosen:
-                    savefile_prename+=".spin_"+str(self.spin)
-                if is_KS[self.calc_type]:
-                    savefile_prename+=".xc_"+self.dft_xc+".nlc_"+str(self.dft_nlc)
-                if self.software != "pySCF":
-                    savefile_prename+="."+self.software+".pySCF_loc_"+str(self.use_pyscf_localization)
-                if self.solvent_eps is not None:
-                    savefile_prename+=".solvent_eps_"+str(self.solvent_eps)
-                self.pyscf_chkfile=savefile_prename+".chkfile"
-                self.mats_savefile=savefile_prename+"."+self.used_orb_type
-                if self.localization_procedure != "IBO":
-                    self.mats_savefile+=".localization_"+self.localization_procedure
-                self.mats_savefile+=".pkl"
-            if full_pyscf_chkfile:
-                self.full_pyscf_chkfile=self.pyscf_chkfile+"_full"
-        self.mats_created=ext_isfile(self.mats_savefile)
-        if self.mats_created:
-            # Import ab initio results from the savefile.
-            precalc_vals=loadpkl(self.mats_savefile)
-            self.assign_calc_res(precalc_vals)
-        else:
-            self.mo_coeff=None
-            self.mo_occ=None
-            self.mo_energy=None
-            self.aos=None
-            self.atom_ao_ranges=None
-            self.e_tot=None
+        self.mats_created=None
 
-            self.ovlp_mat=None
-            self.iao_mat=None
-            self.ibo_mat=None
-            if is_HF[self.calc_type]:
-                self.j_mat=None
-                self.k_mat=None
-                self.fock_mat=None
-            if self.optimize_geometry:
-                self.opt_coords=None
+        self.mo_coeff=None
+        self.mo_occ=None
+        self.mo_energy=None
+        self.aos=None
+        self.atom_ao_ranges=None
+        self.e_tot=None
+
+        self.ovlp_mat=None
+        self.iao_mat=None
+        self.ibo_mat=None
+        if is_HF[self.calc_type]:
+            self.j_mat=None
+            self.k_mat=None
+            self.fock_mat=None
+        if self.optimize_geometry:
+            self.opt_coords=None
+
         self.orb_reps=[]
+
+    def default_spin_val(self):
+        return (sum(self.nuclear_charges)-self.charge)%2
+
     def assign_calc_res(self, calc_res_dict):
         self.mo_coeff=calc_res_dict["mo_coeff"]
         self.mo_occ=calc_res_dict["mo_occ"]
@@ -193,11 +169,44 @@ class OML_compound(Compound):
             self.fock_mat=calc_res_dict["fock_mat"]
         if self.optimize_geometry:
             self.opt_coords=calc_res_dict["opt_coords"]
+    def check_saved_files(self):
+        if self.mats_savefile is not None:
+            if self.mats_savefile.endswith(".pkl"):
+                self.pyscf_chkfile=self.mats_savefile[:-3]+"chkfile"
+            else:
+                savefile_prename=self.mats_savefile+"."+self.calc_type+"."+self.basis
+                if self.use_Huckel:
+                    savefile_prename+=".Huckel"
+                if self.optimize_geometry:
+                    savefile_prename+=".geom_opt"
+                if self.charge != 0:
+                    savefile_prename+=".charge_"+str(self.charge)
+                if (self.spin != self.default_spin_val()):
+                    savefile_prename+=".spin_"+str(self.spin)
+                if is_KS[self.calc_type]:
+                    savefile_prename+=".xc_"+self.dft_xc+".nlc_"+str(self.dft_nlc)
+                if self.software != "pySCF":
+                    savefile_prename+="."+self.software+".pySCF_loc_"+str(self.use_pyscf_localization)
+                if self.solvent_eps is not None:
+                    savefile_prename+=".solvent_eps_"+str(self.solvent_eps)
+                self.pyscf_chkfile=savefile_prename+".chkfile"
+                self.mats_savefile=savefile_prename+"."+self.used_orb_type
+                if self.localization_procedure != "IBO":
+                    self.mats_savefile+=".localization_"+self.localization_procedure
+                self.mats_savefile+=".pkl"
+            if self.write_full_pyscf_chkfile:
+                self.full_pyscf_chkfile=self.pyscf_chkfile+"_full"
+        self.mats_created=ext_isfile(self.mats_savefile)
+        if self.mats_created:
+            # Import ab initio results from the savefile.
+            precalc_vals=loadpkl(self.mats_savefile)
+            self.assign_calc_res(precalc_vals)
     def run_calcs(self, initial_guess_comp=None):
         """ Runs the ab initio calculations if they are necessary.
 
             pyscf_calc_params   - object of OML_pyscf_calc_params class containing parameters of the pySCF calculation. (To be made more useful.)
         """
+        self.check_saved_files()
         if not self.mats_created:
             if self.software=="molpro":
                 if self.used_orb_type != "standard_IBO":

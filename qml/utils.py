@@ -1,5 +1,9 @@
 # Miscellaneous functions and classes.
 import pickle, subprocess
+from .data import NUCLEAR_CHARGE
+
+def nuclear_charge(atom_string):
+    return NUCLEAR_CHARGE[atom_string[0].upper()+atom_string[1:].lower()]
 
 def dump2pkl(obj, filename):
     output_file = open(filename, "wb")

@@ -88,6 +88,11 @@ def dummy_kernel_input(*rep_arr_lists):
     else:
         return output
 
+def dummy_oml_kernel_input(*rep_arr_lists):
+    if len(rep_arr_lists)==1:
+        return rep_arr_lists[0]
+    else:
+        return list(rep_arr_lists)
 
 @njit(fastmath=True)
 def numba_kernel_element_from_converted(A_rep, B_rep, sigma, use_Gauss, with_ders):

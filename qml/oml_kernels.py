@@ -256,6 +256,8 @@ class GMO_sep_IBO_kern_input:
     def lin_sep_kern_renormalize_arep_rhos(self, inv_sq_width_params):
         self.ibo_arep_rhos=lin_sep_kern_renormalized_arep_rhos(self.ibo_atom_sreps, self.ibo_arep_rhos, self.ibo_rhos,
                                     self.ibo_nums, self.ibo_atom_nums, inv_sq_width_params)
+    def __len__(self):
+        return self.num_mols
 
 def GMO_sep_IBO_kernel(A, B, kernel_params):
     Ac=GMO_sep_IBO_kern_input(oml_compound_array=A)
@@ -412,7 +414,10 @@ def find_ibo_vec_rep_moments(compound_list_converted, moment):
                         compound_list_converted.ibo_nums, compound_list_converted.ibo_atom_nums, moment)
 
 def oml_ensemble_avs_stddevs(compound_list):
-    compound_list_converted=GMO_sep_IBO_kern_input(compound_list)
+    if isinstance(compound_list, GMO_sep_IBO_kern_input):
+        compound_list_converted=compound_list
+    else:
+        compound_list_converted=GMO_sep_IBO_kern_input(compound_list)
 
     avs=find_ibo_vec_rep_moments(compound_list_converted, 1)
     avs2=find_ibo_vec_rep_moments(compound_list_converted, 2)
@@ -451,12 +456,15 @@ def gauss_sep_IBO_sym_kernel_conv(Ac, sigmas, with_ders=False, global_Gauss=Fals
     else:
         num_kern_comps=1
 
+    assert(Ac.max_num_scalar_reps+1==len(sigmas))
+
     kernel_mat = np.zeros((Ac.num_mols, Ac.num_mols, num_kern_comps))
     fgmo_sep_ibo_sym_kernel_wders(Ac.max_num_scalar_reps,
                 Ac.ibo_atom_sreps.T, Ac.ibo_arep_rhos.T, Ac.ibo_rhos.T,
                 Ac.ibo_atom_nums.T, Ac.ibo_nums,
                 Ac.max_num_ibo_atom_reps, Ac.max_num_ibos, Ac.num_mols,
                 sigmas, global_Gauss, kernel_mat.T, num_kern_comps)
+
     if with_ders:
         return kernel_mat
     else:

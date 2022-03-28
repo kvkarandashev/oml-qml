@@ -368,6 +368,8 @@ class GOO_ensemble(Gradient_optimization_obj):
 
         self.all_compounds=self.kernel_input_converter(all_compounds)
 
+
+
         self.tot_num_points=len(all_compounds)
 
         self.goo_ensemble_subsets=[]
@@ -422,6 +424,7 @@ class GOO_ensemble(Gradient_optimization_obj):
     def recalculate_global_matrices(self, parameters):
         global_kernel_wders=self.sym_kern_func(self.all_compounds, parameters[1:], with_ders=True, **self.kernel_additional_args)
         self.global_matrix=global_kernel_wders[:, :, 0]
+
         print("# GOO_ensemble: Kernel recalculated, average diagonal element:", np.mean(self.global_matrix[np.diag_indices_from(self.global_matrix)]))
         self.global_matrix_ders=one_diag_unity_tensor(self.tot_num_points, len(parameters))
         self.global_matrix_ders[:, :, 1:]=global_kernel_wders[:, :, 1:]

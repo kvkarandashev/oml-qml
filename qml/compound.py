@@ -25,7 +25,7 @@ from __future__ import print_function
 import numpy as np
 import collections
 
-from .data import NUCLEAR_CHARGE
+from .utils import nuclear_charge
 
 from .representations import generate_coulomb_matrix
 from .representations import generate_atomic_coulomb_matrix
@@ -319,7 +319,7 @@ class Compound(object):
 
             self.atomtypes.append(tokens[0])
             self.atomtype_indices[tokens[0]].append(i)
-            self.nuclear_charges[i] = NUCLEAR_CHARGE[tokens[0]]
+            self.nuclear_charges[i] = nuclear_charge(tokens[0])
     
             self.coordinates[i] = np.asarray(tokens[1:4], dtype=float)
    
