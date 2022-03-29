@@ -22,8 +22,11 @@
 
 import numpy as np
 
-from .fdistance import fmanhattan_distance, fl2_distance
-from .fdistance import fp_distance_integer, fp_distance_double
+try:
+    from .fdistance import fmanhattan_distance, fl2_distance
+    from .fdistance import fp_distance_integer, fp_distance_double
+except:
+    print("Fortran distance procedures not found.")
 
 def manhattan_distance(A, B):
     """ Calculates the Manhattan distances, D,  between two

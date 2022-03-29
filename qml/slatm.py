@@ -27,10 +27,13 @@ import scipy.spatial.distance as ssd
 import itertools as itl
 import numpy as np
 
-from .fslatm import fget_sbot
-from .fslatm import fget_sbot_local
-from .fslatm import fget_sbop
-from .fslatm import fget_sbop_local
+try:
+    from .fslatm import fget_sbot
+    from .fslatm import fget_sbot_local
+    from .fslatm import fget_sbop
+    from .fslatm import fget_sbop_local
+except:
+    print("Fortran SLATM routines not found.")
 
 def update_m(obj, ia, rcut=9.0, pbc=None):
     """

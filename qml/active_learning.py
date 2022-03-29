@@ -1,5 +1,9 @@
 import numpy as np
-from .factive_learning import fmetadynamics_active_learning_order, ffeature_distance_learning_order, flinear_dependent_entries
+try:
+    from .factive_learning import fmetadynamics_active_learning_order, ffeature_distance_learning_order, flinear_dependent_entries
+except:
+    print("Fortran active learning routines not found.")
+
 from numba import njit, prange
 from numba.types import bool_
 

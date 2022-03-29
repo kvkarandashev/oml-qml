@@ -23,12 +23,15 @@
 import numpy as np
 import copy
 
-from .ffchl_module import fget_kernels_fchl
-from .ffchl_module import fget_symmetric_kernels_fchl
-from .ffchl_module import fget_global_kernels_fchl
-from .ffchl_module import fget_global_symmetric_kernels_fchl
-from .ffchl_module import fget_atomic_kernels_fchl
-from .ffchl_module import fget_atomic_symmetric_kernels_fchl
+try:
+    from .ffchl_module import fget_kernels_fchl
+    from .ffchl_module import fget_symmetric_kernels_fchl
+    from .ffchl_module import fget_global_kernels_fchl
+    from .ffchl_module import fget_global_symmetric_kernels_fchl
+    from .ffchl_module import fget_atomic_kernels_fchl
+    from .ffchl_module import fget_atomic_symmetric_kernels_fchl
+except:
+    print("Fortran FCHL procedures not found.")
 
 from .alchemy import get_alchemy
 

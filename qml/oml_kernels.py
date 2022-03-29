@@ -29,10 +29,11 @@ from .python_parallelization import embarassingly_parallel
 import math, itertools, copy
 from numba import njit, prange
 
-
-from .foml_kernels import fgmo_kernel, flinear_base_kernel_mat, fgmo_sq_dist, fgmo_sep_ibo_kernel,\
+try:
+    from .foml_kernels import fgmo_kernel, flinear_base_kernel_mat, fgmo_sq_dist, fgmo_sep_ibo_kernel,\
         fgmo_sep_ibo_sym_kernel, fgmo_sep_ibo_sqdist_sums_nums, fgmo_sep_ibo_sym_kernel_wders, fgmo_sep_ibo_kernel_wders
-
+except:
+    print("Fortran orbital kernel routines not found.")
 
 
 

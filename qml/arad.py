@@ -24,14 +24,17 @@ from __future__ import print_function
 
 import numpy as np
 
-from .farad_kernels import fget_global_kernels_arad
-from .farad_kernels import fget_global_symmetric_kernels_arad
+try:
+    from .farad_kernels import fget_global_kernels_arad
+    from .farad_kernels import fget_global_symmetric_kernels_arad
 
-from .farad_kernels import fget_local_kernels_arad
-from .farad_kernels import fget_local_symmetric_kernels_arad
+    from .farad_kernels import fget_local_kernels_arad
+    from .farad_kernels import fget_local_symmetric_kernels_arad
 
-from .farad_kernels import fget_atomic_kernels_arad
-from .farad_kernels import fget_atomic_symmetric_kernels_arad
+    from .farad_kernels import fget_atomic_kernels_arad
+    from .farad_kernels import fget_atomic_symmetric_kernels_arad
+except:
+    print("Fortran ARAD procedures not found.")
 
 from .data import PTP
 

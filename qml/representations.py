@@ -25,12 +25,15 @@ from __future__ import print_function
 import numpy as np
 import itertools as itl
 
-from .frepresentations import fgenerate_coulomb_matrix
-from .frepresentations import fgenerate_unsorted_coulomb_matrix
-from .frepresentations import fgenerate_local_coulomb_matrix
-from .frepresentations import fgenerate_atomic_coulomb_matrix
-from .frepresentations import fgenerate_eigenvalue_coulomb_matrix
-from .frepresentations import fgenerate_bob
+try:
+    from .frepresentations import fgenerate_coulomb_matrix
+    from .frepresentations import fgenerate_unsorted_coulomb_matrix
+    from .frepresentations import fgenerate_local_coulomb_matrix
+    from .frepresentations import fgenerate_atomic_coulomb_matrix
+    from .frepresentations import fgenerate_eigenvalue_coulomb_matrix
+    from .frepresentations import fgenerate_bob
+except:
+    print("Fortran representation routines not found.")
 
 from .data import NUCLEAR_CHARGE
 

@@ -24,14 +24,17 @@ from __future__ import print_function
 
 import numpy as np
 
-from .fkernels import fgaussian_kernel
-from .fkernels import flaplacian_kernel
-from .fkernels import flinear_kernel
-from .fkernels import fsargan_kernel
-from .fkernels import fmatern_kernel_l2
+try:
+    from .fkernels import fgaussian_kernel
+    from .fkernels import flaplacian_kernel
+    from .fkernels import flinear_kernel
+    from .fkernels import fsargan_kernel
+    from .fkernels import fmatern_kernel_l2
 
-from .fkernels import fget_local_kernels_gaussian
-from .fkernels import fget_local_kernels_laplacian
+    from .fkernels import fget_local_kernels_gaussian
+    from .fkernels import fget_local_kernels_laplacian
+except:
+    print("Fortran kernel procedures not found.")
 
 def laplacian_kernel(A, B, sigma):
     """ Calculates the Laplacian kernel matrix K, where :math:`K_{ij}`:

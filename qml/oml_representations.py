@@ -26,7 +26,12 @@ import jax.numpy as jnp
 from jax import jit
 import math, copy
 
-from .foml_representations import fgen_ibo_atom_scalar_rep, fgen_ft_coup_mats, fang_mom_descr, fgen_ibo_global_couplings
+try:
+    from .foml_representations import fgen_ibo_atom_scalar_rep, fgen_ft_coup_mats, fang_mom_descr, fgen_ibo_global_couplings
+except:
+    print("Fortran orbital representation routines not found.")
+
+
 from .aux_abinit_classes import AO
 
 class OML_rep_params:

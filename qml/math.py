@@ -24,11 +24,13 @@ import numpy as np
 
 from copy import deepcopy
 
-from .fcho_solve import fcho_solve
-from .fcho_solve import fcho_invert
-from .fcho_solve import fbkf_solve
-from .fcho_solve import fbkf_invert
-
+try:
+    from .fcho_solve import fcho_solve
+    from .fcho_solve import fcho_invert
+    from .fcho_solve import fbkf_solve
+    from .fcho_solve import fbkf_invert
+except:
+    print("Fortran procedures for Cholesky not found.")
 
 def cho_invert(A):
     """ Returns the inverse of a positive definite matrix, using a Cholesky decomposition

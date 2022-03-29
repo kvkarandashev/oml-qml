@@ -9,8 +9,14 @@
 # 2nd argument - how the SLURM job is named.
 # Arguments starting from third (if present) - arguments for the python script.
 
+function flag_val(){
+    echo $1 | cut -d'=' -f2
+}
+
 NCPUs=$(cat /etc/slurm-llnl/slurm.conf | tr ' ' '\n' | awk 'BEGIN {FS="="} {if ($1=="CPUs") print $2}')
 JOB_OMP_NUM_THREADS=$NCPUs
+
+USE_CURRENT_DIR=0
 
 while [[ "$1" == --* ]]
 do
@@ -20,11 +26,19 @@ do
     fi
     if [[ "$1" == --CPUs=* ]]
     then
-        NCPUs=$(echo $1 | cut -d'=' -f2)
+        NCPUs=$(flag_val $1)
+    fi
+    if [ "$1" == "--use-current_dir" ]
+    then
+        USE_CURRENT_DIR=1
+    fi
+    if [[ "$1" == --conda_env=* ]]
+    then
+        conda_env=$(flag_val $1)
     fi
     if [[ "$1" == --OMP_NUM_THREADS=* ]]
     then
-        JOB_OMP_NUM_THREADS=$(echo $1 | cut -d'=' -f2)
+        JOB_OMP_NUM_THREADS=$(flag_val $1)
     fi
     shift
 done
@@ -77,15 +91,29 @@ cat > ex_$job_name.sh << EOF
 
 $(mod_load_string)
 
+if [ "$conda_env" != "" ]
+then
+    conda activate $conda_env
+fi
+
 $update_commands
 export OMP_NUM_THREADS=$JOB_OMP_NUM_THREADS
 export OML_NUM_PROCS=$NCPUs
-cd \$SCRATCH_DIR
-echo "Started: \$(date)" > execution_time.txt
+if [ "$USE_CURRENT_DIR" == "0" ]
+then
+    cd \$SCRATCH_DIR
+    output_dir="."
+else
+    output_dir=$(pwd)
+    cd $(pwd)/..
+fi
+echo "Started: \$(date)" > \$output_dir/execution_time.txt
 python $script_path ${@:3}
-echo "Finished: \$(date)" >> execution_time.txt
-cp -r * $data_dir
-
+echo "Finished: \$(date)" >> \$output_dir/execution_time.txt
+if [ "$USE_CURRENT_DIR" == "0" ]
+then
+    cp -r * $data_dir
+fi
 EOF
 
 sbatch ex_$job_name.sh
