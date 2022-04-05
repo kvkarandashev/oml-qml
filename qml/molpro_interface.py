@@ -1,7 +1,7 @@
 import numpy as np
 from .oml_representations import AO
 import subprocess, os
-from .utils import rmdir, mktmpdir, OptionUnavailableError
+from .utils import rmdir, mktmpdir, mkdir, OptionUnavailableError
 
 
 def check_els(l1, l2):
@@ -183,8 +183,12 @@ def get_molpro_out_processing(out_name, matrices_name, opt_savexyz, matrix_alias
         results["opt_coords"]=read_xyz_coords(opt_savexyz)
     return results
 
-def make_tmpfiles():
-    tmpdir=mktmpdir()
+def make_tmpfiles(temp_calc_dir=None):
+    if temp_calc_dir is None:
+        tmpdir=mktmpdir()
+    else:
+        tmpdir=temp_calc_dir
+        mkdir(tmpdir)
     inp_name="molpro.inp"
     out_name="molpro.out"
     matrices_name="matrices.dat"
@@ -198,7 +202,7 @@ def matrop_write_lines(print_matrices, output_file):
     return output
 
 def get_molpro_calc_data_HF(oml_compound):
-    inp_name, out_name, matrices_name, opt_savexyz, tmpdir=make_tmpfiles()
+    inp_name, out_name, matrices_name, opt_savexyz, tmpdir=make_tmpfiles(temp_calc_dir=oml_compound.temp_calc_dir)
     os.chdir(tmpdir)
     inp_contents=molpro_mol_header(oml_compound, "hf", opt_savexyz=opt_savexyz)
     ibo_calculated=(not oml_compound.use_pyscf_localization)
@@ -232,13 +236,14 @@ exch,k,dscf
     for mult_mat_keys in ["k_mat", "j_mat"]:
         results[mult_mat_keys][0]*=2.0
     os.chdir("..")
-    rmdir(tmpdir)
+    if oml_compound.temp_calc_dir is None:
+        rmdir(tmpdir)
     return results
 
 def get_molpro_calc_data_UHF(oml_compound):
     if not oml_compound.use_pyscf_localization:
         raise OptionUnavailableError
-    inp_name, out_name, matrices_name, opt_savexyz, tmpdir=make_tmpfiles()
+    inp_name, out_name, matrices_name, opt_savexyz, tmpdir=make_tmpfiles(temp_calc_dir=oml_compound.temp_calc_dir)
     os.chdir(tmpdir)
     inp_contents=molpro_mol_header(oml_compound, "uhf", opt_savexyz=opt_savexyz)+'''
 {matrop;
@@ -271,7 +276,8 @@ add,f2,1,h0,1,j1,1,j2,-1,k2
                     "S" : "ovlp_mat"}
     results=get_molpro_out_processing(out_name, matrices_name, opt_savexyz, matrix_aliases, oml_compound.optimize_geometry, False, False)
     os.chdir("..")
-    rmdir(tmpdir)
+    if oml_compound.temp_calc_dir is None:
+        rmdir(tmpdir)
     return results
 
 

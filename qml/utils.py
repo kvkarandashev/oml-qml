@@ -18,7 +18,10 @@ def loadpkl(filename):
     
 def mktmpdir():
     return subprocess.check_output(["mktemp", "-d", "-p", "."], text=True).rstrip("\n")
-    
+   
+def mkdir(dir_name):
+    subprocess.run(["mkdir", "-p", dir_name])
+ 
 def rmdir(dirname):
     subprocess.run(["rm", "-Rf", dirname])
 

@@ -20,6 +20,9 @@ for xyz_file in xyz_files:
 # except it has some attributes that allow easy parallelization of calculations.
 oml_compounds=OML_compound_list_from_ASEs(ase_list, software="molpro")
 
+for i in range(len(oml_compounds)):
+    oml_compounds[i].temp_calc_dir="temp_"+str(i)
+
 # Run the calculations in parallel.
 oml_compounds.run_calcs(num_threads=8, num_procs=4)
 

@@ -34,7 +34,7 @@ import copy
 from .utils import dump2pkl, loadpkl, OptionUnavailableError
 from pyscf import lo, gto, scf, dft
 from os.path import isfile
-from .data import NUCLEAR_CHARGE
+from .utils import nuclear_charge
 
 mf_creator={"HF" : scf.RHF, "UHF" : scf.UHF, "KS" : dft.RKS, "UKS" : dft.UKS}
 
@@ -76,8 +76,10 @@ class OML_compound(Compound):
                           or saved to the file otherwise.
         calc_type       - type of the calculation (for now only HF with IBO localization and the default basis set are supported).
     """
-    def __init__(self, xyz = None, coordinates=None, nuclear_charges=None, atomtypes=None, mats_savefile=None, calc_type="HF", basis="sto-3g", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False,
-            charge=0, spin=None, dft_xc='lda,vwn', dft_nlc='', software="pySCF", pyscf_calc_params=None, use_pyscf_localization=True, write_full_pyscf_chkfile=False, solvent_eps=None, localization_procedure="IBO"):
+    def __init__(self, xyz = None, coordinates=None, nuclear_charges=None, atomtypes=None, mats_savefile=None, calc_type="HF",
+                    basis="sto-3g", used_orb_type="standard_IBO", use_Huckel=False, optimize_geometry=False, charge=0, spin=None,
+                    dft_xc='lda,vwn', dft_nlc='', software="pySCF", pyscf_calc_params=None, use_pyscf_localization=True,
+                    write_full_pyscf_chkfile=False, solvent_eps=None, localization_procedure="IBO", temp_calc_dir=None):
         super().__init__(xyz=xyz)
         if coordinates is not None:
             self.coordinates=coordinates
@@ -85,20 +87,18 @@ class OML_compound(Compound):
             self.nuclear_charges=nuclear_charges
         if atomtypes is not None:
             self.atomtypes=atomtypes
-            if self.nuclear_charges is None:
-                self.nuclear_charges=np.array([NUCLEAR_CHARGE[atomtype] for atomtype in self.atomtypes], dtype=int)
-
+            self.nuclear_charges=np.array([nuclear_charge(atomtype) for atomtype in self.atomtypes], dtype=int)
         if used_orb_type not in available_IBO_types:
             raise Exception
 
         self.calc_type=calc_type
         self.charge=charge
 
-        self.spin=self.charge%2
         if spin is None:
             self.spin=self.default_spin_val()
         else:
             self.spin=spin
+
         self.mats_savefile=mats_savefile
         self.basis=basis
         self.used_orb_type=used_orb_type
@@ -106,7 +106,7 @@ class OML_compound(Compound):
         self.optimize_geometry=optimize_geometry
         if software in available_software:
             self.software=software
-            if software == "xTB":
+            if self.software == "xTB":
                 self.calc_type="xTB"
         else:
             raise OptionUnavailableError
@@ -114,6 +114,7 @@ class OML_compound(Compound):
         self.solvent_eps=solvent_eps
         self.localization_procedure=localization_procedure
 
+        self.temp_calc_dir=temp_calc_dir
 
         self.pyscf_chkfile=None
         self.full_pyscf_chkfile=None
@@ -124,9 +125,10 @@ class OML_compound(Compound):
             self.pyscf_calc_params=OML_pyscf_calc_params()
         else:
             self.pyscf_calc_params=pyscf_calc_params
-        if is_KS[self.calc_type]:
-            self.dft_xc=dft_xc
-            self.dft_nlc=dft_nlc
+#        if is_KS[self.calc_type]:
+        self.dft_xc=dft_xc
+        self.dft_nlc=dft_nlc
+
         self.mats_created=None
 
         self.mo_coeff=None
@@ -147,6 +149,12 @@ class OML_compound(Compound):
             self.opt_coords=None
 
         self.orb_reps=[]
+
+    # Parameters of the reference ab initio calculations.
+    def calc_params(self):
+        return {"calc_type" : self.calc_type, "basis" : self.basis, "software" : self.software, "use_pyscf_localization" : self.use_pyscf_localization,
+                    "used_orb_type" : self.used_orb_type, "use_Huckel" : self.use_Huckel, "pyscf_calc_params" : self.pyscf_calc_params, "use_pyscf_localization" : self.use_pyscf_localization,
+                    "solvent_eps" : self.solvent_eps, "localization_procedure" : self.localization_procedure, "dft_xc" : self.dft_xc, "dft_nlc" : self.dft_nlc}
 
     def default_spin_val(self):
         return (sum(self.nuclear_charges)-self.charge)%2

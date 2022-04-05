@@ -1,7 +1,7 @@
 import numpy as np
 from pyscf.tools import molden
 import subprocess, os
-from .utils import rmdir, mktmpdir, write_compound_to_xyz_file, write_bytes
+from .utils import rmdir, mktmpdir, write_compound_to_xyz_file, write_bytes, mkdir
 from .aux_abinit_classes import Pseudo_MF
 
 unknown_field_list=["[Title]"]
@@ -29,16 +29,16 @@ def xtb_output_extract_e_tot(xtb_output):
             if ((lsplit[0]=="::") and (lsplit[1] == "total") and (lsplit[2] == "energy")):
                 return float(lsplit[3])
 
-def generate_pyscf_mf_mol(oml_compound, temp_dir_name=None):
-    if temp_dir_name is None:
+def generate_pyscf_mf_mol(oml_compound):
+    if oml_compound.temp_calc_dir is None:
         workdir=mktmpdir()
     else:
-        subprocess.run(["mkdir", "-p", temp_dir_name])
+        mkdir(oml_compound.temp_calc_dir)
         workdir=temp_dir_name
     xyz_name="xtb_inp.xyz"
     os.chdir(workdir)
     write_compound_to_xyz_file(oml_compound, xyz_name)
-    xtb_output=subprocess.run(["xtb", xyz_name, "--molden"], capture_output=True)
+    xtb_output=subprocess.run(["xtb", xyz_name, "--chrg", str(oml_compound.charge), "--uhf", str(oml_compound.spin), "--molden"], capture_output=True)
     e_tot=xtb_output_extract_e_tot(xtb_output.stdout.decode('utf-8'))
 
     if temp_dir_name is not None:

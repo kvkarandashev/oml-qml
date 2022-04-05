@@ -36,6 +36,10 @@ class OML_compound_list(list):
         new_vals=embarassingly_parallel(func_in, self, other_args, **emb_paral_kwargs)
         for i in range(len(self)):
             self[i]=new_vals[i]
+    def mats_savefile2temp_calc_dirs(self):
+        not_pairs=isinstance(self[0], OML_compound)
+        for i in range(len(self)):
+            self[i].temp_calc_dir=self[i].mats_savefile[:-4]
 
 #   Both functions are dirty as they modify the arguments, but it doesn't matter in this particular case.
 def after_run_calcs(oml_comp):
@@ -53,7 +57,8 @@ def OML_Slater_pair_list_from_xyzs(xyz_files, **slater_pair_kwargs):
     return OML_compound_list([OML_Slater_pair(xyz = xyz_file, mats_savefile = xyz_file, **slater_pair_kwargs) for xyz_file in xyz_files])
 
 def OML_Slater_pair_list_from_xyz_pairs(xyz_file_pairs, **slater_pair_kwargs):
-    return OML_compound_list([OML_Slater_pair(xyz = xyz_file_pair[0], mats_savefile = xyz_file_pair[0], second_xyz=xyz_file_pair[1], second_mats_savefile=xyz_file_pair[1], **slater_pair_kwargs) for xyz_file in xyz_files])
+    return OML_compound_list([OML_Slater_pair(xyz = xyz_file_pair[0], mats_savefile = xyz_file_pair[0], second_xyz=xyz_file_pair[1],
+                        second_mats_savefile=xyz_file_pair[1], **slater_pair_kwargs) for xyz_file in xyz_files])
 
 def OML_compound_list_from_ASEs(ase_list, **oml_comp_kwargs):
     return OML_compound_list([ASE2OML_compound(ase_obj, **oml_comp_kwargs) for ase_obj in ase_list])
