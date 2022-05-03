@@ -36,10 +36,10 @@ logfile.write("xyz list 2")
 logfile.write(tested_xyzs_2)
 
 logfile.write("kernel_11")
-kernel_wders=qml.oml_kernels.gauss_sep_IBO_sym_kernel(oml_compounds_1, sigmas, with_ders=True)
+kernel_wders=qml.oml_kernels.gauss_sep_IBO_sym_kernel(oml_compounds_1, sigmas, with_ders=True, use_Fortran=False)
 logfile.randomized_export_3D_arr(kernel_wders, seed+2)
 
 logfile.write("kernel_12")
-kernel_wders=qml.oml_kernels.gauss_sep_IBO_kernel(oml_compounds_1, oml_compounds_2, sigmas, with_ders=True)
+kernel_wders=qml.oml_kernels.gauss_sep_IBO_kernel(oml_compounds_1, oml_compounds_2, sigmas, with_ders=True, use_Fortran=False)
 logfile.randomized_export_3D_arr(kernel_wders, seed+2)
 logfile.close()

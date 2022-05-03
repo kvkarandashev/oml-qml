@@ -26,7 +26,7 @@ import jax.numpy as jnp
 import jax.config as jconfig
 from jax import jit, vmap
 from .python_parallelization import embarassingly_parallel
-import math, itertools, copy
+import math, copy
 from numba import njit, prange
 
 try:
@@ -35,8 +35,9 @@ try:
 except:
     print("Fortran orbital kernel routines not found.")
 
-
-
+from .numba_oml_kernels import GMO_sep_IBO_kern_input, orb_rep_rho_list, iterated_orb_reps
+from .numba_oml_kernels import gauss_sep_IBO_kernel as numba_gauss_sep_IBO_kernel
+from .numba_oml_kernels import gauss_sep_IBO_sym_kernel as numba_gauss_sep_IBO_sym_kernel
 
 #   Randomly select some OML_compound objects and combine their orbital representations (type OML_ibo_rep) into a list.
 def random_ibo_sample(oml_comp_array, num_sampled_mols=None, pair_reps=True):
@@ -152,14 +153,6 @@ class GMO_kernel_input:
             self.ibo_atom_sreps=jnp.array(self.ibo_atom_sreps)
             self.rhos=jnp.array(self.rhos)
 
-def orb_rep_rho_list(oml_comp, pair_reps=False):
-    output=[]
-    for ibo in iterated_orb_reps(oml_comp, pair_reps=pair_reps):
-        output.append([ibo.rho, ibo])
-    if pair_reps:
-        for i in range(len(oml_comp.comps[0].orb_reps)):
-            output[i][0]*=-1
-    return output
 
 def sorted_rhos_ibo_atom_sreps(oml_comp, pair_reps=False, **other_kwargs):
     output=[]
@@ -179,14 +172,6 @@ def count_ibo_atom_reps(oml_comp, **other_kwargs):
             output+=1
     return output
 
-def iterated_orb_reps(oml_comp, pair_reps=False, single_ibo_list=False):
-    if pair_reps:
-        return itertools.chain(oml_comp.comps[0].orb_reps, oml_comp.comps[1].orb_reps)
-    else:
-        if single_ibo_list:
-            return [oml_comp]
-        else:
-            return oml_comp.orb_reps
 
 def generate_GMO_kernel(A, B, kernel_params, sym_kernel_mat=False):
     if isinstance(kernel_params.pair_reps, list):
@@ -221,46 +206,12 @@ def generate_GMO_kernel(A, B, kernel_params, sym_kernel_mat=False):
                         kernel_params.use_Gaussian_kernel)
     return kernel_mat
 
-class GMO_sep_IBO_kern_input:
-    def __init__(self, oml_compound_array=None, pair_reps=None):
-        if pair_reps is None:
-            pair_reps=is_pair_reps(oml_compound_array)
-        if pair_reps:
-            self.max_num_scalar_reps=len(oml_compound_array[0].comps[0].orb_reps[0].ibo_atom_reps[0].scalar_reps)
-        else:
-            self.max_num_scalar_reps=len(oml_compound_array[0].orb_reps[0].ibo_atom_reps[0].scalar_reps)
-
-        self.num_mols=len(oml_compound_array)
-        self.ibo_nums=np.zeros((self.num_mols,), dtype=int)
-        self.max_num_ibos=0
-        for comp_id, oml_comp in enumerate(oml_compound_array):
-            rho_orb_list=orb_rep_rho_list(oml_comp, pair_reps=pair_reps)
-            self.ibo_nums[comp_id]=len(rho_orb_list)
-        self.max_num_ibos=max(self.ibo_nums)
-        self.ibo_atom_nums=np.zeros((self.num_mols, self.max_num_ibos), dtype=int)
-        self.ibo_rhos=np.zeros((self.num_mols, self.max_num_ibos))
-        for comp_id, oml_comp in enumerate(oml_compound_array):
-            rho_orb_list=orb_rep_rho_list(oml_comp, pair_reps=pair_reps)
-            for orb_id, [orb_rho, orb_rep] in enumerate(rho_orb_list):
-                self.ibo_atom_nums[comp_id, orb_id]=len(orb_rep.ibo_atom_reps)
-                self.ibo_rhos[comp_id, orb_id]=orb_rho
-
-        self.max_num_ibo_atom_reps=np.amax(self.ibo_atom_nums)
-
-        self.ibo_arep_rhos=np.zeros((self.num_mols, self.max_num_ibos, self.max_num_ibo_atom_reps))
-        self.ibo_atom_sreps=np.zeros((self.num_mols, self.max_num_ibos, self.max_num_ibo_atom_reps, self.max_num_scalar_reps))
-        for ind_comp, oml_comp in enumerate(oml_compound_array):
-            for ind_ibo, [ibo_rho, ibo_rep] in enumerate(orb_rep_rho_list(oml_comp, pair_reps=pair_reps)):
-                for ind_ibo_arep, ibo_arep in enumerate(ibo_rep.ibo_atom_reps):
-                    self.ibo_arep_rhos[ind_comp, ind_ibo, ind_ibo_arep]=ibo_arep.rho
-                    self.ibo_atom_sreps[ind_comp, ind_ibo, ind_ibo_arep, :]=ibo_arep.scalar_reps[:]
-    def lin_sep_kern_renormalize_arep_rhos(self, inv_sq_width_params):
-        self.ibo_arep_rhos=lin_sep_kern_renormalized_arep_rhos(self.ibo_atom_sreps, self.ibo_arep_rhos, self.ibo_rhos,
-                                    self.ibo_nums, self.ibo_atom_nums, inv_sq_width_params)
-    def __len__(self):
-        return self.num_mols
-
 def GMO_sep_IBO_kernel(A, B, kernel_params):
+    if not kernel_params.use_Fortran:
+        sigmas=np.array([kernel_params.final_sigma, *kernel_params.width_params])
+        return numba_gauss_sep_IBO_kernel(A, B, sigmas, with_ders=False)
+        
+
     Ac=GMO_sep_IBO_kern_input(oml_compound_array=A)
     Bc=GMO_sep_IBO_kern_input(oml_compound_array=B)
     kernel_mat = np.empty((Ac.num_mols, Bc.num_mols), order='F')
@@ -276,14 +227,18 @@ def GMO_sep_IBO_kernel(A, B, kernel_params):
     return kernel_mat
 
 def GMO_sep_IBO_sym_kernel(A, kernel_params):
+    if not kernel_params.use_Fortran:
+        sigmas=np.array([kernel_params.final_sigma, *kernel_params.width_params])
+        return numba_gauss_sep_IBO_sym_kernel(A, sigmas, with_ders=False)
+
     Ac=GMO_sep_IBO_kern_input(oml_compound_array=A)
     kernel_mat = np.empty((Ac.num_mols, Ac.num_mols), order='F')
     fgmo_sep_ibo_sym_kernel(Ac.max_num_scalar_reps,
-                    Ac.ibo_atom_sreps.T, Ac.ibo_arep_rhos.T, Ac.ibo_rhos.T,
-                    Ac.ibo_atom_nums.T, Ac.ibo_nums,
-                    Ac.max_num_ibo_atom_reps, Ac.max_num_ibos, Ac.num_mols,
-                    kernel_params.width_params, kernel_params.final_sigma,
-                    kernel_mat)
+                        Ac.ibo_atom_sreps.T, Ac.ibo_arep_rhos.T, Ac.ibo_rhos.T,
+                        Ac.ibo_atom_nums.T, Ac.ibo_nums,
+                        Ac.max_num_ibo_atom_reps, Ac.max_num_ibos, Ac.num_mols,
+                        kernel_params.width_params, kernel_params.final_sigma,
+                        kernel_mat)
     return kernel_mat
 
 #   Create matrices containing sum over square distances between IBOs and the number of such pairs.
@@ -447,9 +402,12 @@ def gauss_sep_IBO_kernel_conv(Ac, Bc, sigmas, preserve_converted_arrays=True, wi
 
 
 def gauss_sep_IBO_kernel(A, B, sigmas, with_ders=False, use_Fortran=True, global_Gauss=False):
-    Ac=GMO_sep_IBO_kern_input(oml_compound_array=A)
-    Bc=GMO_sep_IBO_kern_input(oml_compound_array=B)
-    return gauss_sep_IBO_kernel_conv(Ac, Bc, sigmas, with_ders=with_ders, global_Gauss=global_Gauss)
+    if use_Fortran:
+        Ac=GMO_sep_IBO_kern_input(oml_compound_array=A)
+        Bc=GMO_sep_IBO_kern_input(oml_compound_array=B)
+        return gauss_sep_IBO_kernel_conv(Ac, Bc, sigmas, with_ders=with_ders, global_Gauss=global_Gauss)
+    else:
+        return numba_gauss_sep_IBO_kernel(A, B, sigmas, with_ders=with_ders, global_Gauss=global_Gauss)
 
 def gauss_sep_IBO_sym_kernel_conv(Ac, sigmas, with_ders=False, global_Gauss=False):
     if with_ders:
@@ -471,77 +429,9 @@ def gauss_sep_IBO_sym_kernel_conv(Ac, sigmas, with_ders=False, global_Gauss=Fals
     else:
         return kernel_mat[:, :, 0]
 
-def gauss_sep_IBO_sym_kernel(A, sigmas, with_ders=False, global_Gauss=False):
-    Ac=GMO_sep_IBO_kern_input(oml_compound_array=A)
-    return gauss_sep_IBO_sym_kernel_conv(Ac, sigmas, with_ders=with_ders, global_Gauss=global_Gauss)
-
-#### For random Fourier decomposition of the kernel.
-###### STUPID, SHOULD BE REWRITTEN!!!
-def generate_random_frequencies_origins(num_freqs, num_samples):
-    return np.random.normal(size=(num_samples, num_freqs)), np.random.random(size=(num_samples, num_freqs))*2*np.pi
-
-
-
-@njit(fastmath=True, parallel=True)
-def cosine_samples(ibo_atom_sreps, ibo_arep_rhos, ibo_rhos, inv_sq_width_params, random_frequencies, random_origins, negligible):
-
-    num_mols=ibo_arep_rhos.shape[0]
-    num_ibos=ibo_arep_rhos.shape[1]
-    num_areps=ibo_arep_rhos.shape[2]
-
-    num_samples=random_origins.shape[0]
-
-    output=np.zeros((num_mols, num_ibos, num_areps, num_samples))
-
-    rescale_factors=2*np.sqrt(2*inv_sq_width_params)
-
-    for mol_id in prange(num_mols):
-        for ibo_id in range(num_ibos):
-            for arep_id in range(num_areps):
-                if negligible[mol_id, ibo_id, arep_id]==0:
-                    break
-                for sample_id in range(num_samples):
-                    output[mol_id, ibo_id, arep_id, sample_id]=np.product(np.cos(random_frequencies[sample_id, :]*ibo_atom_sreps[mol_id, ibo_id, arep_id, :]+random_origins[sample_id, :]))
-    return output
-
-class sep_IBO_Fourier_rand_kern_input:
-    def __init__(self, comp_list, inv_sq_width_params, density_neglect, random_frequencies, random_origins):
-        comp_list_conv=GMO_sep_IBO_kern_input(comp_list)
-        self.negligible=negligible_rhos(comp_list_conv.ibo_arep_rhos, comp_list_conv.ibo_rhos, density_neglect)
-        self.samples=cosine_samples(comp_list_conv.ibo_atom_sreps, comp_list_conv.ibo_arep_rhos, comp_list_conv.ibo_rhos, inv_sq_width_params, random_frequencies, random_origins, self.negligible)
-
-@njit(fastmath=True, parallel=True)
-def lin_sep_IBO_Fourier_random_kernel_from_comp(A_components, B_components, A_negligible, B_negligible):
-    A_num_mols=A_components.shape[0]
-    A_num_ibos=A_components.shape[1]
-    A_num_areps=A_components.shape[2]
-
-    B_num_mols=B_components.shape[0]
-    B_num_ibos=B_components.shape[1]
-    B_num_areps=B_components.shape[2]
-
-    Kernel=np.zeros((A_num_mols, B_num_mols, 1))
-
-    for A_mol_id in prange(A_num_mols):
-        for B_mol_id in range(B_num_mols):
-            for A_ibo_id in range(A_num_ibos):
-                for B_ibo_id in range(B_num_ibos):
-                    for A_arep_id in range(A_num_areps):
-                        if A_negligible[A_mol_id, A_ibo_id, A_arep_id]==0:
-                            break
-                        for B_arep_id in range(B_num_areps):
-                            if B_negligible[B_mol_id, B_ibo_id, B_arep_id]==0:
-                                break
-                            Kernel[A_mol_id, B_mol_id, 0]+=np.dot(A_components[A_mol_id, A_ibo_id, A_arep_id, :], B_components[B_mol_id, B_ibo_id, B_arep_id, :])
-    return Kernel
-
-
-def lin_sep_IBO_Fourier_random_kernel(A, B, inv_sq_width_params, density_neglect, random_frequencies=None, random_origins=None, num_samples=1):
-    if random_frequencies is None:
-        random_frequencies, random_origins=generate_random_frequencies_origins(inv_sq_width_params.shape[0], num_samples=num_samples)
-    Ac=sep_IBO_Fourier_rand_kern_input(A, inv_sq_width_params, density_neglect, random_frequencies, random_origins)
-    Bc=sep_IBO_Fourier_rand_kern_input(B, inv_sq_width_params, density_neglect, random_frequencies, random_origins)
-    return lin_sep_IBO_Fourier_random_kernel_from_comp(Ac.samples, Bc.samples, Ac.negligible, Bc.negligible)[:, :, 0]
-
-
-
+def gauss_sep_IBO_sym_kernel(A, sigmas, with_ders=False, global_Gauss=False, use_Fortran=True):
+    if use_Fortran:
+        Ac=GMO_sep_IBO_kern_input(oml_compound_array=A)
+        return gauss_sep_IBO_sym_kernel_conv(Ac, sigmas, with_ders=with_ders, global_Gauss=global_Gauss)
+    else:
+        return numba_gauss_sep_IBO_sym_kernel(A, sigmas, with_ders=with_ders, global_Gauss=global_Gauss)
