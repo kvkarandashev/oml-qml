@@ -25,7 +25,9 @@ oml_compounds_2=my_representation.init_compound_list(xyz_list=tested_xyzs_2, dis
 
 oml_samp_orbs=qml.oml_kernels.random_ibo_sample(oml_compounds_1, pair_reps=True)
 
-width_params=qml.oml_kernels.oml_ensemble_widths_estimate(oml_samp_orbs)
+width_params=np.array(qml.oml_kernels.oml_ensemble_widths_estimate(oml_samp_orbs))
+
+width_params[np.where(width_params<0.001)]=0.001
 
 logfile.write("Width params")
 logfile.write(width_params)
