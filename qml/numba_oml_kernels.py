@@ -23,7 +23,7 @@ def orb_rep_rho_list(oml_comp, pair_reps=False):
 
 
 class GMO_sep_IBO_kern_input:
-    def __init__(self, oml_compound_array=None, pair_reps=None, single_virtual_ibo=False):
+    def __init__(self, oml_compound_array=None, pair_reps=None):
         if pair_reps is None:
             pair_reps=is_pair_reps(oml_compound_array)
         if pair_reps:
@@ -34,9 +34,11 @@ class GMO_sep_IBO_kern_input:
         self.num_mols=len(oml_compound_array)
         self.ibo_nums=np.zeros((self.num_mols,), dtype=int)
         self.max_num_ibos=0
+
         for comp_id, oml_comp in enumerate(oml_compound_array):
             rho_orb_list=orb_rep_rho_list(oml_comp, pair_reps=pair_reps)
             self.ibo_nums[comp_id]=len(rho_orb_list)
+
         self.max_num_ibos=max(self.ibo_nums)
         self.ibo_atom_nums=np.zeros((self.num_mols, self.max_num_ibos), dtype=int)
         self.ibo_rhos=np.zeros((self.num_mols, self.max_num_ibos))
@@ -47,6 +49,7 @@ class GMO_sep_IBO_kern_input:
                 self.ibo_rhos[comp_id, orb_id]=orb_rho
 
         self.max_num_ibo_atom_reps=np.amax(self.ibo_atom_nums)
+
 
         self.ibo_arep_rhos=np.zeros((self.num_mols, self.max_num_ibos, self.max_num_ibo_atom_reps))
         self.ibo_atom_sreps=np.zeros((self.num_mols, self.max_num_ibos, self.max_num_ibo_atom_reps, self.max_num_scalar_reps))
@@ -384,7 +387,7 @@ def orb_orb_cov_gauss_wders(orb_areps_A, orb_areps_B, arep_rhos_A, arep_rhos_B, 
     
     orb_temp_arr[0]=lin2gauss_kern_el(orb_temp_arr[1], inv_sq_global_sigma)
     orb_temp_arr[1]=orb_temp_arr[0]*(1-orb_temp_arr[1])
-    orb_temp_arr[2:]*=orb_temp_arr[0]
+    orb_temp_arr[2:]*=orb_temp_arr[0]*inv_sq_global_sigma
 
 @njit(fastmath=True)
 def gauss_sep_IBO_kernel_row(A_orb_areps, A_arep_rhos, A_orb_rhos,
@@ -552,16 +555,24 @@ def gauss_sep_IBO_kernel_conv(Ac, Bc, sigmas, preserve_converted_arrays=True, wi
 
 
 def gauss_sep_IBO_kernel(A, B, sigmas, with_ders=False, global_Gauss=False):
-    Ac=GMO_sep_IBO_kern_input(oml_compound_array=A, single_virtual_ibo=global_Gauss)
-    Bc=GMO_sep_IBO_kern_input(oml_compound_array=B, single_virtual_ibo=global_Gauss)
-    return gauss_sep_IBO_kernel_conv(Ac, Bc, sigmas, preserve_converted_arrays=False, with_ders=with_ders)
+    if global_Gauss:
+        output=lin_sep_IBO_kernel(A, B, sigmas[1:], with_ders=with_ders)
+        return numba_convert_linear_to_Gauss(output, sigmas[0])
+    else:
+        Ac=GMO_sep_IBO_kern_input(oml_compound_array=A)
+        Bc=GMO_sep_IBO_kern_input(oml_compound_array=B)
+        return gauss_sep_IBO_kernel_conv(Ac, Bc, sigmas, preserve_converted_arrays=False, with_ders=with_ders)
 
 def gauss_sep_IBO_sym_kernel_conv(Ac, sigmas, preserve_converted_arrays=True, with_ders=False, global_Gauss=False):
     return gauss_sep_IBO_kernel_conv(Ac, None, sigmas, preserve_converted_arrays=preserve_converted_arrays, with_ders=with_ders)
 
 def gauss_sep_IBO_sym_kernel(A, sigmas, with_ders=False, global_Gauss=False):
-    Ac=GMO_sep_IBO_kern_input(oml_compound_array=A, single_virtual_ibo=global_Gauss)
-    return gauss_sep_IBO_sym_kernel_conv(Ac, sigmas, preserve_converted_arrays=False, with_ders=with_ders)
+    if global_Gauss:
+        output=lin_sep_IBO_sym_kernel(A, sigmas[1:], with_ders=with_ders)
+        return numba_convert_linear_to_Gauss(output, sigmas[0])
+    else:
+        Ac=GMO_sep_IBO_kern_input(oml_compound_array=A)
+        return gauss_sep_IBO_sym_kernel_conv(Ac, sigmas, preserve_converted_arrays=False, with_ders=with_ders)
 
 
 

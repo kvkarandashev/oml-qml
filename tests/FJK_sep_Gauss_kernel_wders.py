@@ -27,7 +27,7 @@ width_params=qml.oml_kernels.oml_ensemble_widths_estimate(oml_samp_orbs)
 logfile.write("Width params")
 logfile.write(width_params)
 
-sigmas=np.array([1.0, *width_params])
+sigmas=np.array([0.5, *width_params])
 
 logfile.write("xyz list 1")
 logfile.write(tested_xyzs_1)
@@ -36,10 +36,10 @@ logfile.write("xyz list 2")
 logfile.write(tested_xyzs_2)
 
 logfile.write("kernel_11")
-kernel_wders=qml.oml_kernels.gauss_sep_IBO_sym_kernel(oml_compounds_1, sigmas, with_ders=True, use_Fortran=False)
+kernel_wders=qml.oml_kernels.gauss_sep_IBO_sym_kernel(oml_compounds_1, sigmas, with_ders=True, use_Fortran=True)
 logfile.randomized_export_3D_arr(kernel_wders, seed+2)
 
 logfile.write("kernel_12")
-kernel_wders=qml.oml_kernels.gauss_sep_IBO_kernel(oml_compounds_1, oml_compounds_2, sigmas, with_ders=True, use_Fortran=False)
+kernel_wders=qml.oml_kernels.gauss_sep_IBO_kernel(oml_compounds_1, oml_compounds_2, sigmas, with_ders=True, use_Fortran=True)
 logfile.randomized_export_3D_arr(kernel_wders, seed+2)
 logfile.close()

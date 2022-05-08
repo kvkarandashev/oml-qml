@@ -32,7 +32,7 @@ width_params[np.where(width_params<0.001)]=0.001
 logfile.write("Width params")
 logfile.write(width_params)
 
-sigmas=np.array([1.0, *width_params])
+sigmas=np.array([0.5, *width_params])
 
 logfile.write("xyz list 1")
 logfile.write(tested_xyzs_1)
