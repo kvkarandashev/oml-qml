@@ -23,9 +23,11 @@ my_representation=OML_Slater_pair_rep(max_angular_momentum=1, use_Fortran=True, 
 oml_compounds_1=my_representation.init_compound_list(xyz_list=tested_xyzs_1, disable_openmp=True)
 oml_compounds_2=my_representation.init_compound_list(xyz_list=tested_xyzs_2, disable_openmp=False)
 
-oml_samp_orbs=qml.oml_kernels.random_ibo_sample(oml_compounds_1, pair_reps=True)
+#oml_samp_orbs=qml.oml_kernels.random_ibo_sample(oml_compounds_1, pair_reps=True)
 
-width_params=qml.oml_kernels.oml_ensemble_widths_estimate(oml_samp_orbs)
+#width_params=qml.oml_kernels.oml_ensemble_widths_estimate(oml_samp_orbs)
+
+av_vals, width_params=qml.oml_kernels.oml_ensemble_avs_stddevs(oml_compounds_1)
 
 logfile.write("Width params")
 logfile.write(width_params)

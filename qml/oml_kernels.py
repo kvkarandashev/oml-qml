@@ -35,7 +35,7 @@ try:
 except:
     print("Fortran orbital kernel routines not found.")
 
-from .numba_oml_kernels import GMO_sep_IBO_kern_input, orb_rep_rho_list, iterated_orb_reps
+from .numba_oml_kernels import GMO_sep_IBO_kern_input, orb_rep_rho_list, iterated_orb_reps, oml_ensemble_avs_stddevs
 from .numba_oml_kernels import gauss_sep_IBO_kernel as numba_gauss_sep_IBO_kernel
 from .numba_oml_kernels import gauss_sep_IBO_sym_kernel as numba_gauss_sep_IBO_sym_kernel
 
@@ -347,38 +347,6 @@ def lin_sep_IBO_kernel_conv(Ac, Bc, sigmas, with_ders=False):
 def lin_sep_IBO_kernel(A, B, sigmas, with_ders=False):
     raise Exception
 
-
-# For a faster alternative to oml_ensemble_widths_estimate which requires conversion though.
-@njit(fastmath=True)
-def numba_find_ibo_vec_rep_moments(ibo_atom_sreps, ibo_arep_rhos, ibo_rhos, ibo_nums, ibo_atom_nums, moment):
-    num_mols=ibo_arep_rhos.shape[0]
-
-    output=np.zeros(ibo_atom_sreps.shape[3])
-    norm_const=0.0
-    for mol_id in range(num_mols):
-        for ibo_id in range(ibo_nums[mol_id]):
-            rho_ibo=ibo_rhos[mol_id, ibo_id]
-            for arep_id in range(ibo_atom_nums[mol_id, ibo_id]):
-                rho_arep=ibo_arep_rhos[mol_id, ibo_id, arep_id]
-                cur_rho=np.abs(rho_arep*rho_ibo)
-                norm_const+=cur_rho
-                output+=cur_rho*ibo_atom_sreps[mol_id, ibo_id, arep_id, :]**moment
-    return output/norm_const
-
-def find_ibo_vec_rep_moments(compound_list_converted, moment):
-    return numba_find_ibo_vec_rep_moments(compound_list_converted.ibo_atom_sreps, compound_list_converted.ibo_arep_rhos, compound_list_converted.ibo_rhos,
-                        compound_list_converted.ibo_nums, compound_list_converted.ibo_atom_nums, moment)
-
-def oml_ensemble_avs_stddevs(compound_list):
-    if isinstance(compound_list, GMO_sep_IBO_kern_input):
-        compound_list_converted=compound_list
-    else:
-        compound_list_converted=GMO_sep_IBO_kern_input(compound_list)
-
-    avs=find_ibo_vec_rep_moments(compound_list_converted, 1)
-    avs2=find_ibo_vec_rep_moments(compound_list_converted, 2)
-    stddevs=np.sqrt(avs2-avs**2)
-    return avs, stddevs
 
 
 def gauss_sep_IBO_kernel_conv(Ac, Bc, sigmas, preserve_converted_arrays=True, with_ders=False, global_Gauss=False):
