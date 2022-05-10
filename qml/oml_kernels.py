@@ -35,9 +35,10 @@ try:
 except:
     print("Fortran orbital kernel routines not found.")
 
-from .numba_oml_kernels import GMO_sep_IBO_kern_input, orb_rep_rho_list, iterated_orb_reps, oml_ensemble_avs_stddevs
-from .numba_oml_kernels import gauss_sep_IBO_kernel as numba_gauss_sep_IBO_kernel
-from .numba_oml_kernels import gauss_sep_IBO_sym_kernel as numba_gauss_sep_IBO_sym_kernel
+from .numba_oml_kernels import orb_rep_rho_list, iterated_orb_reps, oml_ensemble_avs_stddevs
+from .numba_oml_kernels import gauss_sep_orb_kernel as numba_gauss_sep_IBO_kernel
+from .numba_oml_kernels import gauss_sep_orb_sym_kernel as numba_gauss_sep_IBO_sym_kernel
+from .numba_oml_kernels import GMO_sep_orb_kern_input as GMO_sep_IBO_kern_input
 
 #   Randomly select some OML_compound objects and combine their orbital representations (type OML_ibo_rep) into a list.
 def random_ibo_sample(oml_comp_array, num_sampled_mols=None, pair_reps=True):
@@ -216,12 +217,12 @@ def GMO_sep_IBO_kernel(A, B, kernel_params):
     Bc=GMO_sep_IBO_kern_input(oml_compound_array=B)
     kernel_mat = np.empty((Ac.num_mols, Bc.num_mols), order='F')
     fgmo_sep_ibo_kernel(Ac.max_num_scalar_reps,
-                    Ac.ibo_atom_sreps.T, Ac.ibo_arep_rhos.T, Ac.ibo_rhos.T,
-                    Ac.ibo_atom_nums.T, Ac.ibo_nums,
-                    Ac.max_num_ibo_atom_reps, Ac.max_num_ibos, Ac.num_mols,
-                    Bc.ibo_atom_sreps.T, Bc.ibo_arep_rhos.T, Bc.ibo_rhos.T,
-                    Bc.ibo_atom_nums.T, Bc.ibo_nums,
-                    Bc.max_num_ibo_atom_reps, Bc.max_num_ibos, Bc.num_mols,
+                    Ac.orb_atom_sreps.T, Ac.orb_arep_rhos.T, Ac.orb_rhos.T,
+                    Ac.orb_atom_nums.T, Ac.orb_nums,
+                    Ac.max_num_orb_atom_reps, Ac.max_num_orbs, Ac.num_mols,
+                    Bc.orb_atom_sreps.T, Bc.orb_arep_rhos.T, Bc.orb_rhos.T,
+                    Bc.orb_atom_nums.T, Bc.orb_nums,
+                    Bc.max_num_orb_atom_reps, Bc.max_num_orbs, Bc.num_mols,
                     kernel_params.width_params, kernel_params.final_sigma,
                     kernel_mat)
     return kernel_mat
@@ -234,9 +235,9 @@ def GMO_sep_IBO_sym_kernel(A, kernel_params):
     Ac=GMO_sep_IBO_kern_input(oml_compound_array=A)
     kernel_mat = np.empty((Ac.num_mols, Ac.num_mols), order='F')
     fgmo_sep_ibo_sym_kernel(Ac.max_num_scalar_reps,
-                        Ac.ibo_atom_sreps.T, Ac.ibo_arep_rhos.T, Ac.ibo_rhos.T,
-                        Ac.ibo_atom_nums.T, Ac.ibo_nums,
-                        Ac.max_num_ibo_atom_reps, Ac.max_num_ibos, Ac.num_mols,
+                        Ac.orb_atom_sreps.T, Ac.orb_arep_rhos.T, Ac.orb_rhos.T,
+                        Ac.orb_atom_nums.T, Ac.orb_nums,
+                        Ac.max_num_orb_atom_reps, Ac.max_num_orbs, Ac.num_mols,
                         kernel_params.width_params, kernel_params.final_sigma,
                         kernel_mat)
     return kernel_mat
@@ -356,12 +357,12 @@ def gauss_sep_IBO_kernel_conv(Ac, Bc, sigmas, preserve_converted_arrays=True, wi
         num_kern_comps=1
     kernel_mat = np.zeros((Ac.num_mols, Bc.num_mols, num_kern_comps))
     fgmo_sep_ibo_kernel_wders(Ac.max_num_scalar_reps,
-                Ac.ibo_atom_sreps.T, Ac.ibo_arep_rhos.T, Ac.ibo_rhos.T,
-                Ac.ibo_atom_nums.T, Ac.ibo_nums,
-                Ac.max_num_ibo_atom_reps, Ac.max_num_ibos, Ac.num_mols,
-                Bc.ibo_atom_sreps.T, Bc.ibo_arep_rhos.T, Bc.ibo_rhos.T,
-                Bc.ibo_atom_nums.T, Bc.ibo_nums,
-                Bc.max_num_ibo_atom_reps, Bc.max_num_ibos, Bc.num_mols,
+                Ac.orb_atom_sreps.T, Ac.orb_arep_rhos.T, Ac.orb_rhos.T,
+                Ac.orb_atom_nums.T, Ac.orb_nums,
+                Ac.max_num_orb_atom_reps, Ac.max_num_orbs, Ac.num_mols,
+                Bc.orb_atom_sreps.T, Bc.orb_arep_rhos.T, Bc.orb_rhos.T,
+                Bc.orb_atom_nums.T, Bc.orb_nums,
+                Bc.max_num_orb_atom_reps, Bc.max_num_orbs, Bc.num_mols,
                 sigmas, global_Gauss, kernel_mat.T, num_kern_comps)
     if with_ders:
         return kernel_mat
@@ -387,9 +388,9 @@ def gauss_sep_IBO_sym_kernel_conv(Ac, sigmas, with_ders=False, global_Gauss=Fals
 
     kernel_mat = np.zeros((Ac.num_mols, Ac.num_mols, num_kern_comps))
     fgmo_sep_ibo_sym_kernel_wders(Ac.max_num_scalar_reps,
-                Ac.ibo_atom_sreps.T, Ac.ibo_arep_rhos.T, Ac.ibo_rhos.T,
-                Ac.ibo_atom_nums.T, Ac.ibo_nums,
-                Ac.max_num_ibo_atom_reps, Ac.max_num_ibos, Ac.num_mols,
+                Ac.orb_atom_sreps.T, Ac.orb_arep_rhos.T, Ac.orb_rhos.T,
+                Ac.orb_atom_nums.T, Ac.orb_nums,
+                Ac.max_num_orb_atom_reps, Ac.max_num_orbs, Ac.num_mols,
                 sigmas, global_Gauss, kernel_mat.T, num_kern_comps)
 
     if with_ders:
