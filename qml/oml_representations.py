@@ -31,6 +31,8 @@ try:
 except:
     print("Fortran orbital representation routines not found.")
 
+from .numba_oml_representations import gen_orb_atom_scalar_rep, ang_mom_descr
+from .numba_oml_representations import ang_mom_descr as numba_ang_mom_descr
 
 from .aux_abinit_classes import AO
 
@@ -130,32 +132,23 @@ def reconstr_mats(mo_coeffs, mo_energy=None, mo_occ=None, mat_types=["ovlp"]):
 class OML_ibo_atom_rep:
     def __init__(self, atom_ao_range, coeffs, rep_params, angular_momenta, ovlp_mat):
         self.atom_ao_range=atom_ao_range
+        self.scalar_reps=np.zeros(rep_params.max_angular_momentum)
+        rho_arr=np.zeros(1)
         if rep_params.use_Fortran:
-            self.scalar_reps=np.zeros(rep_params.max_angular_momentum)
-            rho_arr=np.zeros(1)
             fang_mom_descr(atom_ao_range, coeffs, angular_momenta, ovlp_mat, rep_params.max_angular_momentum, len(coeffs), self.scalar_reps, rho_arr)
-            self.rho=rho_arr[0]
         else:
-            self.scalar_reps, self.rho=ang_mom_descr(self.atom_ao_range, coeffs, angular_momenta, ovlp_mat, rep_params.max_angular_momentum)
+            numba_ang_mom_descr(ovlp_mat, coeffs, np.array(angular_momenta), self.atom_ao_range, rep_params.max_angular_momentum, self.scalar_reps, rho_arr)
+        self.rho=rho_arr[0]
         self.pre_renorm_rho=self.rho
         self.atom_id=None
     def completed_scalar_reps(self, coeffs, rep_params, angular_momenta, coup_mats):
+        couplings=np.zeros(scalar_coup_length(rep_params, coup_mats))
         if rep_params.use_Fortran:
-            couplings=np.zeros(scalar_coup_length(rep_params, coup_mats))
             fgen_ibo_atom_scalar_rep(self.atom_ao_range, coeffs, angular_momenta, np.transpose(coup_mats),
                                         len(coup_mats), rep_params.max_angular_momentum, len(coeffs), couplings)
         else:
-        #   TO-DO rewrite in JAX??? Or Numba???
-            couplings=[]
-            for coup_id, mat in enumerate(coup_mats):
-                for same_atom in [True, False]:
-                    for ang_mom1 in avail_ang_mom(rep_params):
-                        for ang_mom2 in avail_ang_mom(rep_params):
-                            if same_atom and (ang_mom1 > ang_mom2):
-                                continue
-                            cur_coupling=ibo_atom_atom_coupling(self.atom_ao_range, ang_mom1, ang_mom2,
-                                                            coeffs, angular_momenta, mat, same_atom=same_atom)
-                            couplings.append(cur_coupling)
+            #TO-DO: make coup_mats NP-array in the first place?
+            gen_orb_atom_scalar_rep(np.array(coup_mats), coeffs, np.array(angular_momenta), self.atom_ao_range, rep_params.max_angular_momentum, couplings)
         self.scalar_reps=np.append(self.scalar_reps, couplings)
         self.scalar_reps/=self.pre_renorm_rho
         if (rep_params.propagator_coup_mat or rep_params.ofd_coup_mats):
