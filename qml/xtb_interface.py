@@ -1,7 +1,7 @@
 import numpy as np
 from pyscf.tools import molden
 import subprocess, os
-from .utils import rmdir, mktmpdir, write_compound_to_xyz_file, write_bytes, mkdir
+from .utils import rmdir, mktmpdir, write_compound_to_xyz_file, write2file, mkdir
 from .aux_abinit_classes import Pseudo_MF
 
 unknown_field_list=["[Title]"]
@@ -39,12 +39,14 @@ def generate_pyscf_mf_mol(oml_compound):
     os.chdir(workdir)
     write_compound_to_xyz_file(oml_compound, xyz_name)
     xtb_output=subprocess.run(["xtb", xyz_name, "--chrg", str(oml_compound.charge), "--uhf", str(oml_compound.spin), "--molden"], capture_output=True)
-    e_tot=xtb_output_extract_e_tot(xtb_output.stdout.decode('utf-8'))
+    stdout=xtb_output.stdout.decode('utf-8')
+    e_tot=xtb_output_extract_e_tot(stdout)
 
-    if temp_dir_name is not None:
+    if oml_compound.temp_calc_dir is not None:
         # Save the stdout and stderr files.
-        write_bytes(xtb_output.stdout, "xtb.stdout")
-        write_bytes(xtb_output.stderr, "xtb.stderr")
+        # TO-DO dedicated options for writing.
+        write2file(stdout, "xtb.stdout")
+        write2file(xtb_output.stderr.decode('utf-8'), "xtb.stderr")
 
     molden_init="molden.input"
     molden_new="molden_new.input"
@@ -53,6 +55,6 @@ def generate_pyscf_mf_mol(oml_compound):
     pyscf_mol, mo_energy, mo_coeff, mo_occ, syms, spins=molden.load(molden_new)
     mf_out=Pseudo_MF(e_tot=e_tot, mo_energy=mo_energy, mo_coeff=mo_coeff, mo_occ=mo_occ)
     os.chdir("..")
-    if temp_dir_name is None:
+    if oml_compound.temp_calc_dir is None:
         rmdir(workdir)
     return mf_out, pyscf_mol

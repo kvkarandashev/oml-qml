@@ -35,8 +35,8 @@ def write_xyz_file(coordinates, elements, xyz_file_name):
         xyz_file.write(element+" "+' '.join([str(atom_coord) for atom_coord in atom_coords])+'\n')
     xyz_file.close()
 
-def write_bytes(byte_string, file_name):
-    file_output=open(file_name, 'wb')
+def write2file(byte_string, file_name):
+    file_output=open(file_name, 'w')
     print(byte_string, file=file_output)
     file_output.close()
 
