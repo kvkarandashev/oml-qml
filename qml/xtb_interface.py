@@ -34,7 +34,7 @@ def generate_pyscf_mf_mol(oml_compound):
         workdir=mktmpdir()
     else:
         mkdir(oml_compound.temp_calc_dir)
-        workdir=temp_dir_name
+        workdir=oml_compound.temp_calc_dir
     xyz_name="xtb_inp.xyz"
     os.chdir(workdir)
     write_compound_to_xyz_file(oml_compound, xyz_name)
