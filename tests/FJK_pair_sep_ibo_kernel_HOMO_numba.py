@@ -16,7 +16,7 @@ tested_xyzs_2=random.Random(seed+1).sample(all_xyzs, num_test_mols_2)
 
 logfile=logfile(logfile_name)
 
-my_representation=my_representation=OML_Slater_pair_rep(max_angular_momentum=1, use_Fortran=False, ibo_atom_rho_comp=0.95, second_orb_type="IBO_HOMO_removed")
+my_representation=OML_Slater_pair_rep(max_angular_momentum=1, use_Fortran=False, ibo_atom_rho_comp=0.95, second_orb_type="IBO_HOMO_removed")
 oml_compounds_1=my_representation.init_compound_list(xyz_list=tested_xyzs_1, disable_openmp=True)
 oml_compounds_2=my_representation.init_compound_list(xyz_list=tested_xyzs_2, disable_openmp=False)
 
