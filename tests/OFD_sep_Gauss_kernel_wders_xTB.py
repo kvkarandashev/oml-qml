@@ -1,3 +1,4 @@
+# tested for xtb version 6.6.1
 from learning_curve_building import dirs_xyz_list, logfile, OML_Slater_pair_rep
 import numpy as np
 import qml, random, sys
