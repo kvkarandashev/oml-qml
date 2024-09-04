@@ -2,4 +2,4 @@ A branch of the original QML code (https://www.qmlcode.org) containing implement
 
 Installation is analogous to the one of QML code: https://www.qmlcode.org/installation.html
 
-A more convenient implementation of the same procedures can be found at: https://github.com/chemspacelab/qml2
+A more convenient implementation of the same procedures can be found at: https://github.com/qml2code/qml2
